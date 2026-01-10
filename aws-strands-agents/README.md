@@ -12,8 +12,8 @@
 - Runs on any cloud or local
 
 **Official Resources:**
-- GitHub: https://github.com/strands-agents/sdk-python
-- Samples: https://github.com/strands-agents/samples
+- GitHub: https://github.com/aws-strands-agents/sdk-python
+- Samples: https://github.com/aws-strands-agents/samples
 - AWS Blog: https://aws.amazon.com/blogs/opensource/introducing-strands-agents-an-open-source-ai-agents-sdk/
 
 ## Extension Points
@@ -80,7 +80,7 @@ agent = Agent(
 
 ## Resources
 
-- **GitHub**: https://github.com/awslabs/strands-agents
+- **GitHub**: https://github.com/awslabs/aws-strands-agents
 - **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status

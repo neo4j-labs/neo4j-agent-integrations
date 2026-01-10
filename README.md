@@ -67,7 +67,7 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[langchain](./langchain/)** - LangChain (MCP adapters)
 - **[microsoft-agent-framework](./microsoft-agent-framework/)** - Microsoft Agent Framework (AutoGen + Semantic Kernel)
 - **[openai-agents-sdk](./openai-agents-sdk/)** - OpenAI Agents SDK
-- **[strands-agents](./strands-agents/)** - AWS Strands
+- **[strands-agents](./aws-strands-agents/)** - AWS Strands
 - **[google-adk](./google-adk/)** - Google ADK
 - **[crewai](./crewai/)** - CrewAI
 - **[pydantic-ai](./pydantic-ai/)** - Pydantic AI
