@@ -18,7 +18,7 @@ This repository provides self-contained integration guides showing how to build 
 All examples use a read-only Neo4j instance with company and news data:
 
 ```python
-NEO4J_URI = "bolt://demo.neo4jlabs.com:7687"
+NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
 NEO4J_USERNAME = "companies"
 NEO4J_PASSWORD = "companies"
 NEO4J_DATABASE = "companies"
@@ -110,19 +110,24 @@ Use Neo4j driver directly for more control:
 from neo4j import GraphDatabase
 
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
-def query_company(name: str):
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind)
-            RETURN o, collect(loc) as locations, collect(ind) as industries
-        """, name=name)
-        return result.single().data()
+def query_company(company_name: str):
+    query = """
+    MATCH (o:Organization {name: $company})
+    RETURN o.name as name,
+           [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+           [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+    LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 ```
 
 ### 3. Hybrid Approach
@@ -161,21 +166,19 @@ See **[INTEGRATION_TEMPLATE.md](./INTEGRATION_TEMPLATE.md)** for the template.
 
 **Get company information:**
 ```cypher
-MATCH (o:Organization {name: $name})
-OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
-RETURN o,
-       collect(DISTINCT loc.name) as locations,
-       collect(DISTINCT ind.name) as industries,
-       collect({name: p.name, title: p.title}) as leadership
+MATCH (o:Organization {name: $company})
+RETURN o.name as name,
+       [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+       [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+       [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}] as leadership
+LIMIT 1
 ```
 
 **Vector search news articles:**
 ```cypher
 MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
 MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-CALL db.index.vector.queryNodes('article_embeddings', 5, $embedding)
+CALL db.index.vector.queryNodes('news', 5, $embedding)
 YIELD node, score
 WHERE node = c
 RETURN a.title, a.date, c.text, score
@@ -198,4 +201,4 @@ When adding a new integration:
 - **Neo4j MCP Server**: https://github.com/neo4j/mcp
 - **MCP Specification**: https://modelcontextprotocol.io/
 - **Neo4j Driver Docs**: https://neo4j.com/docs/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)

@@ -25,19 +25,24 @@ from google.adk.agents import Agent
 from neo4j import GraphDatabase
 
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 def query_company(company_name: str) -> dict:
     """Query company information from Neo4j."""
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-            RETURN o.name, collect(loc.name) as locations
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 agent = Agent(
     name="research_agent",
@@ -76,7 +81,7 @@ Use Vertex AI Extensions to wrap MCP servers (see [google-gemini-enterprise](../
 
 - **ADK GitHub**: https://github.com/google/adk-python
 - **ADK Docs**: https://google.github.io/adk-docs/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

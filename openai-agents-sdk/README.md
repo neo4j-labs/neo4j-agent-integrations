@@ -58,17 +58,24 @@ from neo4j import GraphDatabase
 
 client = OpenAI()
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 def query_company(company_name: str) -> dict:
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            RETURN o
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 # Use with function calling
 assistant = client.beta.assistants.create(
@@ -204,7 +211,7 @@ print(messages.data[0].content[0].text.value)
 
 - **OpenAI Agents**: https://platform.openai.com/docs/guides/agents
 - **MCP Guide**: https://openai.github.io/openai-agents-python/mcp/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

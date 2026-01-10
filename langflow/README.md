@@ -23,12 +23,15 @@ class Neo4jQueryComponent(Component):
 
     def build(self, query: str, company_name: str) -> dict:
         driver = GraphDatabase.driver(
-            "bolt://demo.neo4jlabs.com:7687",
+            "neo4j+s://demo.neo4jlabs.com:7687",
             auth=("companies", "companies")
         )
-        with driver.session(database="companies") as session:
-            result = session.run(query, name=company_name)
-            return result.single().data()
+        records, summary, keys = driver.execute_query(
+            query,
+            company=company_name,
+            database_="companies"
+        )
+        return records[0].data() if records else {}
 ```
 
 ### 2. MCP Support (2025)
@@ -50,7 +53,7 @@ Build visually, export to LangChain/LangGraph, integrate Neo4j directly.
 ## Resources
 
 - **Langflow**: https://docs.langflow.org/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

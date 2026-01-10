@@ -42,15 +42,24 @@ from strands import Agent, Tool
 from neo4j import GraphDatabase
 
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 @Tool(description="Query company from Neo4j")
 def query_company(name: str) -> dict:
-    with driver.session(database="companies") as session:
-        result = session.run("MATCH (o:Organization {name: $name}) RETURN o", name=name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 agent = Agent(
     name="research_agent",
@@ -72,7 +81,7 @@ agent = Agent(
 ## Resources
 
 - **GitHub**: https://github.com/awslabs/strands-agents
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

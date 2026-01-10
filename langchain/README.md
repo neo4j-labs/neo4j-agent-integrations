@@ -28,7 +28,7 @@ from langchain_openai import OpenAIEmbeddings
 
 # Graph queries
 graph = Neo4jGraph(
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
     database="companies"
@@ -37,10 +37,10 @@ graph = Neo4jGraph(
 # Vector search
 vector_store = Neo4jVector.from_existing_index(
     OpenAIEmbeddings(),
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
-    index_name="article_embeddings"
+    index_name="news"
 )
 
 # Cypher QA chain
@@ -86,7 +86,7 @@ from langchain.tools import tool
 
 # Neo4j setup
 graph = Neo4jGraph(
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
     database="companies"
@@ -96,14 +96,12 @@ graph = Neo4jGraph(
 def query_company(company_name: str) -> dict:
     """Query company information from Neo4j."""
     result = graph.query("""
-        MATCH (o:Organization {name: $name})
-        OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-        OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
+        MATCH (o:Organization {name: $company})
         RETURN o.name as name,
-               collect(DISTINCT loc.name) as locations,
-               collect(DISTINCT ind.name) as industries
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
         LIMIT 1
-    """, params={"name": company_name})
+    """, params={"company": company_name})
     return result[0] if result else {}
 
 @tool
@@ -134,7 +132,7 @@ result = agent_executor.invoke({
 
 - **LangChain Docs**: https://python.langchain.com/docs/
 - **Neo4j Integration**: https://python.langchain.com/docs/integrations/providers/neo4j
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

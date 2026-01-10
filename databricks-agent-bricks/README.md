@@ -60,7 +60,7 @@ CREATE CONNECTION neo4j_prod
 from neo4j import GraphDatabase
 
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 ```
@@ -145,7 +145,7 @@ deployment = mlflow.deployments.create_deployment(
 ## Resources
 
 - **Databricks MCP**: https://docs.databricks.com/en/generative-ai/mcp/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

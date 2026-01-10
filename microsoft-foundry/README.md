@@ -94,38 +94,42 @@ project_client = AIProjectClient(
 
 # Neo4j setup
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 # Define Neo4j tools
 def query_company(company_name: str) -> dict:
     """Query company information from Neo4j."""
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-            OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries,
-                   collect({name: p.name, title: p.title}) as leadership
-            LIMIT 1
-        """, name=company_name)
-        record = result.single()
-        return record.data() if record else {}
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+               [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 def search_news(company_name: str, query: str) -> list:
     """Search news articles about a company."""
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-            RETURN a.title as title, a.date as date
-            ORDER BY a.date DESC
-            LIMIT 5
-        """, company=company_name)
-        return [r.data() for r in result]
+    query_str = """
+        MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
+        RETURN a.title as title, a.date as date
+        ORDER BY a.date DESC
+        LIMIT 5
+    """
+    records, summary, keys = driver.execute_query(
+        query_str,
+        company=company_name,
+        database_="companies"
+    )
+    return [r.data() for r in records]
 
 # Create agent with tools
 agent = project_client.agents.create_agent(
@@ -214,7 +218,7 @@ credential = AzureCliCredential()
 - **Microsoft Foundry**: https://learn.microsoft.com/en-us/azure/ai-foundry/
 - **MCP Guide**: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent
 - **Neo4j MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

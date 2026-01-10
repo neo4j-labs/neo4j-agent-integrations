@@ -20,21 +20,24 @@ from neo4j import GraphDatabase
 
 client = anthropic.Anthropic(api_key="your-api-key")
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 def query_company(company_name: str) -> dict:
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 tools = [{
     "name": "query_company",
@@ -95,7 +98,7 @@ Claude Desktop and claude.ai support MCP connectors natively.
       "command": "node",
       "args": ["/path/to/neo4j-mcp-server/dist/index.js"],
       "env": {
-        "NEO4J_URI": "bolt://demo.neo4jlabs.com:7687",
+        "NEO4J_URI": "neo4j+s://demo.neo4jlabs.com:7687",
         "NEO4J_USERNAME": "companies",
         "NEO4J_PASSWORD": "companies",
         "NEO4J_DATABASE": "companies"
@@ -132,7 +135,7 @@ import json
 
 client = anthropic.Anthropic()
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
@@ -164,24 +167,34 @@ tools = [
 
 def process_tool_call(tool_name: str, tool_input: dict) -> str:
     if tool_name == "query_company":
-        with driver.session(database="companies") as session:
-            result = session.run("""
-                MATCH (o:Organization {name: $name})
-                OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-                OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind)
-                RETURN o, collect(loc) as locations, collect(ind) as industries
-            """, name=tool_input["company_name"])
-            return json.dumps(result.single().data())
+        query = """
+            MATCH (o:Organization {name: $company})
+            RETURN o.name as name,
+                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+                   [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+            LIMIT 1
+        """
+        records, summary, keys = driver.execute_query(
+            query,
+            company=tool_input["company_name"],
+            database_="companies"
+        )
+        return json.dumps(records[0].data() if records else {})
 
     elif tool_name == "search_news":
-        with driver.session(database="companies") as session:
-            result = session.run("""
-                MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-                RETURN a.title, a.date
-                ORDER BY a.date DESC
-                LIMIT $limit
-            """, company=tool_input["company_name"], limit=tool_input.get("limit", 5))
-            return json.dumps([r.data() for r in result])
+        query = """
+            MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
+            RETURN a.title as title, a.date as date
+            ORDER BY a.date DESC
+            LIMIT $limit
+        """
+        records, summary, keys = driver.execute_query(
+            query,
+            company=tool_input["company_name"],
+            limit=tool_input.get("limit", 5),
+            database_="companies"
+        )
+        return json.dumps([r.data() for r in records])
 
 # Agentic loop
 messages = [{
@@ -261,7 +274,7 @@ Use 200K context window for large graph results.
 - **Claude API**: https://docs.anthropic.com
 - **Tool Use**: https://docs.anthropic.com/en/docs/build-with-claude/tool-use
 - **MCP**: https://docs.anthropic.com/en/docs/build-with-claude/mcp
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

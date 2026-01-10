@@ -20,7 +20,7 @@ from llama_index.vector_stores.neo4j import Neo4jVectorStore
 
 # Graph store
 graph_store = Neo4jGraphStore(
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
     database="companies"
@@ -28,11 +28,11 @@ graph_store = Neo4jGraphStore(
 
 # Vector store
 vector_store = Neo4jVectorStore(
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
     database="companies",
-    index_name="article_embeddings"
+    index_name="news"
 )
 
 # Knowledge Graph Index
@@ -60,7 +60,7 @@ response = query_engine.query("What companies are in the technology industry?")
 - **Neo4j Property Graph**: https://docs.llamaindex.ai/en/stable/examples/property_graph/property_graph_neo4j/
 - **Neo4j API Reference**: https://docs.llamaindex.ai/en/stable/api_reference/storage/graph_stores/neo4j/
 - **Neo4j Developer Guide**: https://neo4j.com/developer/genai-ecosystem/llamaindex/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

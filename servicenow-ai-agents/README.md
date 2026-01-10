@@ -40,7 +40,7 @@ Use pre-built connectors with custom Neo4j integration.
 
 ## Resources
 
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

@@ -61,9 +61,12 @@ def lambda_handler(event, context):
         auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD'])
     )
 
-    with driver.session() as session:
-        result = session.run(event['query'], event.get('params', {}))
-        return {'data': [record.data() for record in result]}
+    records, summary, keys = driver.execute_query(
+        event['query'],
+        **event.get('params', {}),
+        database_=os.environ.get('NEO4J_DATABASE', 'neo4j')
+    )
+    return {'data': [record.data() for record in records]}
 ```
 
 ### 3. Smithy Protocol Integration
@@ -163,7 +166,7 @@ Deploy a multi-agent investment research system on AWS infrastructure using Agen
 import os
 
 # Store in AWS Secrets Manager
-os.environ['NEO4J_URI'] = 'bolt://demo.neo4jlabs.com:7687'
+os.environ['NEO4J_URI'] = 'neo4j+s://demo.neo4jlabs.com:7687'
 os.environ['NEO4J_USERNAME'] = 'companies'
 os.environ['NEO4J_PASSWORD'] = 'companies'
 os.environ['NEO4J_DATABASE'] = 'companies'
@@ -188,35 +191,41 @@ driver = GraphDatabase.driver(
 @server.tool()
 def query_company(company_name: str) -> dict:
     """Query organization data from Neo4j."""
-    with driver.session(database=os.environ['NEO4J_DATABASE']) as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-            OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries,
-                   collect({name: p.name, title: p.title}) as leadership
-            LIMIT 1
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+               [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_=os.environ['NEO4J_DATABASE']
+    )
+    return records[0].data() if records else {}
 
 @server.tool()
 def search_news(company_name: str, query: str, limit: int = 5) -> list:
     """Vector search over news articles mentioning a company."""
-    with driver.session(database=os.environ['NEO4J_DATABASE']) as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $company_name})<-[:MENTIONS]-(a:Article)
-            MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-            CALL db.index.vector.queryNodes('article_embeddings', $limit, $embedding)
-            YIELD node, score
-            WHERE node = c
-            RETURN a.title, a.date, c.text, score
-            ORDER BY score DESC
-        """, company_name=company_name, limit=limit,
-             embedding=embed_query(query))
-        return [record.data() for record in result]
+    query_str = """
+        MATCH (o:Organization {name: $company_name})<-[:MENTIONS]-(a:Article)
+        MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
+        CALL db.index.vector.queryNodes('news', $limit, $embedding)
+        YIELD node, score
+        WHERE node = c
+        RETURN a.title as title, a.date as date, c.text as text, score
+        ORDER BY score DESC
+    """
+    records, summary, keys = driver.execute_query(
+        query_str,
+        company_name=company_name,
+        limit=limit,
+        embedding=embed_query(query),
+        database_=os.environ['NEO4J_DATABASE']
+    )
+    return [r.data() for r in records]
 
 if __name__ == "__main__":
     server.run()
@@ -313,7 +322,7 @@ class Neo4jResearchStack(Stack):
         neo4j_secret = aws_secretsmanager.Secret(
             self, "Neo4jCredentials",
             secret_object_value={
-                "uri": "bolt://demo.neo4jlabs.com:7687",
+                "uri": "neo4j+s://demo.neo4jlabs.com:7687",
                 "username": "companies",
                 "password": "companies",
                 "database": "companies"
@@ -471,7 +480,7 @@ python research_agent.py
 
 - **AWS AgentCore Docs**: https://docs.aws.amazon.com/bedrock-agentcore/
 - **Neo4j MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 - **CDK Examples**: See `examples/cdk/`
 
 ## Status

@@ -93,24 +93,25 @@ vertexai.init(project="your-project", location="us-central1")
 
 # Neo4j connection
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
 # Define tools
 def query_company(company_name: str) -> dict:
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries
-            LIMIT 1
-        """, name=company_name)
-        record = result.single()
-        return record.data() if record else {}
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 # Create reasoning engine with tools
 agent = reasoning_engines.LangchainAgent(
@@ -158,7 +159,7 @@ response = remote_agent.query(
 
 - **Gemini Enterprise**: https://cloud.google.com/gemini/enterprise
 - **Vertex AI**: https://cloud.google.com/vertex-ai
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

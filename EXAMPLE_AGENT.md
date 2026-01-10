@@ -58,17 +58,19 @@ def query_company(company_name: str) -> dict:
         }
     """
     query = """
-    MATCH (o:Organization {name: $name})
-    OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-    OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-    OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
+    MATCH (o:Organization {name: $company})
     RETURN o.name as name,
-           collect(DISTINCT loc.name) as locations,
-           collect(DISTINCT ind.name) as industries,
-           collect({name: p.name, title: p.title}) as leadership
+           [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+           [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+           [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}] as leadership
     LIMIT 1
     """
-    # Execute query and return result
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 ```
 
 ### 2. Search News Articles
@@ -96,7 +98,7 @@ def search_news(company_name: str, query: str, limit: int = 5) -> list:
     query_cypher = """
     MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
     MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-    CALL db.index.vector.queryNodes('article_embeddings', $limit, $embedding)
+    CALL db.index.vector.queryNodes('news', $limit, $embedding)
     YIELD node, score
     WHERE node = c
     RETURN a.title as title,
@@ -106,7 +108,16 @@ def search_news(company_name: str, query: str, limit: int = 5) -> list:
     ORDER BY score DESC
     """
     # Generate embedding from query
-    # Execute query and return results
+    embedding = embed_query(query)
+
+    records, summary, keys = driver.execute_query(
+        query_cypher,
+        company=company_name,
+        limit=limit,
+        embedding=embedding,
+        database_="companies"
+    )
+    return [record.data() for record in records]
 ```
 
 ### 3. Analyze Organizational Relationships
@@ -125,13 +136,13 @@ def analyze_relationships(company_name: str, max_depth: int = 2) -> list:
         [
             {
                 'organization': str,
-                'relationship': str,
+                'relationships': [str],
                 'distance': int
             }
         ]
     """
     query = """
-    MATCH path = (o1:Organization {name: $name})
+    MATCH path = (o1:Organization {name: $company})
                  -[*1..$depth]-(o2:Organization)
     WHERE o1 <> o2
     RETURN DISTINCT o2.name as organization,
@@ -140,7 +151,13 @@ def analyze_relationships(company_name: str, max_depth: int = 2) -> list:
     ORDER BY distance
     LIMIT 20
     """
-    # Execute query and return results
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        depth=max_depth,
+        database_="companies"
+    )
+    return [record.data() for record in records]
 ```
 
 ### 4. Synthesize Research Report
@@ -261,7 +278,7 @@ result = coordinator.run("Research Google")
 
 When implementing for a platform, ensure you:
 
-- [ ] Connect to demo database (bolt://demo.neo4jlabs.com:7687)
+- [ ] Connect to demo database (neo4j+s://demo.neo4jlabs.com:7687)
 - [ ] Implement `query_company` function/tool
 - [ ] Implement `search_news` with vector search
 - [ ] Implement `analyze_relationships` (optional but recommended)
@@ -348,7 +365,7 @@ Quick reference for the data model:
 
 **Chunks:**
 - Properties: `text`, `embedding` (vector)
-- Vector index: `article_embeddings`
+- Vector index: `news`
 - Incoming: `[:HAS_CHUNK]-(:Article)`
 
 **People:**

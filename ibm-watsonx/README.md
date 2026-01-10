@@ -36,7 +36,7 @@ Use with LangChain, LangGraph, or CrewAI (see respective guides).
 from ibm_watsonx import GraphRAG
 
 graph_rag = GraphRAG(
-    neo4j_url="bolt://demo.neo4jlabs.com:7687",
+    neo4j_url="neo4j+s://demo.neo4jlabs.com:7687",
     neo4j_auth=("companies", "companies")
 )
 ```
@@ -54,7 +54,7 @@ graph_rag = GraphRAG(
 ## Resources
 
 - **watsonx**: https://www.ibm.com/watsonx
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

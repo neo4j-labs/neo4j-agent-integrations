@@ -60,14 +60,20 @@ class Neo4jPlugin:
         name="QueryCompany"
     )
     def query_company(self, company_name: str) -> str:
-        with self.driver.session() as session:
-            result = session.run("""
-                MATCH (o:Organization {name: $name})
-                OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-                OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-                RETURN o, collect(loc) as locations, collect(ind) as industries
-            """, name=company_name)
-            return result.single().data()
+        """Query organization data from Neo4j."""
+        query = """
+            MATCH (o:Organization {name: $company})
+            RETURN o.name as name,
+                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+                   [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+            LIMIT 1
+        """
+        records, summary, keys = self.driver.execute_query(
+            query,
+            company=company_name,
+            database_="companies"
+        )
+        return records[0].data() if records else {}
 ```
 
 ### 3. AutoGen Agents
@@ -153,7 +159,7 @@ from neo4j import GraphDatabase
 import os
 
 # Store in Azure Key Vault for production
-NEO4J_URI = "bolt://demo.neo4jlabs.com:7687"
+NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
 NEO4J_USERNAME = "companies"
 NEO4J_PASSWORD = "companies"
 NEO4J_DATABASE = "companies"
@@ -202,20 +208,20 @@ class Neo4jResearchPlugin:
     )
     def query_company(self, company_name: str) -> str:
         """Query organization data from Neo4j."""
-        with self.driver.session(database=NEO4J_DATABASE) as session:
-            result = session.run("""
-                MATCH (o:Organization {name: $name})
-                OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-                OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-                OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
-                RETURN o.name as name,
-                       collect(DISTINCT loc.name) as locations,
-                       collect(DISTINCT ind.name) as industries,
-                       collect({name: p.name, title: p.title}) as leadership
-                LIMIT 1
-            """, name=company_name)
-            data = result.single()
-            return json.dumps(data.data() if data else {})
+        query = """
+            MATCH (o:Organization {name: $company})
+            RETURN o.name as name,
+                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+                   [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+                   [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
+            LIMIT 1
+        """
+        records, summary, keys = self.driver.execute_query(
+            query,
+            company=company_name,
+            database_="companies"
+        )
+        return json.dumps(records[0].data() if records else {})
 
     @sk_function(
         description="Search news articles about a company using vector similarity",
@@ -223,16 +229,19 @@ class Neo4jResearchPlugin:
     )
     def search_news(self, company_name: str, query: str) -> str:
         """Vector search for news articles."""
-        with self.driver.session(database=NEO4J_DATABASE) as session:
-            # Note: Simplified - actual implementation needs embedding generation
-            result = session.run("""
-                MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-                RETURN a.title as title, a.date as date
-                ORDER BY a.date DESC
-                LIMIT 5
-            """, company=company_name)
-            articles = [r.data() for r in result]
-            return json.dumps(articles)
+        # Note: Simplified - actual implementation needs embedding generation
+        query_str = """
+            MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
+            RETURN a.title as title, a.date as date
+            ORDER BY a.date DESC
+            LIMIT 5
+        """
+        records, summary, keys = self.driver.execute_query(
+            query_str,
+            company=company_name,
+            database_="companies"
+        )
+        return json.dumps([r.data() for r in records])
 
     @sk_function(
         description="Analyze organizational relationships and partnerships",
@@ -240,18 +249,21 @@ class Neo4jResearchPlugin:
     )
     def analyze_relationships(self, company_name: str) -> str:
         """Find related organizations through graph traversal."""
-        with self.driver.session(database=NEO4J_DATABASE) as session:
-            result = session.run("""
-                MATCH path = (o1:Organization {name: $name})
-                             -[*1..2]-(o2:Organization)
-                WHERE o1 <> o2
-                RETURN DISTINCT o2.name as organization,
-                       length(path) as distance
-                ORDER BY distance
-                LIMIT 10
-            """, name=company_name)
-            relationships = [r.data() for r in result]
-            return json.dumps(relationships)
+        query = """
+            MATCH path = (o1:Organization {name: $company})
+                         -[*1..2]-(o2:Organization)
+            WHERE o1 <> o2
+            RETURN DISTINCT o2.name as organization,
+                   length(path) as distance
+            ORDER BY distance
+            LIMIT 10
+        """
+        records, summary, keys = self.driver.execute_query(
+            query,
+            company=company_name,
+            database_="companies"
+        )
+        return json.dumps([r.data() for r in records])
 
 # Register plugin
 neo4j_plugin = kernel.import_skill(Neo4jResearchPlugin(), "Neo4j")
@@ -300,31 +312,35 @@ driver = GraphDatabase.driver(
 # Define Neo4j query functions
 def query_company(company_name: str) -> dict:
     """Query company information from Neo4j."""
-    with driver.session(database=NEO4J_DATABASE) as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc:Location)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind:Industry)
-            OPTIONAL MATCH (p:Person)-[:WORKS_FOR]->(o)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries,
-                   collect({name: p.name, title: p.title})[..5] as leadership
-            LIMIT 1
-        """, name=company_name)
-        record = result.single()
-        return record.data() if record else {}
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
+               [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 def search_news(company_name: str) -> list:
     """Search news articles about a company."""
-    with driver.session(database=NEO4J_DATABASE) as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-            RETURN a.title as title, a.date as date
-            ORDER BY a.date DESC
-            LIMIT 5
-        """, company=company_name)
-        return [r.data() for r in result]
+    query = """
+        MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
+        RETURN a.title as title, a.date as date
+        ORDER BY a.date DESC
+        LIMIT 5
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return [r.data() for r in records]
 
 # Create Database Agent
 database_agent = AssistantAgent(
@@ -464,24 +480,34 @@ class Neo4jMemoryStore:
         self.driver = driver
 
     async def save_memory(self, agent_id: str, memory: dict):
-        with self.driver.session() as session:
-            session.run("""
-                MERGE (a:Agent {id: $agent_id})
-                CREATE (a)-[:HAS_MEMORY]->(m:Memory {
-                    timestamp: datetime(),
-                    content: $content
-                })
-            """, agent_id=agent_id, content=memory)
+        query = """
+            MERGE (a:Agent {id: $agent_id})
+            CREATE (a)-[:HAS_MEMORY]->(m:Memory {
+                timestamp: datetime(),
+                content: $content
+            })
+        """
+        await self.driver.execute_query(
+            query,
+            agent_id=agent_id,
+            content=memory,
+            database_="neo4j"
+        )
 
     async def retrieve_memory(self, agent_id: str, limit: int = 10):
-        with self.driver.session() as session:
-            result = session.run("""
-                MATCH (a:Agent {id: $agent_id})-[:HAS_MEMORY]->(m:Memory)
-                RETURN m.content as content, m.timestamp as timestamp
-                ORDER BY m.timestamp DESC
-                LIMIT $limit
-            """, agent_id=agent_id, limit=limit)
-            return [r.data() for r in result]
+        query = """
+            MATCH (a:Agent {id: $agent_id})-[:HAS_MEMORY]->(m:Memory)
+            RETURN m.content as content, m.timestamp as timestamp
+            ORDER BY m.timestamp DESC
+            LIMIT $limit
+        """
+        records, summary, keys = await self.driver.execute_query(
+            query,
+            agent_id=agent_id,
+            limit=limit,
+            database_="neo4j"
+        )
+        return [r.data() for r in records]
 ```
 
 ## Additional Integration Opportunities
@@ -499,15 +525,21 @@ Use Neo4j as the memory layer for agents:
 Track agent actions and decisions:
 ```python
 def log_agent_action(agent_id: str, action: str, result: dict):
-    with driver.session() as session:
-        session.run("""
-            MERGE (a:Agent {id: $agent_id})
-            CREATE (a)-[:PERFORMED]->(action:Action {
-                type: $action,
-                timestamp: datetime(),
-                result: $result
-            })
-        """, agent_id=agent_id, action=action, result=result)
+    query = """
+        MERGE (a:Agent {id: $agent_id})
+        CREATE (a)-[:PERFORMED]->(action:Action {
+            type: $action,
+            timestamp: datetime(),
+            result: $result
+        })
+    """
+    driver.execute_query(
+        query,
+        agent_id=agent_id,
+        action=action,
+        result=result,
+        database_="neo4j"
+    )
 ```
 
 ### 3. Multi-Agent Collaboration Graph
@@ -536,7 +568,7 @@ pip install semantic-kernel pyautogen neo4j azure-identity
 # Configure environment
 export AZURE_OPENAI_ENDPOINT="your-endpoint"
 export AZURE_OPENAI_API_KEY="your-key"
-export NEO4J_URI="bolt://demo.neo4jlabs.com:7687"
+export NEO4J_URI="neo4j+s://demo.neo4jlabs.com:7687"
 export NEO4J_USER="companies"
 export NEO4J_PASSWORD="companies"
 ```
@@ -570,7 +602,7 @@ driver = GraphDatabase.driver(
 - **AutoGen GitHub**: https://github.com/microsoft/autogen
 - **Semantic Kernel GitHub**: https://github.com/microsoft/semantic-kernel
 - **Neo4j MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

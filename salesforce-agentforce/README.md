@@ -34,7 +34,7 @@ public class Neo4jService {
         req.setEndpoint('https://your-neo4j-api/query');
         req.setMethod('POST');
         req.setBody(JSON.serialize(new Map<String, Object>{
-            'query' => 'MATCH (o:Organization {name: $name}) RETURN o',
+            'query' => 'MATCH (o:Organization {name: $company}) RETURN o',
             'params' => new Map<String, Object>{'name' => companyName}
         }));
 
@@ -57,7 +57,7 @@ public class Neo4jService {
 
 ## Resources
 
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

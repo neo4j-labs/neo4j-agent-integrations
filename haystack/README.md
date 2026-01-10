@@ -20,7 +20,7 @@ from haystack.pipelines import DocumentSearchPipeline
 
 # Document store
 document_store = Neo4jDocumentStore(
-    url="bolt://demo.neo4jlabs.com:7687",
+    url="neo4j+s://demo.neo4jlabs.com:7687",
     username="companies",
     password="companies",
     database="companies"
@@ -47,7 +47,7 @@ results = pipeline.run(query="Companies in technology")
 - **Haystack**: https://haystack.deepset.ai/
 - **Neo4j Store**: https://haystack.deepset.ai/integrations/neo4j-document-store
 - **Neo4j Developer Guide**: https://neo4j.com/developer/genai-ecosystem/haystack/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

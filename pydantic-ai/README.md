@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from neo4j import GraphDatabase
 
 driver = GraphDatabase.driver(
-    "bolt://demo.neo4jlabs.com:7687",
+    "neo4j+s://demo.neo4jlabs.com:7687",
     auth=("companies", "companies")
 )
 
@@ -36,16 +36,19 @@ agent = Agent(
 @agent.tool
 def query_company(ctx: RunContext, company_name: str) -> dict:
     """Query company from Neo4j."""
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-            OPTIONAL MATCH (o)-[:IN_INDUSTRY]->(ind)
-            RETURN o.name as name,
-                   collect(DISTINCT loc.name) as locations,
-                   collect(DISTINCT ind.name) as industries
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
+               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
 # Execute with type safety
 result = agent.run_sync("Research Google")
@@ -59,7 +62,7 @@ company: CompanyData = result.data
 ## Resources
 
 - **Pydantic AI**: https://ai.pydantic.dev/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

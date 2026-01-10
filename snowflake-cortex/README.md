@@ -52,15 +52,21 @@ from neo4j import GraphDatabase
 
 def query_company(company_name):
     driver = GraphDatabase.driver(
-        "bolt://demo.neo4jlabs.com:7687",
+        "neo4j+s://demo.neo4jlabs.com:7687",
         auth=("companies", "companies")
     )
-    with driver.session(database="companies") as session:
-        result = session.run("""
-            MATCH (o:Organization {name: $name})
-            RETURN o.name as name
-        """, name=company_name)
-        return result.single().data()
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 $$;
 ```
 
@@ -92,19 +98,24 @@ from neo4j import GraphDatabase
 class Neo4jTools:
     def __init__(self):
         self.driver = GraphDatabase.driver(
-            "bolt://demo.neo4jlabs.com:7687",
+            "neo4j+s://demo.neo4jlabs.com:7687",
             auth=("companies", "companies")
         )
     
     @Tool(description="Query company information")
     def query_company(self, name: str) -> dict:
-        with self.driver.session(database="companies") as session:
-            result = session.run("""
-                MATCH (o:Organization {name: $name})
-                OPTIONAL MATCH (o)-[:LOCATED_IN]->(loc)
-                RETURN o.name, collect(loc.name) as locations
-            """, name=name)
-            return result.single().data()
+        query = """
+            MATCH (o:Organization {name: $company})
+            RETURN o.name as company_name,
+                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
+            LIMIT 1
+        """
+        records, summary, keys = self.driver.execute_query(
+            query,
+            company=name,
+            database_="companies"
+        )
+        return records[0].data() if records else {}
 
 # Create agent
 agent = Agent(
@@ -134,7 +145,7 @@ result = agent.run("Research Google")
 
 - **Snowflake Cortex Agents**: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents
 - **Cortex Agents Tutorials**: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-tutorials
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

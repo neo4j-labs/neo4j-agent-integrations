@@ -81,7 +81,7 @@ Describe the specific implementation of the industry research agent for this pla
 **Company News Knowledge Graph (Read-Only Access):**
 ```language
 # Platform-specific connection code
-NEO4J_URI = "bolt://demo.neo4jlabs.com:7687"
+NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
 NEO4J_USERNAME = "companies"
 NEO4J_PASSWORD = "companies"
 NEO4J_DATABASE = "companies"
@@ -210,7 +210,7 @@ See the `examples/` directory for:
 - **Platform Docs**: [URL]
 - **Neo4j Integration Docs**: [URL if exists]
 - **MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 - **Community/Forum**: [URL if applicable]
 
 ## Status

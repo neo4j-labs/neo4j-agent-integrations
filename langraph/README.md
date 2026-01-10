@@ -113,7 +113,7 @@ Build a multi-agent system for investment research that:
 
 **Company News Knowledge Graph (Read-Only Access):**
 ```python
-NEO4J_URI = "bolt://demo.neo4jlabs.com:7687"
+NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
 NEO4J_USERNAME = "companies"
 NEO4J_PASSWORD = "companies"
 NEO4J_DATABASE = "companies"
@@ -342,7 +342,7 @@ See the `examples/` directory for:
 - **LangGraph Docs**: https://langchain-ai.github.io/langgraph/
 - **MCP Adapters**: https://github.com/langchain-ai/langchain-mcp-adapters
 - **Neo4j LangChain**: https://python.langchain.com/docs/integrations/providers/neo4j
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 

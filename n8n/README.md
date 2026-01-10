@@ -29,7 +29,7 @@
       },
       "parameters": {
         "operation": "execute",
-        "query": "MATCH (o:Organization {name: $name}) RETURN o"
+        "query": "MATCH (o:Organization {name: $company}) RETURN o"
       }
     }
   ]
@@ -67,7 +67,7 @@ Call Neo4j MCP server via HTTP:
 
 - **n8n Docs**: https://docs.n8n.io/
 - **Neo4j Node**: https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.neo4j/
-- **Demo Database**: bolt://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 
 ## Status
 
