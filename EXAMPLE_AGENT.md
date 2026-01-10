@@ -376,35 +376,42 @@ Quick reference for the data model:
 
 When implementing for different platforms:
 
-### For MCP-based platforms
+### For MCP-based platforms/frameworks
 - Use Neo4j MCP server's pre-built tools
 - Configure authentication in MCP client setup
 - May not need custom query functions
+- If possible add to the integration listings / documentation
+- Document and implement example
 
 ### For direct integration platforms
-- Implement functions as native platform tools
-- Handle Neo4j driver connection pooling
-- May need to adapt query syntax
+- Implement functions as native platform tools and extension points
+- Handle Neo4j driver correctly (reuse single instance)
+
+### For cloud platforms
+- Store credentials in platform secret manager or handle via OIDC
+- Deploy query functions as cloud functions
+- Consider connection latency and timeouts
+- If possible add to Agent Marketplaces
+
+### For Agent Platforms
+- Pick the right integration patterns for the platform for data integration
+- Integrate initially using MCP
+- Use platform extension points for deeper integration
+- Ensure proper authentication mechanisms that are required by the platform are used
+- Observe security, observability best practices
+- If possible add data integration or graph construction
+- Apply graph algorithms for additional benefit
 
 ### For low-code platforms
 - Define queries as reusable components/nodes
 - Use visual workflow for agent coordination
 - Document node configuration requirements
 
-### For cloud platforms
-- Store credentials in platform secret manager
-- Deploy query functions as cloud functions
-- Consider connection latency and timeouts
+## Additional Features
 
-## Variations and Extensions
+Where possible look at additional features for more user benefits
 
-Feel free to extend the reference implementation with:
-
-- **Financial data integration**: Add stock prices, financials
-- **Competitive analysis**: Compare multiple companies
-- **Trend analysis**: Track topics over time
-- **Alert system**: Monitor for specific events
-- **Multi-language support**: Non-English news sources
-- **Custom embeddings**: Domain-specific embedding models
-
-The core pattern remains the same: query structured data, search unstructured content, synthesize insights.
+- Agent Memory e.g. using https://github.com/neo4j-labs/agent-memory
+- Graph Algorithms
+- Observability / Tracing in the graph
+- Context Graphs
