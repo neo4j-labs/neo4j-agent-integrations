@@ -73,16 +73,12 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[pydantic-ai](./pydantic-ai/)** - Pydantic AI
 - **[llamaindex](./llamaindex/)** - LlamaIndex
 - **[haystack](./haystack/)** - Haystack
+- **[claude-agent](./claude-agent/)** - Claude Agent
 
 ### Workflow & Orchestration
 - **[ibm-watsonx](./ibm-watsonx/)** - IBM watsonx Orchestrate
 - **[n8n](./n8n/)** - n8n
 - **[langflow](./langflow/)** - Langflow
-
-### AI Platforms
-- **[anthropic-claude](./anthropic-claude/)** - Claude API
-
-See **[ai-agent-platforms.csv](./ai-agent-platforms.csv)** for complete details including effort/impact scores.
 
 ## Integration Patterns
 
