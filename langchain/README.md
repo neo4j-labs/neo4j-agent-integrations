@@ -2,142 +2,79 @@
 
 ## Overview
 
-**LangChain** is a comprehensive framework for building LLM applications with extensive tool/chain ecosystem and modular components.
+**LangChain** is a Python toolkit for building applications powered by large language models. It provides composable chains and agents, a vast integration ecosystem, memory and retrieval systems, and production essentials like callbacks, tracing, and evaluation tools.
+
+**Installation:**
+```bash
+pip install langchain langchain-neo4j langchain-mcp-adapters
+```
 
 **Key Features:**
-- Extensive tool ecosystem
-- Memory integrations
-- Retrieval (RAG)
-- Neo4j vector and graph integrations (mature)
-- Modular components
-- MCP support via adapters
+- Composable chains and ReAct-style agents
+- Native Neo4j integrations via `langchain-neo4j` package
+- MCP server support through `langchain-mcp-adapters`
+- Custom tool creation with the `@tool` decorator
+- Support for virtually every major LLM provider (OpenAI, Anthropic, Google, Cohere, Mistral, AWS Bedrock, Azure, and more)
 
-**Official Resources:**
-- Website: https://www.langchain.com
-- Documentation: https://python.langchain.com/docs/
-- Neo4j Integration: https://python.langchain.com/docs/integrations/providers/neo4j
-- MCP Adapters: https://github.com/langchain-ai/langchain-mcp-adapters
+## Examples
+
+| Notebook | Description |
+|----------|-------------|
+| [langchain.ipynb](./langchain.ipynb) | Walkthrough of LangChain with Neo4j integration, including MCP server setup, custom tool creation, vector search, and query execution |
 
 ## Extension Points
 
-### 1. Native Neo4j Integrations
+### 1. MCP Integration
 
-```python
-from langchain_neo4j import Neo4jGraph, Neo4jVector, GraphCypherQAChain
-from langchain_openai import OpenAIEmbeddings
+LangChain supports MCP servers via the `langchain-mcp-adapters` package. Use `MultiServerMCPClient` to connect to MCP servers and retrieve tools.
 
-# Graph queries
-graph = Neo4jGraph(
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    database="companies"
-)
+- **Neo4j MCP Server:** Leverage `mcp-neo4j-cypher` for schema reading and Cypher query execution
 
-# Vector search
-vector_store = Neo4jVector.from_existing_index(
-    OpenAIEmbeddings(),
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    index_name="news"
-)
+### 2. Direct Neo4j Integrations
 
-# Cypher QA chain
-cypher_chain = GraphCypherQAChain.from_llm(
-    llm=ChatOpenAI(model="gpt-4"),
-    graph=graph
-)
-```
+The `langchain-neo4j` package provides native integrations for more control:
 
-### 2. MCP Integration
+- **Neo4jGraph:** Direct connection to Neo4j for executing Cypher queries within custom tools
+- **Neo4jVector:** Vector store integration for semantic search over graph data with support for hybrid search and custom retrieval queries
 
-```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
+### 3. Custom Tools/Functions
 
-client = MultiServerMCPClient({
-    "neo4j": {
-        "transport": "streamable_http",
-        "url": "http://localhost:8000/mcp",
-        "headers": {"Authorization": "Bearer YOUR_TOKEN"}
-    }
-})
+Define custom Neo4j tools using the `@tool` decorator:
 
-tools = client.as_tools()
-```
+- Specify tool name and description via docstrings
+- Implement functions that execute Cypher queries via `Neo4jGraph` or `Neo4jVector`
+- Return results as structured JSON
+- Combine MCP tools with custom tools in a single agent
 
 ## MCP Authentication
 
-✅ **API Keys** - Via custom headers
+**Supported Mechanisms:**
 
-➖ **Client Credentials** - Via custom headers (not built-in)
+✅ **Environment Variables (STDIO transport)** - For local MCP servers like `mcp-neo4j-cypher`, credentials are passed via the `env` parameter at spawn time.
 
-❌ **M2M OIDC** - No specific support
+✅ **HTTP Headers (HTTP/SSE transport)** - For remote MCP servers, pass API keys or bearer tokens via the `headers` parameter (e.g., `Authorization: Bearer ${API_TOKEN}`).
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#8-langchain--langgraph)
+❌ **OAuth 2.0 (in-client)** - OAuth2 MCP authentication in-client is not currently supported by the Python SDK.
 
-## Industry Research Agent Example
-
+**Configuration Example (STDIO transport):**
 ```python
-from langchain.agents import create_react_agent, AgentExecutor
-from langchain_openai import ChatOpenAI
-from langchain_neo4j import Neo4jGraph
-from langchain.tools import tool
-
-# Neo4j setup
-graph = Neo4jGraph(
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    database="companies"
-)
-
-@tool
-def query_company(company_name: str) -> dict:
-    """Query company information from Neo4j."""
-    result = graph.query("""
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
-        LIMIT 1
-    """, params={"company": company_name})
-    return result[0] if result else {}
-
-@tool
-def search_news(company_name: str) -> list:
-    """Search news articles about a company."""
-    result = graph.query("""
-        MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-        RETURN a.title, a.date
-        ORDER BY a.date DESC
-        LIMIT 5
-    """, params={"company": company_name})
-    return result
-
-# Create agent
-llm = ChatOpenAI(model="gpt-4")
-tools = [query_company, search_news]
-
-agent = create_react_agent(llm, tools, prompt_template)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-# Execute
-result = agent_executor.invoke({
-    "input": "Research Google's organizational structure and recent news"
-})
+cypher_mcp_config = {
+    "neo4j-database": {
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-neo4j-cypher"],
+        "env": {
+            "NEO4J_URI": os.environ.get("NEO4J_URI"),
+            "NEO4J_USERNAME": os.environ.get("NEO4J_USERNAME"),
+            "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD"),
+            "NEO4J_DATABASE": os.environ.get("NEO4J_DATABASE", "neo4j")
+        }
+    }
+}
 ```
 
 ## Resources
 
-- **LangChain Docs**: https://python.langchain.com/docs/
-- **Neo4j Integration**: https://python.langchain.com/docs/integrations/providers/neo4j
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ✅ Mature Neo4j integrations
-- ✅ MCP via adapters
-- ⚠️ Auth requires custom implementation
-- **Effort Score**: 3.9/10
-- **Impact Score**: 5.8/10
+- [LangChain Documentation](https://docs.langchain.com/)
+- [langchain-neo4j on PyPI](https://pypi.org/project/langchain-neo4j/)
+- [langchain-mcp-adapters on GitHub](https://github.com/langchain-ai/langchain-mcp-adapters)
