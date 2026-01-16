@@ -2,70 +2,100 @@
 
 ## Overview
 
-**LlamaIndex** is a data framework for LLM apps with strong retrieval capabilities and mature Neo4j vector/graph store integrations.
+**LlamaIndex** is an open source data orchestration framework for building LLM-powered applications. It provides data connectors for ingesting from diverse sources, powerful indexing and retrieval mechanisms, query engines and chat interfaces, event-driven workflows for complex agentic applications, and seamless integrations with vector stores, databases, and other LLM frameworks.
 
-**Official Resources:**
-- Website: https://www.llamaindex.ai
-- Documentation: https://docs.llamaindex.ai/
-- Neo4j Integration: https://docs.llamaindex.ai/en/stable/examples/property_graph/property_graph_neo4j/
+**Installation:**
+
+```bash
+pip install llama-index-core llama-index-tools-mcp llama-index-vector-stores-neo4jvector
+```
+
+**Key Features:**
+
+- Event-driven Workflows and FunctionAgent for building multi-agent applications
+- Native Neo4j integrations via `llama-index-vector-stores-neo4jvector` package
+- MCP server support through `llama-index-tools-mcp`
+- Custom tool creation with `FunctionTool.from_defaults()`
+- Support for virtually every major LLM provider (OpenAI, Anthropic, Google, Cohere, Mistral, AWS Bedrock, Azure, and more)
+- LlamaCloud tools for document parsing (LlamaParse), classification (LlamaClassify), and extraction (LlamaExtract)
+
+## Examples
+
+| Notebook | Description |
+|----------|-------------|
+| [llamaindex_functionagent.ipynb](./llamaindex_functionagent.ipynb) | Building a company research agent using LlamaIndex with Neo4j MCP server, custom tools, vector search, and FunctionAgent workflow |
+| [build_knowledge_graph_with_neo4j_llamacloud.ipynb](./build_knowledge_graph_with_neo4j_llamacloud.ipynb) | End-to-end pipeline for legal document processing using LlamaClassify, LlamaExtract, and Neo4j knowledge graph construction |
 
 ## Extension Points
 
-### Native Neo4j Integration
+### 1. MCP Integration
 
-```python
-from llama_index.core import VectorStoreIndex, KnowledgeGraphIndex
-from llama_index.graph_stores.neo4j import Neo4jGraphStore
-from llama_index.vector_stores.neo4j import Neo4jVectorStore
+LlamaIndex supports MCP servers via the `llama-index-tools-mcp` package. Use `BasicMCPClient` and `McpToolSpec` to connect to MCP servers and retrieve tools.
 
-# Graph store
-graph_store = Neo4jGraphStore(
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    database="companies"
-)
+- **Neo4j MCP Server:** Leverage the official Neo4j MCP server for schema reading and Cypher query execution
 
-# Vector store
-vector_store = Neo4jVectorStore(
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    database="companies",
-    index_name="news"
-)
+### 2. Direct Neo4j Integrations
 
-# Knowledge Graph Index
-kg_index = KnowledgeGraphIndex.from_documents(
-    documents,
-    graph_store=graph_store,
-    storage_context=storage_context
-)
+LlamaIndex provides native Neo4j integrations:
 
-# Vector Index
-vector_index = VectorStoreIndex.from_vector_store(vector_store)
+- **Neo4jVectorStore:** Vector store integration via `llama-index-vector-stores-neo4jvector` for semantic search over graph data with support for hybrid search, metadata filtering, and custom retrieval queries
+- **Neo4j Python Driver:** You can always use the Neo4j Python driver directly for executing Cypher queries within custom tools
 
-# Query
-query_engine = kg_index.as_query_engine()
-response = query_engine.query("What companies are in the technology industry?")
-```
+### 3. Custom Tools/Functions
+
+Define custom Neo4j tools using `FunctionTool.from_defaults()`:
+
+- Implement functions that execute Cypher queries via the Neo4j Python driver
+- Wrap Neo4j vector stores as tools with `QueryEngineTool`
+- Combine MCP tools with custom tools in a single `FunctionAgent`
+
+### 4. LlamaCloud Tools
+
+Build knowledge graphs from documents using LlamaCloud services:
+
+- **LlamaParse:** Parse complex document formats (PDFs, presentations, etc.)
+- **LlamaClassify:** AI-powered document classification with custom rules
+- **LlamaExtract:** Extract structured data using Pydantic schemas
 
 ## MCP Authentication
 
-⚠️ **Bespoke integrations** - No native MCP support
+**Supported Mechanisms:**
+
+✅ **Environment Variables (STDIO transport)** - For local MCP servers, set environment variables before spawning the process. The `BasicMCPClient` can connect to local processes via stdio transport.
+
+✅ **HTTP Headers (HTTP/SSE transport)** - For remote MCP servers, pass API keys or bearer tokens via the `headers` parameter (e.g., `Authorization: Basic ${CREDENTIALS}` or `Authorization: Bearer ${API_TOKEN}`).
+
+✅ **OAuth 2.0 (in-client)** - The `BasicMCPClient` supports OAuth 2.0 authentication via the `with_oauth()` method with configurable token storage.
+
+**Configuration Example (HTTP transport):**
+
+```python
+import os
+import base64
+from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
+
+# Set environment variables for the MCP server
+os.environ["NEO4J_URI"] = "neo4j+s://demo.neo4jlabs.com"
+os.environ["NEO4J_DATABASE"] = "companies"
+os.environ["NEO4J_MCP_TRANSPORT"] = "http"
+
+# Credentials passed via HTTP headers
+credentials = base64.b64encode(
+    f"{os.environ['NEO4J_USERNAME']}:{os.environ['NEO4J_PASSWORD']}".encode()
+).decode()
+
+mcp_client = BasicMCPClient(
+    "http://localhost:80/mcp",
+    headers={"Authorization": f"Basic {credentials}"},
+)
+
+mcp_tool_spec = McpToolSpec(client=mcp_client)
+tools = await mcp_tool_spec.to_tool_list_async()
+```
 
 ## Resources
 
-- **LlamaIndex**: https://docs.llamaindex.ai/
-- **Neo4j Property Graph**: https://docs.llamaindex.ai/en/stable/examples/property_graph/property_graph_neo4j/
-- **Neo4j API Reference**: https://docs.llamaindex.ai/en/stable/api_reference/storage/graph_stores/neo4j/
-- **Neo4j Developer Guide**: https://neo4j.com/developer/genai-ecosystem/llamaindex/
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ✅ Mature Neo4j integrations
-- ✅ Vector and graph stores
-- ⚠️ No native MCP
-- **Effort Score**: 4/10
-- **Impact Score**: 3/10
+- [LlamaIndex Documentation](https://docs.llamaindex.ai/)
+- [llama-index-tools-mcp on PyPI](https://pypi.org/project/llama-index-tools-mcp/)
+- [llama-index-vector-stores-neo4jvector on PyPI](https://pypi.org/project/llama-index-vector-stores-neo4jvector/)
+- [LlamaCloud Documentation](https://docs.cloud.llamaindex.ai/)
