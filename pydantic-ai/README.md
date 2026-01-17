@@ -2,72 +2,70 @@
 
 ## Overview
 
-**Pydantic AI** is a type-safe agent framework with schema validation, multi-provider support, and built-in monitoring via Logfire.
+**Pydantic AI** is a Python framework for building production-ready AI agents. Leveraging Pydantic's powerful validation and serialization capabilities, it provides type-safe tool definitions, structured outputs, dependency injection, and seamless integration with multiple LLM providers.
 
-**Official Resources:**
-- Website: https://ai.pydantic.dev
-- Documentation: https://ai.pydantic.dev/
+**Installation:**
+```bash
+pip install pydantic-ai neo4j
+```
+
+**Key Features:**
+- Type-safe tool definitions with automatic schema generation
+- Structured outputs validated by Pydantic models
+- Native MCP support
+- Dependency injection for clean, testable code
+
+## Examples
+
+| Notebook | Description |
+|----------|-------------|
+| [pydantic_ai.ipynb](./pydantic_ai.ipynb) | Walkthrough of Pydantic AI with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
 
 ## Extension Points
 
-### Direct Integration with Type Safety
+### 1. MCP Integration
 
-```python
-from pydantic_ai import Agent, RunContext
-from pydantic import BaseModel
-from neo4j import GraphDatabase
+Pydantic AI has **native MCP support**. MCP servers are passed directly via the `toolsets` parameter to the agent.
 
-driver = GraphDatabase.driver(
-    "neo4j+s://demo.neo4jlabs.com:7687",
-    auth=("companies", "companies")
-)
+- **Neo4j MCP Server:** Leverage the official [Neo4j MCP Server](https://github.com/neo4j/mcp) for ready-made integration
 
-class CompanyData(BaseModel):
-    name: str
-    locations: list[str]
-    industries: list[str]
+### 2. Direct Neo4j Integration
 
-agent = Agent(
-    'openai:gpt-4',
-    result_type=CompanyData,
-    system_prompt='Research companies using Neo4j data'
-)
+For more control beyond the MCP server, use the Neo4j Python driver directly:
 
-@agent.tool
-def query_company(ctx: RunContext, company_name: str) -> dict:
-    """Query company from Neo4j."""
-    query = """
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
-        LIMIT 1
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return records[0].data() if records else {}
+- **Driver:** `neo4j` driver for executing Cypher within custom tools
 
-# Execute with type safety
-result = agent.run_sync("Research Google")
-company: CompanyData = result.data
-```
+### 3. Custom Tools/Functions
+
+Define custom Neo4j tools by passing async Python functions to the agent:
+
+- Schema inference from type hints and docstrings
+- Implement functions that execute Cypher queries
+- Pass tools via the `tools` parameter alongside MCP toolsets
 
 ## MCP Authentication
 
-⚠️ **Bespoke tools** - No native MCP support
+**Supported Mechanisms:**
+
+✅ **HTTP Headers (HTTP/SSE transport)** - For remote MCP servers, pass credentials via the `headers` parameter using Basic or Bearer authentication.
+
+✅ **Environment Variables (STDIO transport)** - For local MCP servers, credentials can be passed via environment variables at spawn time.
+
+✅ **OAuth 2.0 (via FastMCPToolset)** - Available through the FastMCP-based client.
+
+**Configuration Example (HTTP transport):**
+```python
+credentials = base64.b64encode(
+    f"{os.environ['NEO4J_USERNAME']}:{os.environ['NEO4J_PASSWORD']}".encode()
+).decode()
+
+mcp_server = MCPServerStreamableHTTP(
+    'http://localhost:80/mcp',
+    headers={'Authorization': f'Basic {credentials}'},
+)
+```
 
 ## Resources
 
-- **Pydantic AI**: https://ai.pydantic.dev/
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ⚠️ Bespoke integration
-- ✅ Type safety
-- ✅ Multi-provider support
-- **Effort Score**: 4.4/10
-- **Impact Score**: 5.1/10
+- [Pydantic AI Documentation](https://ai.pydantic.dev/)
+- [PyPI](https://pypi.org/project/pydantic-ai/)
