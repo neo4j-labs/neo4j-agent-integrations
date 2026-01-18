@@ -54,7 +54,6 @@ This provides a consistent pattern for comparing integration approaches across p
 ### Cloud Providers
 - **[aws-agentcore](./aws-agentcore/)** - AWS AgentCore Bedrock (native MCP + A2A)
 - **[microsoft-foundry](./microsoft-foundry/)** - Azure AI Foundry (native MCP + A2A)
-- **[google-gemini-enterprise](./google-gemini-enterprise/)** - Google Gemini Enterprise (MCP + Vertex AI Extensions)
 
 ### Vertical Platforms
 - **[databricks-agent-bricks](./databricks-agent-bricks/)** - Databricks (MCP Catalog + Unity Catalog)
