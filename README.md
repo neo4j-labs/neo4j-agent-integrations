@@ -98,7 +98,7 @@ The MCP server can run:
 - As HTTP service (SSE or streamable-http)
 - Deployed to cloud (Cloud Run, Lambda, etc.)
 
-### 2. Direct Integration
+### 2. Direct Integration for Tools
 
 Use Neo4j driver directly for more control:
 
@@ -126,9 +126,11 @@ def query_company(company_name: str):
     return records[0].data() if records else {}
 ```
 
-### 3. Hybrid Approach
+### 3. Custom Integrations
 
-Combine MCP server with custom platform-specific tools.
+Use dedicated extension points of the agent framework to implement a specific integration.
+
+
 
 ## Authentication
 
