@@ -1,8 +1,8 @@
-# OpenAI Agent SDK + Neo4j Integration
+# OpenAI Agents SDK + Neo4j Integration
 
 ## Overview
 
-**OpenAI Agent SDK** is OpenAI's Python toolkit for building AI agents. Built on a lightweight, flexible architecture, it provides native tool integration, seamless handoffs between agents, guardrails for input/output validation, and production essentials like tracing, error handling, and session management.
+**OpenAI Agents SDK** is OpenAI's Python toolkit for building AI agents. Built on a lightweight, flexible architecture, it provides native tool integration, seamless handoffs between agents, guardrails for input/output validation, and production essentials like tracing, error handling, and session management.
 
 **Installation:**
 ```bash
