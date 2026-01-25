@@ -63,7 +63,7 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[salesforce-agentforce](./salesforce-agentforce/)** - Salesforce Agentforce
 
 ### Agent Frameworks
-- **[langraph](./langraph/)** - LangGraph (MCP adapters)
+- **[langgraph](./langgraph/)** - LangGraph (MCP adapters)
 - **[langchain](./langchain/)** - LangChain (MCP adapters)
 - **[microsoft-agent-framework](./microsoft-agent-framework/)** - Microsoft Agent Framework (AutoGen + Semantic Kernel)
 - **[openai-agents-sdk](./openai-agents-sdk/)** - OpenAI Agents SDK
