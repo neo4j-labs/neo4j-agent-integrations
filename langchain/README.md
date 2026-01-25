@@ -46,6 +46,32 @@ Define custom Neo4j tools using the `@tool` decorator:
 - Return results as structured JSON
 - Combine MCP tools with custom tools in a single agent
 
+### 4. Neo4j Checkpoint Savers
+
+The `langchain-neo4j` package provides checkpoint savers for persisting agent state to Neo4j:
+
+- **Neo4jSaver:** Synchronous checkpointer for storing conversation history and agent state
+- **AsyncNeo4jSaver:** Async variant for non-blocking checkpoint operations
+
+```python
+from langgraph.checkpoint.neo4j import AsyncNeo4jSaver
+
+async with await AsyncNeo4jSaver.from_conn_string(
+    uri=NEO4J_URI,
+    user=NEO4J_USERNAME,
+    password=NEO4J_PASSWORD,
+    database=NEO4J_DATABASE
+) as checkpointer:
+    await checkpointer.setup()
+
+    agent = create_agent(
+        model,
+        tools,
+        system_prompt=prompt,
+        checkpointer=checkpointer,
+    )
+```
+
 ## MCP Authentication
 
 **Supported Mechanisms:**

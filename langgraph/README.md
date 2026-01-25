@@ -110,6 +110,27 @@ async def get_investments(company: str) -> str:
     return json.dumps(results, indent=2)
 ```
 
+### 5. Neo4j Checkpoint Savers
+
+The `langgraph-checkpoint-neo4j` package provides checkpoint savers for persisting agent state to Neo4j:
+
+- **Neo4jSaver:** Synchronous checkpointer for storing conversation history and agent state
+- **AsyncNeo4jSaver:** Async variant for non-blocking checkpoint operations
+
+```python
+from langgraph.checkpoint.neo4j import AsyncNeo4jSaver
+
+async with await AsyncNeo4jSaver.from_conn_string(
+    uri=NEO4J_URI,
+    user=NEO4J_USERNAME,
+    password=NEO4J_PASSWORD,
+    database=NEO4J_DATABASE
+) as checkpointer:
+    await checkpointer.setup()
+
+    agent = agent_builder.compile(checkpointer=checkpointer)
+```
+
 ## MCP Authentication
 
 **Supported Mechanisms:**
