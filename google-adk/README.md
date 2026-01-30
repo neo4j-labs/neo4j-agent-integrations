@@ -15,6 +15,7 @@
 - GitHub: https://github.com/google/adk-python
 - Documentation: https://google.github.io/adk-docs/
 - Examples: https://github.com/google/adk-samples
+- Codelab: [Building GraphRAG Agents with ADK](https://codelabs.developers.google.com/neo4j-adk-graphrag-agents#0)
 
 ## Extension Points
 
