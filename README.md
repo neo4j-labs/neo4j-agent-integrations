@@ -53,6 +53,10 @@ This provides a consistent pattern for comparing integration approaches across p
 
 ### Cloud Providers
 - **[aws-agentcore](./aws-agentcore/)** - AWS AgentCore Bedrock (native MCP + A2A)
+  - [mcp-server](./aws-agentcore/mcp-server/) - Deploy Neo4j MCP server to AgentCore Gateway with CDK
+  - [agentcore-runtime](./aws-agentcore/agentcore-runtime/) - Agents deployed to AgentCore Runtime
+  - [standalone-agents](./aws-agentcore/standalone-agents/) - Local Python scripts with OAuth2 and MCP testing
+  - [sagemaker-samples](./aws-agentcore/sagemaker-samples/) - Jupyter notebooks for SageMaker Studio
 - **[microsoft-foundry](./microsoft-foundry/)** - Azure AI Foundry (native MCP + A2A)
 - **[google-gemini-enterprise](./google-gemini-enterprise/)** - Google Gemini Enterprise (MCP + Vertex AI Extensions)
 

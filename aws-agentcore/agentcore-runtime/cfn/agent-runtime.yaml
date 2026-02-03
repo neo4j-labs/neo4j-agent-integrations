@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  AgentCore Runtime for Neo4j MCP Agent
+  Deploys agents to Amazon Bedrock AgentCore without CDK dependencies.
+
+Parameters:
+  ECRImageUri:
+    Type: String
+    Description: Full URI of the agent container image in ECR (ACCOUNT.dkr.ecr.REGION.amazonaws.com/repo:tag)
+    AllowedPattern: ^[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/.+$
+    ConstraintDescription: Must be a valid ECR image URI
+
+  AgentName:
+    Type: String
+    Description: Name for the AgentCore runtime (alphanumeric and underscores only)
+    Default: neo4j_mcp_agent
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9_]{0,47}$
+    ConstraintDescription: Must start with a letter, max 48 chars, alphanumeric and underscores only
+
+  NetworkMode:
+    Type: String
+    Description: Network mode for AgentCore runtime
+    Default: PUBLIC
+    AllowedValues:
+      - PUBLIC
+      - PRIVATE
+
+Resources:
+  # IAM Role for AgentCore Runtime execution
+  # NOTE: These permissions are intentionally broad for workshop/demo purposes.
+  # For production, follow least-privilege principles.
+  AgentExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-agent-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Broad access for workshop demos
+        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
+      Policies:
+        - PolicyName: AgentCoreExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Full ECR Access
+              - Sid: ECRFullAccess
+                Effect: Allow
+                Action:
+                  - ecr:*
+                Resource: '*'
+
+              # Full CloudWatch Logs Access
+              - Sid: CloudWatchLogsFullAccess
+                Effect: Allow
+                Action:
+                  - logs:*
+                Resource: '*'
+
+              # Full X-Ray Access
+              - Sid: XRayFullAccess
+                Effect: Allow
+                Action:
+                  - xray:*
+                Resource: '*'
+
+              # Full CloudWatch Metrics Access
+              - Sid: CloudWatchMetricsFullAccess
+                Effect: Allow
+                Action:
+                  - cloudwatch:*
+                Resource: '*'
+
+              # Full Bedrock Access - all models, all regions
+              - Sid: BedrockFullAccess
+                Effect: Allow
+                Action:
+                  - bedrock:*
+                Resource: '*'
+
+              # Full AgentCore Access
+              - Sid: AgentCoreFullAccess
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:*
+                Resource: '*'
+
+              # Secrets Manager Access (for MCP credentials if needed)
+              - Sid: SecretsManagerAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: '*'
+
+              # SSM Parameter Store Access (for config if needed)
+              - Sid: SSMParameterAccess
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: '*'
+
+              # STS for cross-account/assume role if needed
+              - Sid: STSAccess
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                  - sts:AssumeRole
+                Resource: '*'
+
+  # AgentCore Runtime
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    DependsOn: AgentExecutionRole
+    Properties:
+      AgentRuntimeName: !Ref AgentName
+      Description: !Sub Neo4j MCP Agent deployed via CloudFormation - ${AWS::StackName}
+      RoleArn: !GetAtt AgentExecutionRole.Arn
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref ECRImageUri
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+
+Outputs:
+  AgentRuntimeArn:
+    Description: ARN of the deployed AgentCore Runtime
+    Value: !GetAtt AgentRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub ${AWS::StackName}-AgentRuntimeArn
+
+  AgentRuntimeId:
+    Description: ID of the deployed AgentCore Runtime
+    Value: !Ref AgentRuntime
+    Export:
+      Name: !Sub ${AWS::StackName}-AgentRuntimeId
+
+  ExecutionRoleArn:
+    Description: ARN of the IAM execution role
+    Value: !GetAtt AgentExecutionRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ExecutionRoleArn
+
+  InvocationEndpoint:
+    Description: Base endpoint for invoking the agent
+    Value: !Sub https://bedrock-agentcore.${AWS::Region}.amazonaws.com
+    Export:
+      Name: !Sub ${AWS::StackName}-InvocationEndpoint

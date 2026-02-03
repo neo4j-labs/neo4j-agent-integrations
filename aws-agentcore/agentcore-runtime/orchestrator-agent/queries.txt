@@ -1,0 +1,52 @@
+# Neo4j Aviation Database - Multi-Agent Routing Test Queries
+# These queries test routing to Maintenance and Operations specialist agents.
+#
+# Query Categories:
+# - Maintenance Domain (1-10): Faults, components, sensors, reliability
+# - Operations Domain (11-20): Flights, delays, routes, airports
+#
+# Each query should route to the appropriate specialist agent.
+
+# === Maintenance Domain (Routes to Maintenance Agent) ===
+
+1. What are the most common maintenance faults across all aircraft?
+
+2. Show me all critical severity maintenance events and which aircraft they affected.
+
+3. Which components have the most failures? Are there any patterns by component type?
+
+4. Find aircraft with hydraulic system issues and show the faults and corrective actions.
+
+5. What maintenance events have affected the CFM56-7B engines? Show severity and fault details.
+
+6. Analyze sensor readings for engine temperature sensors - what is the range of values?
+
+7. Which sensors are showing abnormal readings that might indicate maintenance needs?
+
+8. What is the reliability history of avionics components in the fleet?
+
+9. Show me the maintenance events with the highest severity in the last year.
+
+10. Which aircraft have had repeated failures of the same component type?
+
+# === Operations Domain (Routes to Operations Agent) ===
+
+11. What are the most common causes of flight delays and how many minutes do they add?
+
+12. Which routes have the most delays? Show origin, destination, and total delay minutes.
+
+13. Compare delay statistics by operator - which airline has the worst on-time performance?
+
+14. Find all weather-related delays longer than 60 minutes and show affected flights.
+
+15. What flights depart from JFK airport and where do they go?
+
+16. Which airports have the highest traffic volume in our database?
+
+17. Show me the busiest routes by number of flights operated.
+
+18. What is the on-time performance for flights to LAX?
+
+19. Which carriers operate the most flights in the system?
+
+20. Find flights with the longest scheduled duration and their routes.

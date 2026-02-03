@@ -1,0 +1,61 @@
+# Neo4j Aviation Database - Natural Language Queries
+# These queries are designed for the aircraft fleet operations and maintenance database
+# containing Aircraft, Flights, Airports, Systems, Components, Sensors, Readings,
+# Delays, and Maintenance Events.
+#
+# Query Categories:
+# - Basic Discovery (1-4)
+# - Fleet Operations (5-8)
+# - Maintenance & Reliability (9-13)
+# - Flight Operations & Delays (14-17)
+# - Advanced Analytics (18-20)
+
+# === Basic Discovery ===
+
+1. What is the database schema? Show me all node types and their relationships.
+
+2. How many aircraft are in the fleet and what models do we have?
+
+3. List all airports in the database with their IATA codes and cities.
+
+4. Which manufacturers build the aircraft in our fleet and how many of each?
+
+# === Fleet Operations ===
+
+5. What aircraft does SkyWays operate and what are their tail numbers?
+
+6. Show me all the systems installed on Boeing 737-800 aircraft.
+
+7. What sensors are monitoring engine systems across the fleet and what do they measure?
+
+8. Find all flights departing from JFK airport and show where they go.
+
+# === Maintenance & Reliability ===
+
+9. What are the most common maintenance faults across all aircraft?
+
+10. Show me all critical severity maintenance events and which aircraft they affected.
+
+11. Which components have the most maintenance events? Are there any patterns by component type?
+
+12. Find aircraft with hydraulic system issues - show the faults and corrective actions taken.
+
+13. What maintenance events have affected the CFM56-7B engines? Show severity and fault details.
+
+# === Flight Operations & Delays ===
+
+14. What are the most common causes of flight delays and how many minutes do they add on average?
+
+15. Which routes have the most delays? Show the origin, destination, and total delay minutes.
+
+16. Compare delay statistics by operator - which airline has the worst on-time performance?
+
+17. Find all weather-related delays longer than 60 minutes and show the affected flights.
+
+# === Advanced Analytics ===
+
+18. For ExampleAir's Boeing 737-800 fleet, trace the path from aircraft to systems to components to sensors and show the full hierarchy.
+
+19. Which aircraft have both maintenance events AND flight delays? Show the correlation between maintenance issues and operational delays.
+
+20. Analyze sensor readings for engine temperature (EGT) sensors - what is the range of values and which sensors show the highest readings?
