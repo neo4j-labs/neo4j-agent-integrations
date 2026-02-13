@@ -1,51 +1,56 @@
-# Neo4j MCP
+# Google ADK (Agent Development Kit) + Neo4j Integration
 
-Official Model Context Protocol (MCP) server for Neo4j, optimized for use with the Google Development Kit (ADK)
+## Overview
 
-## Links
+**Google ADK** is Google's Agent Development Kit for Vertex AI with agent lifecycle management, deployment capabilities, and structured workflows.
 
-- [NEO4J MCP Documentation](https://neo4j.com/docs/mcp/current/)
-- [Google ADK Documentation](https://google.github.io/adk-docs)
-- [Discord](https://discord.gg/neo4j)
+**Key Features:**
+- Agent lifecycle management
+- Deployment to Vertex AI
+- Interface integrations
+- Structured workflows
+- Python-based development
 
-## Prerequisites
+**Official Resources:**
+- GitHub: https://github.com/google/adk-python
+- Documentation: https://google.github.io/adk-docs/
+- Examples: https://github.com/google/adk-samples
+- Codelab: [Building GraphRAG Agents with ADK](https://codelabs.developers.google.com/neo4j-adk-graphrag-agents#0)
 
-- A running Neo4j database instance; options include [Aura](https://neo4j.com/product/auradb/), [neo4j–desktop](https://neo4j.com/download/) or [self-managed](https://neo4j.com/deployment-center/#gdb-tab).
-- APOC plugin installed in the Neo4j instance.
-- Google API key: To power the gemini model within the ADK agent
+## Extension Points
 
+### 1. Direct Integration (Bespoke)
 
-> **⚠️ Known Issue**: Neo4j version **5.26.18** has a bug in APOC that causes the `get-schema` tool to fail. This issue is fixed in version **5.26.19** and above. If you're using 5.26.18, please upgrade to 5.26.19 or later. See [#136](https://github.com/neo4j/mcp/issues/136) for details.
+```python
+from google.adk.agents import Agent
+from neo4j import GraphDatabase
 
-## Startup Checks & Adaptive Operation
+driver = GraphDatabase.driver(
+    "neo4j+s://demo.neo4jlabs.com:7687",
+    auth=("companies", "companies")
+)
 
-The server performs several pre-flight checks at startup to ensure your environment is correctly configured.
+def query_company(company_name: str) -> dict:
+    """Query company information from Neo4j."""
+    query = """
+        MATCH (o:Organization {name: $company})
+        RETURN o.name as name,
+               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
+        LIMIT 1
+    """
+    records, summary, keys = driver.execute_query(
+        query,
+        company=company_name,
+        database_="companies"
+    )
+    return records[0].data() if records else {}
 
-**STDIO Mode - Mandatory Requirements**
-In STDIO mode, the server verifies the following core requirements. If any of these checks fail (e.g., due to an invalid configuration, incorrect credentials, or a missing APOC installation), the server will not start:
-
-- A valid connection to your Neo4j instance.
-- The ability to execute queries.
-- The presence of the APOC plugin.
-
-**HTTP Mode - Verification Skipped**
-In HTTP mode, startup verification checks are skipped because credentials come from per-request Basic Auth headers. The server starts immediately without connecting to Neo4j at startup.
-
-**Optional Requirements**
-If an optional dependency is missing, the server will start in an adaptive mode. For instance, if the Graph Data Science (GDS) library is not detected in your Neo4j installation, the server will still launch but will automatically disable all GDS-related tools, such as `list-gds-procedures`. All other tools will remain available.
-
-## Installation (Binary)
-
-Releases: https://github.com/neo4j/mcp/releases
-
-1. Download the archive for your OS/arch.
-2. Extract and place `neo4j-mcp` in a directory present in your PATH variables (see examples below).
-
-Mac / Linux:
-
-```bash
-chmod +x neo4j-mcp
-sudo mv neo4j-mcp /usr/local/bin/
+agent = Agent(
+    name="research_agent",
+    model="gemini-2.0-flash-exp",
+    tools=[query_company],
+    instruction="Research companies using Neo4j data"
+)
 ```
 
 Windows (PowerShell / cmd):
