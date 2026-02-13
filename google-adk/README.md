@@ -53,41 +53,196 @@ agent = Agent(
 )
 ```
 
-### 2. Vertex AI Deployment
+Windows (PowerShell / cmd):
 
-Deploy agent with Neo4j integration to Vertex AI:
-
-```bash
-# Configure with Vertex AI
-export GOOGLE_GENAI_USE_VERTEXAI="1"
-export GOOGLE_CLOUD_PROJECT="your-project"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-
-# Run locally
-uv run adk web
-
-# Deploy to Vertex AI
-adk deploy --project your-project --region us-central1
+```powershell
+move neo4j-mcp.exe C:\Windows\System32
 ```
 
-## MCP Authentication
+Verify the neo4j-mcp installation:
 
-⚠️ **Bespoke integrations** - No native MCP support
+```bash
+neo4j-mcp -v
+```
 
-Use Vertex AI Extensions to wrap MCP servers (see [google-gemini-enterprise](../google-gemini-enterprise/))
+Should print the installed version.
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#5-google-gemini-enterprise--agentspace-vertex-ai)
+## Transport Modes
 
-## Resources
+The Neo4j MCP server supports two transport modes:
 
-- **ADK GitHub**: https://github.com/google/adk-python
-- **ADK Docs**: https://google.github.io/adk-docs/
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
+- **STDIO** (default): Standard MCP communication via stdin/stdout for desktop clients (Claude Desktop, VSCode)
+- **HTTP**: RESTful HTTP server with per-request Bearer token or Basic Authentication for web-based clients and multi-tenant scenario.
+In case where the standard HTTP header "Authorization" can't be used, it's possible to configure a custom HTTP header for this scope.
 
-## Status
+### Key Differences
 
-- ⚠️ Bespoke integration (no native MCP)
-- ✅ GCP service accounts
-- ✅ Vertex AI deployment
-- **Effort Score**: 4.2/10
-- **Impact Score**: 6.4/10
+| Aspect               | STDIO                                                      | HTTP                                                                       |
+| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Startup Verification | Required - server verifies APOC, connectivity, queries     | Skipped - server starts immediately                                        |
+| Credentials          | Set via environment variables                              | Per-request via Bearer token or Basic Auth headers                         |
+| Telemetry            | Collects Neo4j version, edition, Cypher version at startup | Reports "unknown-http-mode" - actual version info not available at startup |
+
+See the [Client Setup Guide](docs/CLIENT_SETUP.md) for configuration instructions for both modes.
+
+## TLS/HTTPS Configuration
+
+When using HTTP transport mode, you can enable TLS/HTTPS for secure communication:
+
+### Environment Variables
+
+- `NEO4J_MCP_HTTP_TLS_ENABLED` - Enable TLS/HTTPS: `true` or `false` (default: `false`)
+- `NEO4J_MCP_HTTP_TLS_CERT_FILE` - Path to TLS certificate file (required when TLS is enabled)
+- `NEO4J_MCP_HTTP_TLS_KEY_FILE` - Path to TLS private key file (required when TLS is enabled)
+- `NEO4J_MCP_HTTP_PORT` - HTTP server port (default: `443` when TLS enabled, `80` when TLS disabled)
+- `NEO4J_HTTP_AUTH_HEADER_NAME` - Name of the HTTP header to read auth credentials from (default: `Authorization`)
+
+### Security Configuration
+
+- **Minimum TLS Version**: Hardcoded to TLS 1.2 (allows TLS 1.3 negotiation)
+- **Cipher Suites**: Uses Go's secure default cipher suites
+- **Default Port**: Automatically uses port 443 when TLS is enabled (standard HTTPS port)
+
+### Example Configuration
+
+```bash
+export NEO4J_URI="bolt://localhost:7687"
+export NEO4J_TRANSPORT_MODE="http"
+export NEO4J_MCP_HTTP_TLS_ENABLED="true"
+export NEO4J_MCP_HTTP_TLS_CERT_FILE="/path/to/cert.pem"
+export NEO4J_MCP_HTTP_TLS_KEY_FILE="/path/to/key.pem"
+
+neo4j-mcp
+# Server will listen on https://127.0.0.1:443 by default
+```
+
+**Production Usage**: Use certificates from a trusted Certificate Authority (e.g., Let's Encrypt, or your organisation) for production deployments.
+
+For detailed instructions on certificate generation, testing TLS, and production deployment, see [CONTRIBUTING.md](CONTRIBUTING.md#tlshttps-configuration).
+
+## Configuration Options
+
+The `neo4j-mcp` server can be configured using environment variables or CLI flags. CLI flags take precedence over environment variables.
+
+### Environment Variables
+
+See the [Client Setup Guide](docs/CLIENT_SETUP.md) for configuration examples.
+
+### CLI Flags
+
+You can override any environment variable using CLI flags:
+
+```bash
+neo4j-mcp --neo4j-uri "bolt://localhost:7687" \
+          --neo4j-username "neo4j" \
+          --neo4j-password "password" \
+          --neo4j-database "neo4j" \
+          --neo4j-read-only false \
+          --neo4j-telemetry true
+```
+
+Available flags:
+
+- `--neo4j-uri` - Neo4j connection URI (overrides NEO4J_URI)
+- `--neo4j-username` - Database username (overrides NEO4J_USERNAME)
+- `--neo4j-password` - Database password (overrides NEO4J_PASSWORD)
+- `--neo4j-database` - Database name (overrides NEO4J_DATABASE)
+- `--neo4j-read-only` - Enable read-only mode: `true` or `false` (overrides NEO4J_READ_ONLY)
+- `--neo4j-telemetry` - Enable telemetry: `true` or `false` (overrides NEO4J_TELEMETRY)
+- `--neo4j-schema-sample-size` - Modify the sample size used to infer the Neo4j schema
+- `--neo4j-transport-mode` - Transport mode: `stdio` or `http` (overrides NEO4J_TRANSPORT_MODE)
+- `--neo4j-http-host` - HTTP server host (overrides NEO4J_MCP_HTTP_HOST)
+- `--neo4j-http-port` - HTTP server port (overrides NEO4J_MCP_HTTP_PORT)
+- `--neo4j-http-tls-enabled` - Enable TLS/HTTPS: `true` or `false` (overrides NEO4J_MCP_HTTP_TLS_ENABLED)
+- `--neo4j-http-tls-cert-file` - Path to TLS certificate file (overrides NEO4J_MCP_HTTP_TLS_CERT_FILE)
+- `--neo4j-http-tls-key-file` - Path to TLS private key file (overrides NEO4J_MCP_HTTP_TLS_KEY_FILE)
+- `--neo4j-http-auth-header-name` - Name of the HTTP header to read auth credentials from (overrides NEO4J_AUTH_HEADER_NAME)
+
+Use `neo4j-mcp --help` to see all available options.
+
+## Client Configuration
+
+To configure MCP clients (VSCode, Claude Desktop, etc.) to use the Neo4j MCP server, see:
+
+📘 **[Client Setup Guide](docs/CLIENT_SETUP.md)** – Complete configuration for STDIO and HTTP modes
+
+## Tools & Usage
+
+Provided tools:
+
+| Tool                  | ReadOnly | Purpose                                              | Notes                                                                                                                          |
+| --------------------- | -------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `get-schema`          | `true`   | Introspect labels, relationship types, property keys | Provide valuable context to the client LLMs.                                                                                   |
+| `read-cypher`         | `true`   | Execute arbitrary Cypher (read mode)                 | Rejects writes, schema/admin operations, and PROFILE queries. Use `write-cypher` instead.                                      |
+| `write-cypher`        | `false`  | Execute arbitrary Cypher (write mode)                | **Caution:** LLM-generated queries could cause harm. Use only in development environments. Disabled if `NEO4J_READ_ONLY=true`. |
+| `list-gds-procedures` | `true`   | List GDS procedures available in the Neo4j instance  | Help the client LLM to have a better visibility on the GDS procedures available                                                |
+
+### Readonly mode flag
+
+Enable readonly mode by setting the `NEO4J_READ_ONLY` environment variable to `true` (for example, `"NEO4J_READ_ONLY": "true"`). Accepted values are `true` or `false` (default: `false`).
+
+You can also override this setting using the `--neo4j-read-only` CLI flag:
+
+```bash
+neo4j-mcp --neo4j-uri "bolt://localhost:7687" --neo4j-username "neo4j" --neo4j-password "password" --neo4j-read-only true
+```
+
+When enabled, write tools (for example, `write-cypher`) are not exposed to clients.
+
+### Query Classification
+
+The `read-cypher` tool performs an extra round-trip to the Neo4j database to guarantee read-only operations.
+
+Important notes:
+
+- **Write operations**: `CREATE`, `MERGE`, `DELETE`, `SET`, etc., are treated as non-read queries.
+- **Admin queries**: Commands like `SHOW USERS`, `SHOW DATABASES`, etc., are treated as non-read queries and must use `write-cypher` instead.
+- **Profile queries**: `EXPLAIN PROFILE` queries are treated as non-read queries, even if the underlying statement is read-only.
+- **Schema operations**: `CREATE INDEX`, `DROP CONSTRAINT`, etc., are treated as non-read queries.
+
+## Example Natural Language Prompts
+
+Below are some example prompts you can try in Copilot or any other MCP client:
+
+- "What does my Neo4j instance contain? List all node labels, relationship types, and property keys."
+- "Find all Person nodes and their relationships in my Neo4j instance."
+- "Create a new User node with a name 'John' in my Neo4j instance."
+
+## Security tips:
+
+- Use a restricted Neo4j user for exploration.
+- Review generated Cypher before executing in production databases.
+
+## Logging
+
+The server uses structured logging with support for multiple log levels and output formats.
+
+### Configuration
+
+**Log Level** (`NEO4J_LOG_LEVEL`, default: `info`)
+
+Controls the verbosity of log output. Supports all [MCP log levels](https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging#log-levels): `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
+
+**Log Format** (`NEO4J_LOG_FORMAT`, default: `text`)
+
+Controls the output format:
+
+- `text` - Human-readable text format (default)
+- `json` - Structured JSON format (useful for log aggregation)
+
+## Telemetry
+
+By default, `neo4j-mcp` collects anonymous usage data to help us improve the product.
+This includes information like the tools being used, the operating system, and CPU architecture.
+We do not collect any personal or sensitive information.
+
+To disable telemetry, set the `NEO4J_TELEMETRY` environment variable to `"false"`. Accepted values are `true` or `false` (default: `true`).
+
+You can also use the `--neo4j-telemetry` CLI flag to override this setting.
+
+## Documentation
+
+📘 **[Client Setup Guide](docs/CLIENT_SETUP.md)** – Configure VSCode, Claude Desktop, and other MCP clients (STDIO and HTTP modes)
+📚 **[Contributing Guide](CONTRIBUTING.md)** – Contribution workflow, development environment, mocks & testing
+
+Issues / feedback: open a GitHub issue with reproduction details (omit sensitive data).
