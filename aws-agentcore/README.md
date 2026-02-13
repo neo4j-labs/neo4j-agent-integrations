@@ -5,6 +5,7 @@
 **AWS AgentCore Bedrock** is Amazon's framework-agnostic agent runtime and orchestration platform, launched GA in October 2025. It provides 8-hour execution windows, episodic memory, and comprehensive observability for production agent deployments.
 
 **Key Features:**
+
 - Framework-agnostic runtime (supports any Python/JavaScript framework)
 - MCP + A2A Protocol support (native)
 - Episodic memory with automatic context management
@@ -14,6 +15,7 @@
 - Built-in evaluations
 
 **Official Resources:**
+
 - Website: https://aws.amazon.com/bedrock/agentcore/
 - Documentation: https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html
 - MCP Runtime: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html
@@ -26,6 +28,7 @@
 AgentCore has **native first-class MCP support** with dedicated runtime and gateway components.
 
 **MCP Runtime:**
+
 ```bash
 # Configure MCP server
 agentcore configure -e my_neo4j_mcp.py --protocol MCP
@@ -80,17 +83,20 @@ Define Neo4j tools using AWS Smithy IDL for type-safe integration.
 ✅ **API Keys** - AWS Access Keys (not recommended for production M2M)
 
 ✅ **IAM Roles and Policies** (Primary for M2M)
+
 - Service-Linked Roles with automatic workload identity (Oct 2025+)
 - Cross-account role assumption
 - Resource-based policies
 
 ✅ **M2M OIDC**
+
 - IAM OIDC Provider integration
 - Amazon Cognito M2M flows (client credentials grant)
 - OAuth 2.1 with Dynamic Client Registration (DCR)
 - JWT bearer token validation
 
 **Other Mechanisms:**
+
 - **SigV4**: AWS Signature Version 4 signing
 - **Workload Identity**: Automatic OAuth provisioning for MCP runtimes
 - **Resource Policies**: Fine-grained access control
@@ -108,6 +114,7 @@ agentcore configure -e neo4j_mcp.py --protocol MCP
 ```
 
 **Benefits:**
+
 - Eliminates user account dependencies
 - Automatic token refresh
 - Supports OAuth M2M with Auth0, Cognito
@@ -116,23 +123,39 @@ agentcore configure -e neo4j_mcp.py --protocol MCP
 ### AgentCore Gateway Authentication
 
 **Inbound (to Gateway):**
+
 - OAuth 2.0 resource server
 - Client credentials flow (2LO) for M2M
 - Multiple approved client IDs and audiences
 - Supports Amazon Cognito, Auth0, Okta, custom OAuth providers
 
 **Outbound (Gateway to backends):**
+
 - **Lambda/Smithy targets**: IAM authorization
 - **OpenAPI targets**: OAuth, API keys, custom headers
 - **MCP Server targets**: Bearer tokens, OAuth
 
 **Reference**: [mcp-auth-support.md](../mcp-auth-support.md#6-aws-agentcore-bedrock-strands-agents)
 
-## Industry Research Agent Example
+## Quick Start: Data Science Notebook
+
+    For a hands-on, interactive guide using the **Neo4j Demo Database**, check out the Jupyter Notebook:
+
+    👉 **[agent_data_science.ipynb](agent_data_science.ipynb)**
+
+    It covers:
+    - Connecting to a public Neo4j instance
+    - Defining an MCP server inline with Python
+    - Simulating AgentCore tool execution locally
+
+    ---
+
+    ## Industry Research Agent Example
 
 ### Scenario
 
 Deploy a multi-agent investment research system on AWS infrastructure using AgentCore to orchestrate:
+
 1. Neo4j MCP server for company data queries
 2. Vector search over news articles
 3. Analyst synthesis and reporting
@@ -162,6 +185,7 @@ Deploy a multi-agent investment research system on AWS infrastructure using Agen
 ### Dataset Setup
 
 **Company News Knowledge Graph:**
+
 ```python
 import os
 
@@ -389,6 +413,7 @@ session = agentcore.create_session(
 ### Workarounds
 
 **Connection Pooling:**
+
 ```python
 # Use singleton pattern for Neo4j driver
 _driver = None
@@ -401,6 +426,7 @@ def get_driver():
 ```
 
 **Result Pagination:**
+
 ```python
 @server.tool()
 def query_companies_paginated(skip: int = 0, limit: int = 100):
@@ -418,6 +444,7 @@ def query_companies_paginated(skip: int = 0, limit: int = 100):
 ### 1. Neo4j as Episodic Memory Backend
 
 Replace DynamoDB with Neo4j for richer episodic memory:
+
 - Store conversation graphs
 - Track entity relationships across sessions
 - Enable semantic memory retrieval
@@ -425,6 +452,7 @@ Replace DynamoDB with Neo4j for richer episodic memory:
 ### 2. AgentCore Gateway + API Management
 
 Front Neo4j MCP server with API Gateway:
+
 - Rate limiting
 - API key management
 - Custom authentication flows
@@ -432,6 +460,7 @@ Front Neo4j MCP server with API Gateway:
 ### 3. EventBridge Integration
 
 Trigger agents based on Neo4j CDC events:
+
 ```
 Neo4j CDC → EventBridge → AgentCore Agent → Take action
 ```
@@ -439,6 +468,7 @@ Neo4j CDC → EventBridge → AgentCore Agent → Take action
 ### 4. Step Functions Orchestration
 
 Use Step Functions for complex multi-agent workflows:
+
 ```
 Step Functions State Machine
   ├─> AgentCore Agent 1 (Data Collection)
@@ -449,6 +479,7 @@ Step Functions State Machine
 ## Deployment Guide
 
 ### Prerequisites
+
 - AWS Account with Bedrock access
 - Neo4j database (demo or production)
 - AWS CLI and CDK installed
@@ -456,22 +487,26 @@ Step Functions State Machine
 ### Steps
 
 1. **Package MCP Server**
+
 ```bash
 pip install mcp neo4j -t lambda/
 cp neo4j_mcp_server.py lambda/
 ```
 
 2. **Deploy Infrastructure**
+
 ```bash
 cdk deploy Neo4jResearchStack
 ```
 
 3. **Configure AgentCore**
+
 ```bash
 agentcore configure -e lambda/neo4j_mcp_server.py --protocol MCP
 ```
 
 4. **Test**
+
 ```bash
 python research_agent.py
 ```
