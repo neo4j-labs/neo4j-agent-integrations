@@ -5,3 +5,4 @@ mcp-auth-support.md
 ai-agent-platforms.csv
 neo4j-diffbot-gcp-adk-mcptoolbox.md
 CLAUDE.md
+__pycache__
