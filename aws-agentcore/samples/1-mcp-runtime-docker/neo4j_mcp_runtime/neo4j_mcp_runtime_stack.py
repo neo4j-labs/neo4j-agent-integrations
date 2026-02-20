@@ -109,7 +109,6 @@ class Neo4jMCPRuntimeStack(Stack):
                 "NEO4J_URI": "neo4j+s://demo.neo4jlabs.com:7687",
                 "NEO4J_DATABASE": "companies",
                 "NEO4J_READ_ONLY": "true",
-                # "NEO4J_LOG_LEVEL": "debug",
                 "NEO4J_LOG_FORMAT": "text",
                 "NEO4J_HTTP_AUTH_HEADER_NAME": auth_header_name,
                 "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING": "true",

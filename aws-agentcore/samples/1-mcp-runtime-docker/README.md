@@ -136,7 +136,7 @@ Credentials (`NEO4J_USERNAME`, `NEO4J_PASSWORD`) are NOT stored in the container
 ### Prerequisites
 
 - AWS Account with Bedrock and AgentCore access
-- AWS CLI configured with appropriate credentials (`aws login`)
+- AWS CLI configured with appropriate credentials
 - AWS CDK installed (`npm install -g aws-cdk`)
 - Python 3.9+
 
@@ -165,11 +165,6 @@ The sample uses the public companies demo database by default. Replace these val
 ### Step 4: Deploy Infrastructure
 
 ```bash
-# Set the AWS region
-CDK_DEFAULT_REGION=eu-north-1
-# Get the AWS account ID for the current AWS CLI profile
-CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-
 # Bootstrap CDK (first time only)
 cdk bootstrap
 
@@ -198,7 +193,6 @@ It uses `mcp_proxy_for_aws` and `strands` to connect via IAM-signed requests and
 header for Neo4j credentials.
 
 ```python
-region = "eu-north-1"
 arn = "<Neo4jMcpRuntimeArn from CDK output>"
 neo4j_user = "companies"
 neo4j_password = "companies"
