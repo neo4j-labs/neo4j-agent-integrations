@@ -1,0 +1,3 @@
+fastmcp
+boto3
+neo4j
