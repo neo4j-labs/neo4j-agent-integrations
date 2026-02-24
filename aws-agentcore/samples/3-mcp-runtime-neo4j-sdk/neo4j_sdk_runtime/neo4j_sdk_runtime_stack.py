@@ -178,7 +178,7 @@ class Neo4jSdkRuntimeStack(Stack):
             ),
             environment_variables={
                 "SECRET_ARN": neo4j_secret.secret_arn,
-                # AgentCore Runtime does not set the region corectly, so we do it here
+                # AgentCore Runtime does not set the region correctly, so we do it here
                 "AWS_DEFAULT_REGION": Aws.REGION,
             },
         )
