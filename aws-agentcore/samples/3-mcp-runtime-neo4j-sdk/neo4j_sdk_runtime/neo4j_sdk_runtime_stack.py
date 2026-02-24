@@ -1,5 +1,6 @@
 import os
 from aws_cdk import (
+    Aws,
     Stack,
     CfnOutput,
     SecretValue,
@@ -50,16 +51,25 @@ class Neo4jSdkRuntimeStack(Stack):
         )
 
         # 2. Create a Secrets Manager secret for Neo4j connection credentials.
-        #    After deployment, populate the secret with keys: NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+        #    Default values are supplied via CDK context (cdk.json) and can be
+        #    overridden at deployment time:
+        #      cdk deploy -c neo4j_uri=neo4j+s://... -c neo4j_password=...
+        #    In production, pre-create the secret or use ``Secret.from_secret_name_v2``
+        #    and manage the value outside CDK entirely.
+        neo4j_uri = self.node.try_get_context("neo4j_uri")
+        neo4j_username = self.node.try_get_context("neo4j_username")
+        neo4j_password = self.node.try_get_context("neo4j_password")
+        neo4j_database = self.node.try_get_context("neo4j_database")
+
         neo4j_secret = secretsmanager.Secret(
             self, "Neo4jSecret",
             secret_name="neo4j-sdk-runtime/neo4j-credentials",
-            description="Neo4j connection credentials (NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD)",
+            description="Neo4j connection credentials (NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE)",
             secret_object_value={
-                "NEO4J_URI": SecretValue.unsafe_plain_text("neo4j+s://demo.neo4jlabs.com:7687"),
-                "NEO4J_USERNAME": SecretValue.unsafe_plain_text("companies"),
-                "NEO4J_PASSWORD": SecretValue.unsafe_plain_text("companies"),
-                "NEO4J_DATABASE": SecretValue.unsafe_plain_text("companies"),
+                "NEO4J_URI": SecretValue.unsafe_plain_text(neo4j_uri),
+                "NEO4J_USERNAME": SecretValue.unsafe_plain_text(neo4j_username),
+                "NEO4J_PASSWORD": SecretValue.unsafe_plain_text(neo4j_password),
+                "NEO4J_DATABASE": SecretValue.unsafe_plain_text(neo4j_database),
             },
         )
 
@@ -83,9 +93,14 @@ class Neo4jSdkRuntimeStack(Stack):
                 ),
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
-                    actions=["logs:DescribeLogStreams", "logs:CreateLogGroup"],
+                    actions=["logs:DescribeLogStreams"],
                     resources=[
                         f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/bedrock-agentcore/runtimes/*"],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["logs:CreateLogGroup"],
+                    resources=["*"],
                 ),
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -163,6 +178,8 @@ class Neo4jSdkRuntimeStack(Stack):
             ),
             environment_variables={
                 "SECRET_ARN": neo4j_secret.secret_arn,
+                # AgentCore Runtime does not set the region corectly, so we do it here
+                "AWS_DEFAULT_REGION": Aws.REGION,
             },
         )
 

@@ -9,6 +9,7 @@ Instead of using a pre-built Docker image, the MCP server is written as a Python
 
 - **Code-Based Deployment**: Python MCP server deployed directly from source via S3 — no Docker image required
 - **FastMCP Framework**: Lightweight MCP server built with FastMCP for streamable HTTP transport
+- **Pydantic Models**: Typed response models for organizations, industry categories, and articles
 - **Neo4j Python Driver**: Direct Neo4j connectivity using the official Python driver
 - **Secrets Manager Integration**: Neo4j credentials stored securely in AWS Secrets Manager
 - **IAM Authentication**: Uses AWS IAM permissions for secure, public runtime access
@@ -33,7 +34,8 @@ Instead of using a pre-built Docker image, the MCP server is written as a Python
 
 2. **Custom MCP Server ([mcp_app/mcp_server.py](mcp_app/mcp_server.py))**
    - Built with FastMCP
-   - Streamable HTTP transport
+   - Streamable HTTP transport (stateless)
+   - Pydantic models for typed tool responses (`Organization`, `IndustryCategory`, `Article`)
    - Neo4j Python driver for database access
    - Credentials loaded from Secrets Manager at startup
 
@@ -65,7 +67,7 @@ The sample uses a Python MCP server in [mcp_app/mcp_server.py](mcp_app/mcp_serve
 
 **How It Works:**
 
-1. CDK bundles `mcp_app/` using a Docker build step with `uv` to install dependencies (`fastmcp`, `boto3`, `neo4j`) for `linux/aarch64`
+1. CDK bundles `mcp_app/` using a Docker build step with `uv` to install dependencies (`fastmcp`, `boto3`, `neo4j`, `pydantic`) for `linux/aarch64`
 2. The bundled package is uploaded to S3 as a CDK asset
 3. The `CfnRuntime` resource references the S3 location with `PYTHON_3_13` runtime and `mcp_server.py` as the entry point
 4. At startup, the MCP server loads Neo4j credentials from Secrets Manager using the `SECRET_ARN` environment variable
@@ -103,9 +105,11 @@ Neo4j Database
 
 ### MCP Tools Available
 
-The custom MCP server exposes the following tool:
+The custom MCP server exposes the following tools:
 
-- **`get_organizations(limit: int)`** — Returns up to `limit` organizations from the Neo4j database as a list of dictionaries
+- **`get_organizations(limit: int)`** — Returns up to `limit` organizations from the Neo4j database. Each organization includes properties such as `name`, `summary`, `revenue`, `nbrEmployees`, `isPublic`, `isDissolved`, and `motto`.
+- **`get_industry_categories(limit: int)`** — Returns up to `limit` industry category names from the Neo4j database.
+- **`get_articles_by_organization(name: str)`** — Returns articles that mention the given organization. Each article includes properties such as `title`, `author`, `date`, `sentiment`, `siteName`, and `summary`.
 
 You can extend [mcp_app/mcp_server.py](mcp_app/mcp_server.py) with additional `@mcp.tool()` decorated functions to add more tools.
 
@@ -114,8 +118,8 @@ You can extend [mcp_app/mcp_server.py](mcp_app/mcp_server.py) with additional `@
 The CDK deployment ([neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py](neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py)) creates:
 
 - **S3 Code Asset** — `mcp_app/` bundled with dependencies via `uv` and uploaded to S3
-- **Secrets Manager Secret** — Stores Neo4j connection credentials (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`)
-- **IAM Role** — Permissions for S3 code access, Secrets Manager, CloudWatch Logs, X-Ray, and workload identity
+- **Secrets Manager Secret** — Stores Neo4j connection credentials, values sourced from CDK context (`cdk.json` or `-c` overrides)
+- **IAM Role** — Permissions for S3 code access, Secrets Manager, CloudWatch Logs, X-Ray, CloudWatch Metrics, and workload identity
 - **AgentCore `CfnRuntime`** — Code-based deployment with MCP protocol, public network mode, and IAM auth
 
 ### Environment Variables
@@ -123,6 +127,7 @@ The CDK deployment ([neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py](neo4j_sdk_run
 The AgentCore Runtime is configured with:
 
 - `SECRET_ARN` — ARN of the Secrets Manager secret containing Neo4j credentials
+- `AWS_DEFAULT_REGION` — AWS region (set explicitly for AgentCore compatibility)
 
 The Secrets Manager secret contains:
 
@@ -155,21 +160,28 @@ pip install -r requirements.txt
 
 ### Step 3: Configure Neo4j Credentials
 
-Edit [neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py](neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py) to adjust the Neo4j connection settings in the Secrets Manager secret if needed:
+Neo4j connection credentials are supplied via CDK context. Default values are provided in [cdk.json](cdk.json):
 
-```python
-neo4j_secret = secretsmanager.Secret(
-    self, "Neo4jSecret",
-    secret_object_value={
-        "NEO4J_URI": SecretValue.unsafe_plain_text("neo4j+s://demo.neo4jlabs.com:7687"),
-        "NEO4J_USERNAME": SecretValue.unsafe_plain_text("companies"),
-        "NEO4J_PASSWORD": SecretValue.unsafe_plain_text("companies"),
-        "NEO4J_DATABASE": SecretValue.unsafe_plain_text("companies"),
-    },
-)
+```json
+{
+  "context": {
+    "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
+    "neo4j_username": "companies",
+    "neo4j_password": "companies",
+    "neo4j_database": "companies"
+  }
+}
 ```
 
-The sample uses the public companies demo database by default. Replace these values for your own Neo4j instance.
+The sample uses the public companies demo database by default. To use your own Neo4j instance, either edit the values in `cdk.json` or override them at deploy time:
+
+```bash
+cdk deploy Neo4jSdkRuntimeStack \
+  -c neo4j_uri=neo4j+s://your-instance:7687 \
+  -c neo4j_username=neo4j \
+  -c neo4j_password=your-password \
+  -c neo4j_database=neo4j
+```
 
 ### Step 4: Deploy Infrastructure
 
