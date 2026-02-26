@@ -6,7 +6,7 @@ from stacks.agent_gateway_stack import AgentCoreGatewayStack
 app = cdk.App()
 
 AgentCoreGatewayStack(
-    app, "AgentCoreGatewayStack",
+    app, "Neo4jAgentCoreGatewayStack",
     env=cdk.Environment(account=os.getenv('CDK_DEFAULT_ACCOUNT'), region=os.getenv('CDK_DEFAULT_REGION')),
 )
 

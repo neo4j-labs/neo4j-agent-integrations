@@ -1,0 +1,14 @@
+{
+  "availability-zones:account=504028651370:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "hosted-zone:account=504028651370:domainName=development.neo4jsandbox.com:region=us-east-1": {
+    "Id": "/hostedzone/Z08576941KXQ74KFPOCGB",
+    "Name": "development.neo4jsandbox.com."
+  }
+}

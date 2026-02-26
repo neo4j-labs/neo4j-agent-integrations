@@ -13,6 +13,9 @@
     ]
   },
   "context": {
+    "domain_name": "",
+    "subdomain": "mcp",
+    "certificate_arn": "",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
@@ -25,7 +28,6 @@
     "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
     "@aws-cdk/aws-sns-subscriptions:restrictSqsDescryption": true,
     "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,
-    "@aws-cdk/core:enableStackNameDuplicates": true,
     "@aws-cdk/core:stackRelativeExports": true,
     "@aws-cdk/aws-rds:databaseProxyUniqueResourceName": true,
     "@aws-cdk/aws-lambda:recognizeVersionProps": true,

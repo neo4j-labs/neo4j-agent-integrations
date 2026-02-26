@@ -10,13 +10,39 @@ from aws_cdk import (
     aws_secretsmanager as secretsmanager,
     aws_lambda as lambda_,
     aws_iam as iam,
+    aws_route53 as route53,
+    aws_route53_targets as route53_targets,
+    aws_certificatemanager as acm,
+    aws_bedrockagentcore as bedrockagentcore,
 )
 from constructs import Construct
+
 
 class AgentCoreGatewayStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # ── Domain configuration (set via CDK context) ──────────────────────
+        # Set in cdk.json "context" or pass on the CLI:
+        #   cdk deploy -c domain_name=example.com -c subdomain=mcp -c certificate_arn=arn:aws:acm:...
+        # The resulting MCP endpoint will be: https://<subdomain>.<domain_name>/mcp
+        domain_name: str = self.node.try_get_context("domain_name")
+        subdomain: str = self.node.try_get_context("subdomain") or "mcp"
+        certificate_arn: str = self.node.try_get_context("certificate_arn")
+
+        if not domain_name:
+            raise ValueError(
+                "CDK context variable 'domain_name' is required. "
+                "Pass it via cdk.json or: cdk deploy -c domain_name=example.com"
+            )
+        if not certificate_arn:
+            raise ValueError(
+                "CDK context variable 'certificate_arn' is required. "
+                "Pass it via cdk.json or: cdk deploy -c certificate_arn=arn:aws:acm:..."
+            )
+
+        mcp_fqdn = f"{subdomain}.{domain_name}"
 
         # 1. VPC definition
         # Creating a VPC with public subnets only for cost efficiency in this sample.
@@ -54,25 +80,56 @@ class AgentCoreGatewayStack(Stack):
             removal_policy=RemovalPolicy.DESTROY  # Clean up secret when stack is destroyed
         )
 
-        # 4. Fargate Service (Neo4j MCP)
-        # Using the ApplicationLoadBalancedFargateService pattern for simplicity
+        # 4a. Route53 hosted zone lookup
+        hosted_zone = route53.HostedZone.from_lookup(
+            self, "HostedZone",
+            domain_name=domain_name,
+        )
+
+        # 4b. Import existing ACM certificate by ARN (set via 'certificate_arn' context key).
+        # The certificate must cover the subdomain (wildcard *.example.com or exact mcp.example.com)
+        # and must reside in the same region as the stack.
+        certificate = acm.Certificate.from_certificate_arn(
+            self, "AlbCertificate",
+            certificate_arn=certificate_arn,
+        )
+
+        # 4c. Fargate Service (Neo4j MCP) with HTTPS listener
+        # Using the ApplicationLoadBalancedFargateService pattern for simplicity.
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
             self, "Neo4jMcpService",
             cluster=cluster,
             cpu=256,
-            memory_limit_mib=512,
+            memory_limit_mib=1024,
             desired_count=1,
+            listener_port=443,
+            certificate=certificate,
+            domain_name=mcp_fqdn,
+            domain_zone=hosted_zone,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
-                image=ecs.ContainerImage.from_registry("mcp/server/neo4j:latest"),
+                image=ecs.ContainerImage.from_registry("mcp/neo4j:latest"),
                 container_port=8080,
                 environment={
                     "NEO4J_TRANSPORT_MODE": "http",
                     "NEO4J_MCP_HTTP_PORT": "8080",
+                    "NEO4J_MCP_HTTP_HOST": "0.0.0.0",
+                    "NEO4J_READ_ONLY": "true",
+                    "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING": "true",
+                },
+                secrets={
+                    "NEO4J_URI": ecs.Secret.from_secrets_manager(neo4j_secret, "NEO4J_URI"),
+                    "NEO4J_DATABASE": ecs.Secret.from_secrets_manager(neo4j_secret, "NEO4J_DATABASE"),
                 },
                 enable_logging=True
             ),
             public_load_balancer=True,
-            assign_public_ip=True # Required because we are in Public Subnets
+            assign_public_ip=True  # Required because we are in Public Subnets
+        )
+
+        # Configure ALB health check to use /mcp endpoint
+        fargate_service.target_group.configure_health_check(
+            path="/mcp",
+            healthy_http_codes="200-499"
         )
 
         # 5. Lambda Request Interceptor
@@ -90,21 +147,87 @@ class AgentCoreGatewayStack(Stack):
         # Grant permission to read the secret
         neo4j_secret.grant_read(interceptor_lambda)
 
-        # 6. Outputs
+        # 6. AgentCore MCP Gateway
+        # IAM Role assumed by the AgentCore Gateway service
+        gateway_role = iam.Role(
+            self, "GatewayRole",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            description="Role assumed by AgentCore Gateway",
+        )
+
+        # MCP Gateway with Lambda Request Interceptor
+        mcp_gateway = bedrockagentcore.CfnGateway(
+            self, "McpGateway",
+            name="neo4j-mcp-gateway",
+            authorizer_type="NONE",
+            protocol_type="MCP",
+            role_arn=gateway_role.role_arn,
+            description="AgentCore MCP Gateway for Neo4j",
+            protocol_configuration=bedrockagentcore.CfnGateway.GatewayProtocolConfigurationProperty(
+                mcp=bedrockagentcore.CfnGateway.MCPGatewayConfigurationProperty(
+                    supported_versions=["2025-03-26"],
+                )
+            ),
+            interceptor_configurations=[
+                bedrockagentcore.CfnGateway.GatewayInterceptorConfigurationProperty(
+                    interception_points=["REQUEST"],
+                    interceptor=bedrockagentcore.CfnGateway.InterceptorConfigurationProperty(
+                        lambda_=bedrockagentcore.CfnGateway.LambdaInterceptorConfigurationProperty(
+                            arn=interceptor_lambda.function_arn,
+                        )
+                    ),
+                )
+            ],
+        )
+
+        # 7. Gateway Target — register the Neo4j MCP custom domain as target
+        mcp_gateway_target = bedrockagentcore.CfnGatewayTarget(
+            self, "McpGatewayTarget",
+            gateway_identifier=mcp_gateway.attr_gateway_identifier,
+            name="neo4j-mcp",
+            description="Neo4j MCP server running on Fargate behind ALB",
+            target_configuration=bedrockagentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=bedrockagentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    mcp_server=bedrockagentcore.CfnGatewayTarget.McpServerTargetConfigurationProperty(
+                        endpoint=f"https://{mcp_fqdn}/mcp",
+                    )
+                )
+            ),
+        )
+
+        # 8. Outputs
+        CfnOutput(
+            self, "McpFqdn",
+            value=mcp_fqdn,
+            description="Custom domain for the Neo4j MCP Service"
+        )
+
         CfnOutput(
             self, "Neo4jSecretArn",
             value=neo4j_secret.secret_arn,
             description="ARN of the Neo4j credentials secret"
         )
-        
+
         CfnOutput(
             self, "InterceptorLambdaArn",
             value=interceptor_lambda.function_arn,
             description="ARN of the Request Interceptor Lambda"
         )
-        
+
         CfnOutput(
             self, "McpServiceUrl",
-            value=f"http://{fargate_service.load_balancer.load_balancer_dns_name}",
-            description="URL of the Neo4j MCP Service (ALB)"
+            value=f"https://{mcp_fqdn}",
+            description="HTTPS URL of the Neo4j MCP Service"
+        )
+
+        CfnOutput(
+            self, "GatewayArn",
+            value=mcp_gateway.attr_gateway_arn,
+            description="ARN of the AgentCore MCP Gateway"
+        )
+
+        CfnOutput(
+            self, "GatewayUrl",
+            value=mcp_gateway.attr_gateway_url,
+            description="URL of the AgentCore MCP Gateway"
         )

@@ -10,7 +10,6 @@ This sample demonstrates how to use AWS AgentCore Gateway to connect to external
 - **Lambda Request Interceptor**: Translates OAuth tokens to Neo4j Basic Auth headers
 - **Official Neo4j MCP**: Uses unmodified official Docker image in HTTP mode
 - **ECS Fargate Deployment**: Serverless container orchestration
-- **Multi-MCP Architecture**: Neo4j MCP + Agent Memory MCP working together
 - **OAuth Authentication**: Secure M2M authentication for external clients
 
 **Use Cases:**
@@ -29,25 +28,26 @@ This sample demonstrates how to use AWS AgentCore Gateway to connect to external
 1. **AWS AgentCore Gateway**
    - Reverse proxy for MCP servers
    - Inbound OAuth 2.0 validation
-   - Lambda Interceptor execution
+   - Lambda Interceptor execution (REQUEST interception point)
 
-2. **Request Interceptor Lambda**
+2. **Gateway Target**
+   - Registers the Neo4j MCP ALB as an MCP server target
+   - Automatically linked to the Gateway via `gateway_identifier`
+
+3. **Request Interceptor Lambda**
    - Executes before request reaches backend
    - Retrieves Neo4j credentials from Secrets Manager
    - Replaces OAuth `Authorization` header with `Basic <user:pass>`
 
-3. **Application Load Balancer (Public)**
-   - Publicly accessible endpoint (required for AgentCore Gateway)
-   - Distributes traffic to Fargate tasks
+4. **Application Load Balancer (Public, HTTPS)**
+   - Terminates TLS using an ACM certificate
+   - Custom domain registered via Route53 A-record alias
+   - Distributes traffic to Fargate tasks on port 443
 
-4. **Neo4j MCP Container (Official)**
-   - Runs `mcp/server/neo4j` image
+5. **Neo4j MCP Container (Official)**
+   - Runs `mcp/neo4j:latest` image
    - Configured in HTTP mode (`NEO4J_TRANSPORT_MODE=http`)
    - Stateless authentication via per-request Basic Auth
-
-5. **Agent Memory MCP Container (Custom)**
-   - Custom MCP server for context graph operations
-   - Manages its own authentication
 
 6. **AWS Secrets Manager**
    - Stores Neo4j credentials
@@ -86,29 +86,38 @@ Official Neo4j MCP (HTTP Mode)
 
 ### Fargate Service Architecture
 
-The ECS cluster runs two Fargate services:
-
 **Neo4j MCP Service:**
 
-- Image: `mcp/server/neo4j:latest`
-- Env Vars:
-  - `NEO4J_URI`: `bolt://...`
+- Image: `mcp/neo4j:latest`
+- Environment variables:
   - `NEO4J_TRANSPORT_MODE`: `http`
-  - `NEO4J_HTTP_PORT`: `3000`
-- **Important**: No credentials in environment variables
-
-**Agent Memory Service:**
-
-- Image: Custom built image
-- Env Vars: `NEO4J_URI`, plus internal logic for auth
+  - `NEO4J_MCP_HTTP_PORT`: `8080`
+  - `NEO4J_MCP_HTTP_HOST`: `0.0.0.0`
+  - `NEO4J_READ_ONLY`: `true`
+- Secrets (from Secrets Manager):
+  - `NEO4J_URI`, `NEO4J_DATABASE`
 
 ### Load Balancer Configuration
 
-Since AgentCore Gateway currently requires public endpoints for MCP registration, an internet-facing Application Load Balancer is used.
+AgentCore Gateway requires HTTPS endpoints for MCP target registration, so the ALB is configured with a TLS listener and a custom domain:
 
-- **Listeners**: HTTP:80
+- **Listeners**: HTTPS:443 (ACM certificate attached)
+- **Custom Domain**: `<subdomain>.<domain_name>` — Route53 A-record alias created automatically by CDK
 - **Target Groups**: IP-mode targets for Fargate tasks
+- **Health Check**: `/mcp` endpoint, codes `200-499`
 - **Security Groups**: Allow inbound from AgentCore Gateway IP ranges (optional hardening)
+
+### Domain & Certificate Configuration
+
+The stack reads three CDK context variables to wire up the custom domain:
+
+| Context key       | Default      | Description                                                                                                      |
+| ----------------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `domain_name`     | _(required)_ | Apex domain of an existing Route53 hosted zone (e.g. `example.com`)                                              |
+| `subdomain`       | `mcp`        | Subdomain prefix — results in `mcp.example.com`                                                                  |
+| `certificate_arn` | _(required)_ | ARN of an existing ACM certificate covering the FQDN (e.g. `arn:aws:acm:us-east-1:123456789012:certificate/...`) |
+
+The certificate is imported by ARN (`from_certificate_arn`) and must reside in the same region as the stack.
 
 ## How to Use This Example
 
@@ -116,79 +125,104 @@ Since AgentCore Gateway currently requires public endpoints for MCP registration
 
 - AWS Account with Bedrock, ECS, and AgentCore access
 - AWS CLI and CDK installed
-- Docker installed
-- OAuth provider (Cognito, Auth0)
-- Neo4j database
+- Neo4j database (or use the default Neo4j Demo Database)
+- A Route53 public hosted zone for your domain already configured in your AWS account
+- An ACM certificate in the deploy region covering `<subdomain>.<domain_name>` (or a matching wildcard) — copy its ARN from the ACM console
 
-### Step 1: Set Up OAuth Provider
-
-Configure your OAuth provider (Cognito/Auth0) to issue Client Credentials tokens with appropriate scopes.
-
-### Step 2: Deploy Infrastructure
+### Step 1: Clone the Repository
 
 ```bash
+git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
 cd neo4j-agent-integrations/aws-agentcore/samples/2-gateway-external-mcp
-npm install
-cdk deploy AgentCoreGatewayStack
+```
+
+### Step 2: Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 3: Configure Your Domain
+
+Open `cdk.json` and fill in your domain details under the `context` key:
+
+```json
+{
+  "context": {
+    "domain_name": "example.com",
+    "subdomain": "mcp",
+    "certificate_arn": "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  }
+}
+```
+
+Alternatively, pass them directly on the CLI (see Step 4).
+
+### Step 4: Deploy Infrastructure
+
+```bash
+# Bootstrap CDK (first time only)
+cdk bootstrap
+
+# Deploy the stack — optionally override domain via CLI flags
+cdk deploy Neo4jAgentCoreGatewayStack \
+  -c domain_name=example.com \
+  -c subdomain=mcp \
+  -c certificate_arn=arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
 **Stack Resources Created:**
 
-- VPC, ECS Cluster, Fargate Services
-- Public Application Load Balancer
+- VPC with public subnets
+- ECS Cluster and Fargate Service (Neo4j MCP)
+- Public Application Load Balancer (HTTPS/443, ACM cert attached)
+- Route53 A-record alias → ALB (`<subdomain>.<domain_name>`)
 - Lambda Interceptor Function
-- Secrets Manager Secret
-- IAM Roles
+- Secrets Manager Secret (Neo4j credentials)
+- IAM Roles (Fargate task, Lambda, Gateway)
+- AgentCore MCP Gateway
+- Gateway Target to Neo4j MCP (using custom domain endpoint)
 
-### Step 3: Configure AgentCore Gateway
+**Stack Outputs:**
 
-**1. Register Interceptor:**
-Associate the deployed Lambda function as a REQUEST interceptor on the Gateway.
+| Output                 | Description                             |
+| ---------------------- | --------------------------------------- |
+| `McpFqdn`              | Custom domain for the Neo4j MCP Service |
+| `McpServiceUrl`        | HTTPS URL of the Neo4j MCP Service      |
+| `Neo4jSecretArn`       | ARN of the Neo4j credentials secret     |
+| `InterceptorLambdaArn` | ARN of the Request Interceptor Lambda   |
+| `GatewayArn`           | ARN of the AgentCore MCP Gateway        |
+| `GatewayUrl`           | URL of the AgentCore MCP Gateway        |
 
-**2. Register MCP Servers:**
+### Step 5: Test Integration
 
-```bash
-# Register Neo4j MCP (Official)
-# Auth Type: NONE (Handled by Interceptor)
-agentcore gateway register-mcp \
-  --gateway-name agentcore-gateway \
-  --mcp-name neo4j-mcp \
-  --endpoint http://neo4j-mcp-alb-xxxxx.us-east-1.elb.amazonaws.com \
-  --protocol MCP \
-  --auth-type NONE
-
-# Register Agent Memory MCP
-agentcore gateway register-mcp \
-  --gateway-name agentcore-gateway \
-  --mcp-name agent-memory-mcp \
-  --endpoint http://agent-memory-alb-yyyyy.us-east-1.elb.amazonaws.com \
-  --protocol MCP \
-  --auth-type NONE
-```
-
-**3. Configure OAuth:**
-Set up the Gateway to validate JWTs from your provider.
-
-### Step 4: Test Integration
-
-1. **Get Token**: Request OAuth token from Cognito/Auth0.
-2. **Call Gateway**:
+1. **Verify DNS**: The Route53 alias record should resolve to the ALB immediately after deploy.
    ```bash
-   curl -X POST https://agentcore-gateway-xxxxx.bedrock.us-east-1.amazonaws.com/invoke \
+   dig mcp.example.com
+   ```
+2. **Check HTTPS**: Confirm the MCP endpoint responds over TLS.
+   ```bash
+   curl https://mcp.example.com/mcp
+   ```
+3. **Get Token**: Request an OAuth token from Cognito/Auth0.
+4. **Call Gateway** (use `GatewayUrl` from stack outputs):
+   ```bash
+   curl -X POST <GatewayUrl>/mcp \
      -H "Authorization: Bearer $OAUTH_TOKEN" \
      -d '{"mcp_server":"neo4j-mcp", "tool":"get_schema"}'
    ```
-3. **Verify Flow**:
+5. **Verify Flow**:
    - Gateway validates token
    - Interceptor swaps token for Basic Auth
    - Neo4j MCP accepts request and returns schema
 
-### Step 5: Clean Up
+### Step 6: Clean Up
 
 ```bash
-cdk destroy AgentCoreGatewayStack
-agentcore gateway delete --gateway-name agentcore-gateway
+cdk destroy Neo4jAgentCoreGatewayStack
 ```
+
+> **Note:** The stack does **not** delete your Route53 hosted zone or ACM certificate — those are looked up from existing resources and left untouched.
 
 ## References
 
@@ -196,6 +230,8 @@ agentcore gateway delete --gateway-name agentcore-gateway
 
 - [AgentCore Gateway Requests Interceptors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors.html)
 - [AgentCore Gateway Architecture](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-architecture.html)
+- [CfnGateway CDK API](https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_bedrockagentcore/CfnGateway.html)
+- [CfnGatewayTarget CDK API](https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_bedrockagentcore/CfnGatewayTarget.html)
 
 ### Neo4j Resources
 
