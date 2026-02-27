@@ -13,6 +13,11 @@
     ]
   },
   "context": {
+    "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
+    "neo4j_database": "companies",
+    "neo4j_username": "companies",
+    "neo4j_password": "companies",
+
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
@@ -28,11 +33,6 @@
     "@aws-cdk/core:stackRelativeExports": true,
     "@aws-cdk/aws-rds:databaseProxyUniqueResourceName": true,
     "@aws-cdk/aws-lambda:recognizeVersionProps": true,
-
-    "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
-    "neo4j_username": "companies",
-    "neo4j_password": "companies",
-    "neo4j_database": "companies",
     "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": true,
     "@aws-cdk/aws-lambda-nodejs:useLatestRuntimeVersion": true,
     "@aws-cdk/core:includePrefixInUniqueNameGeneration": true

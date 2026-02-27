@@ -13,6 +13,9 @@
     ]
   },
   "context": {
+    "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
+    "neo4j_database": "companies",
+
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],

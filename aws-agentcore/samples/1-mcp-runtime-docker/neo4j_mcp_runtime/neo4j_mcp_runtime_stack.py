@@ -100,14 +100,17 @@ class Neo4jMCPRuntimeStack(Stack):
         # custom header. Such custom headers must be prefixed by `X-Amzn-Bedrock-AgentCore-Runtime-Custom-`
         auth_header_name = "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Authorization"
 
+        neo4j_uri = self.node.try_get_context("neo4j_uri")
+        neo4j_database = self.node.try_get_context("neo4j_database")
+
         # 4. Create the Runtime for our MCP server
         mcp_runtime = bedrockagentcore.CfnRuntime(
             self, "Neo4jMcpRuntime",
             agent_runtime_name="Neo4jMcpRuntime",
             description="A Neo4j MCP Server https://github.com/neo4j/mcp",
             environment_variables={
-                "NEO4J_URI": "neo4j+s://demo.neo4jlabs.com:7687",
-                "NEO4J_DATABASE": "companies",
+                "NEO4J_URI": neo4j_uri,
+                "NEO4J_DATABASE": neo4j_database,
                 "NEO4J_READ_ONLY": "true",
                 "NEO4J_LOG_FORMAT": "text",
                 "NEO4J_HTTP_AUTH_HEADER_NAME": auth_header_name,

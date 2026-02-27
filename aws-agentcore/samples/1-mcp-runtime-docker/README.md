@@ -153,14 +153,26 @@ cd neo4j-agent-integrations/aws-agentcore/samples/1-mcp-runtime-docker
 pip install -r requirements.txt
 ```
 
-### Step 3: Configure Environment Variables
+### Step 3: Configure Environment
 
-Edit [neo4j_mcp_runtime/neo4j_mcp_runtime_stack.py](neo4j_mcp_runtime/neo4j_mcp_runtime_stack.py) to adjust the Neo4j connection settings if needed:
+Neo4j uri and databse are supplied via CDK context. Default values are provided in [cdk.json](cdk.json):
 
-- `NEO4J_URI`: `neo4j+s://demo.neo4jlabs.com:7687`
-- `NEO4J_DATABASE`: `companies`
+```json
+{
+  "context": {
+    "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
+    "neo4j_database": "companies"
+  }
+}
+```
 
-The sample uses the public companies demo database by default. Replace these values for your own Neo4j instance.
+The sample uses the public companies demo database by default. To use your own Neo4j instance, either edit the values in `cdk.json` or override them at deploy time:
+
+```bash
+cdk deploy Neo4jMCPRuntimeStack \
+  -c neo4j_uri=neo4j+s://your-instance:7687 \
+  -c neo4j_database=neo4j
+```
 
 ### Step 4: Deploy Infrastructure
 
