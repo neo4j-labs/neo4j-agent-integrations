@@ -11,7 +11,6 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_iam as iam,
     aws_route53 as route53,
-    aws_route53_targets as route53_targets,
     aws_certificatemanager as acm,
     aws_bedrockagentcore as bedrockagentcore,
 )
@@ -120,6 +119,7 @@ class AgentCoreGatewayStack(Stack):
                     "NEO4J_READ_ONLY": "true",
                     "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING": "true",
                     "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_TOOLS_LIST": "true",
+                    "NEO4J_HTTP_ALLOW_UNAUTHENTICATED": "true",
                 },
                 secrets={
                     "NEO4J_URI": ecs.Secret.from_secrets_manager(neo4j_secret, "NEO4J_URI"),
@@ -160,6 +160,12 @@ class AgentCoreGatewayStack(Stack):
             description="Role assumed by AgentCore Gateway",
         )
 
+        gateway_role.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:InvokeFunction"],
+            resources=[interceptor_lambda.function_arn],
+        ))
+        interceptor_lambda.grant_invoke(gateway_role)
+
         # MCP Gateway with Lambda Request Interceptor
         mcp_gateway = bedrockagentcore.CfnGateway(
             self, "McpGateway",
@@ -181,6 +187,9 @@ class AgentCoreGatewayStack(Stack):
                             arn=interceptor_lambda.function_arn,
                         )
                     ),
+                    input_configuration=bedrockagentcore.CfnGateway.InterceptorInputConfigurationProperty(
+                        pass_request_headers=True
+                    )
                 )
             ],
         )
