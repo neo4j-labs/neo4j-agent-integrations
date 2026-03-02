@@ -1,170 +1,104 @@
-# Google Gemini Enterprise (AgentSpace) + Neo4j Integration
+# Google Gemini Enterprise + Neo4j A2A Integration
 
 ## Overview
 
-**Google Gemini Enterprise** (formerly Duet AI) with **AgentSpace** is Google's enterprise AI platform launched October 2025. It provides agent development capabilities with native integration across Google Workspace, M365, Salesforce, and SAP.
+Here we are showcasing neo4j mcp integration with ADK agent that is Agent-to-Agent (A2A) complaint and connect with Google Gemini Enterprise.
 
-**Key Features:**
-- AgentSpace for agent development
-- Agent Designer (no-code)
-- Memory and observability
-- Pre-built agents
-- MCP + Vertex AI Extensions
-- $30/user/month enterprise pricing
+This architecture utilizes the Google ADK and the official Neo4j Model Context Protocol (MCP) server deployed on Google Cloud Run. 
+It features a custom Starlette/FastAPI middleware layer to securely validate end-user OAuth 2.0 Access Tokens directly against Google's identity servers.
 
-**Official Resources:**
-- Website: https://cloud.google.com/gemini/enterprise
-- Documentation: https://docs.cloud.google.com/gemini/enterprise/docs
-- Vertex AI Extensions: https://cloud.google.com/vertex-ai/generative-ai/docs/extensions/overview
+## Key Features
 
-## Extension Points
+- **Native Graph Querying**: Uses the official Neo4j MCP binary to autonomously explore graph schemas and execute Cypher queries.
+- **Custom Python Tools**: Extends MCP capabilities with specialized, hardcoded business logic (e.g., `get_investments`).
+- **Secure Token Validation**: Intercepts and validates Gemini Enterprise OAuth 2.0 access tokens in real-time.
 
-### 1. Vertex AI Extensions
+## Architecture Flow
 
-Wrap Neo4j MCP server as a Vertex AI Extension:
+1.  **Discovery**: Gemini Enterprise sends an unauthenticated `GET /` request. The service returns the AgentCard (manifest) detailing the agent's skills and confirming it requires authentication.
+2.  **Authentication**: Gemini prompts the user to log in via Google OAuth 2.0.
+3.  **Execution**: Gemini sends a `POST /` request containing the user's prompt and the `Authorization: Bearer <TOKEN>` header.
+4.  **Validation**: The custom Python middleware intercepts the request, calls Google's `tokeninfo` endpoint to verify the token, and either rejects it (401) or passes it to the executor.
+5.  **Reasoning**: The Google ADK `LlmAgent` determines whether to use the Neo4j MCP schema tools or the custom investment tools to formulate a response.
 
-```python
-from google.cloud import aiplatform
+## Prerequisites
 
-# Create extension
-extension = aiplatform.Extension.create(
-    display_name="neo4j-research",
-    manifest={
-        "name": "neo4j_company_research",
-        "description": "Query company data from Neo4j",
-        "api_spec": {
-            "open_api_gcs_uri": "gs://your-bucket/openapi.yaml"
-        },
-        "auth_config": {
-            "auth_type": "GOOGLE_SERVICE_ACCOUNT_AUTH",
-            "google_service_account_config": {
-                "service_account": "your-service-account@project.iam.gserviceaccount.com"
-            }
-        }
-    }
-)
-```
+Before deploying, ensure you have the following:
 
-### 2. MCP Server via Cloud Run
+-   Google Cloud Project with billing enabled.
+-   Google Cloud CLI (`gcloud`) installed and authenticated.
+-   Neo4j Database (AuraDB or self-hosted) with credentials.
+-   Google Cloud APIs Enabled:
+    -   Cloud Run API (`run.googleapis.com`)
+    -   Secret Manager API (`secretmanager.googleapis.com`)
 
-Deploy Neo4j MCP server on Cloud Run:
+## Step 1: Secure Configuration (Secret Manager)
+
+Do not store credentials in `.env` files for production. We use Google Cloud Secret Manager.
+
+1.  Create the secrets:
+
+    ```bash
+    echo -n "your-neo4j-password" | gcloud secrets create NEO4J_PASSWORD --data-file=-
+    echo -n "your-google-api-key" | gcloud secrets create GOOGLE_API_KEY --data-file=-
+    echo -n "your-neo4j-uri" | gcloud secrets create NEO4J_URI --data-file=-
+    echo -n "neo4j" | gcloud secrets create NEO4J_USERNAME --data-file=-
+    echo -n "neo4j" | gcloud secrets create NEO4J_DATABASE --data-file=-
+    echo -n "https://your-expected-cloud-run-url" | gcloud secrets create SERVICE_URL --data-file=-
+    ```
+
+2.  Grant Cloud Run access to read the secrets:
+
+    ```bash
+    # Grants the Secret Accessor role to the default Compute Engine service account
+    export PROJECT_ID=$(gcloud config get-value project)
+    export PROJECT_NUM=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+
+    gcloud projects add-iam-policy-binding $PROJECT_ID 
+      --member="serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com" 
+      --role="roles/secretmanager.secretAccessor"
+    ```
+
+## Step 2: Deployment
+
+Deploy the container to Cloud Run. We must use `--allow-unauthenticated` so the service can be reached publicly, relying entirely on our Python middleware for authorization.
 
 ```bash
-# Deploy MCP server
-gcloud run deploy neo4j-mcp \
-  --image gcr.io/your-project/neo4j-mcp \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
+gcloud run deploy neo4j-a2a-service 
+  --source . 
+  --region us-central1 
+  --allow-unauthenticated 
+  --set-secrets="NEO4J_URI=NEO4J_URI:latest,NEO4J_USERNAME=NEO4J_USERNAME:latest,NEO4J_PASSWORD=NEO4J_PASSWORD:latest,NEO4J_DATABASE=NEO4J_DATABASE:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SERVICE_URL=SERVICE_URL:latest"
 ```
 
-### 3. Agent Designer
+## Step 3: Gemini Enterprise Configuration
 
-Build agents visually in AgentSpace using Neo4j extension.
+Register the deployed agent in the Gemini Enterprise portal.
 
-## MCP Authentication
+1.  Navigate to the add agent configuration in Gemini Enterprise.
+2.  Provide the agent card , can be retrieved from (e.g., `https://neo4j-a2a-service-xxxx-uc.a.run.app/.well-known/agent.card`).
+3.  Set the Authentication type to **OAuth 2.0**.
+4.  Fill in the OAuth details using your GCP Credentials (APIs & Services -> Credentials -> OAuth 2.0 Client IDs):
+    -   **Client ID**: `your-client-id.apps.googleusercontent.com`
+    -   **Client Secret**: `your-client-secret`
+    -   **Authorization URL**: `https://accounts.google.com/o/oauth2/v2/auth`
+    -   **Token URL**: `https://oauth2.googleapis.com/token`
+    -   **Scope**: `openid https://www.googleapis.com/auth/cloud-platform`
 
-✅ **API Keys** - Google Cloud API keys
+## Gemini Enterprise UI.
+-  Ask question in gemini enterprise chatbot UI related to your database or as per your custom tool definition.
+- Login via oauth when prompted.
+- GE responds with answer from adk agent using mcp tool/custom tools.
 
-✅ **Service Accounts** (Primary)
-- GCP service account JSON credentials
-- OAuth 2.0 service account flows
+## Referral Documentation
+Neo4j
+• [Neo4j & MCP](http://neo4j.com/docs/mcp/current/)
 
-✅ **Workload Identity Federation**
-- For GKE/Cloud Run workloads
-- OAuth 2.0 token exchange
+ADK agent
+• [Agent Development Kit](https://docs.cloud.google.com/agent-builder/agent-development-kit/overview)
 
-**Other Mechanisms:**
-- GCP IAM role-based access
-- Application Default Credentials (ADC)
-- Cloud Run authentication
+A2A Protocol 
+• [A2A Protocol](https://a2a-protocol.org/latest/)
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#5-google-gemini-enterprise--agentspace-vertex-ai)
-
-## Industry Research Agent Example
-
-```python
-import vertexai
-from vertexai.preview import reasoning_engines
-from neo4j import GraphDatabase
-
-# Initialize Vertex AI
-vertexai.init(project="your-project", location="us-central1")
-
-# Neo4j connection
-driver = GraphDatabase.driver(
-    "neo4j+s://demo.neo4jlabs.com:7687",
-    auth=("companies", "companies")
-)
-
-# Define tools
-def query_company(company_name: str) -> dict:
-    query = """
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
-        LIMIT 1
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return records[0].data() if records else {}
-
-# Create reasoning engine with tools
-agent = reasoning_engines.LangchainAgent(
-    model="gemini-2.0-flash-exp",
-    tools=[query_company],
-    agent_executor_kwargs={"return_intermediate_steps": True}
-)
-
-# Deploy to Vertex AI
-remote_agent = reasoning_engines.ReasoningEngine.create(
-    agent,
-    requirements=["neo4j", "langchain-google-vertexai"],
-    display_name="investment-research-agent"
-)
-
-# Query
-response = remote_agent.query(
-    input="Research Google's organizational structure and industry focus"
-)
-```
-
-## Challenges and Gaps
-
-1. **MCP Support via Extensions**
-   - Not native MCP protocol
-   - Need to wrap MCP server as Vertex AI Extension
-   - Additional configuration layer
-
-2. **Service Account Setup**
-   - Requires GCP IAM configuration
-   - Service account key management
-
-3. **Cost Structure**
-   - Enterprise pricing per user
-   - Additional Vertex AI usage costs
-
-## Additional Integration Opportunities
-
-- Cloud Run for MCP server hosting
-- BigQuery integration with Neo4j
-- Google Workspace data enrichment
-- Gemini 2.0 long-context capabilities
-
-## Resources
-
-- **Gemini Enterprise**: https://cloud.google.com/gemini/enterprise
-- **Vertex AI**: https://cloud.google.com/vertex-ai
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ✅ Vertex AI Extensions support
-- ⚠️ MCP via wrapper/extension (not native)
-- ✅ GCP Service Accounts
-- **Effort Score**: 5.4/10
-- **Impact Score**: 7.1/10
+Gemini Enterprise & Agents
+• [Gemini for Google Workspace / Enterprise](https://cloud.google.com/gemini/enterprise)
