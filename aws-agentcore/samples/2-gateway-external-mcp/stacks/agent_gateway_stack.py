@@ -102,6 +102,10 @@ class AgentCoreGatewayStack(Stack):
             cpu=256,
             memory_limit_mib=1024,
             desired_count=1,
+            runtime_platform=ecs.RuntimePlatform(
+                cpu_architecture=ecs.CpuArchitecture.ARM64,
+                operating_system_family=ecs.OperatingSystemFamily.LINUX,
+            ),
             listener_port=443,
             certificate=certificate,
             domain_name=mcp_fqdn,
@@ -115,6 +119,7 @@ class AgentCoreGatewayStack(Stack):
                     "NEO4J_MCP_HTTP_HOST": "0.0.0.0",
                     "NEO4J_READ_ONLY": "true",
                     "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING": "true",
+                    "NEO4J_HTTP_ALLOW_UNAUTHENTICATED_TOOLS_LIST": "true",
                 },
                 secrets={
                     "NEO4J_URI": ecs.Secret.from_secrets_manager(neo4j_secret, "NEO4J_URI"),
