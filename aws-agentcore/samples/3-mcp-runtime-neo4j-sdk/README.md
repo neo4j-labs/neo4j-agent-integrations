@@ -24,6 +24,8 @@ Instead of using a pre-built Docker image, the MCP server is written as a Python
 
 ## Architecture Design
 
+![Architecture Diagram](generated-diagrams/sample3_architecture.png)
+
 ### Components
 
 1. **AWS AgentCore Runtime**
