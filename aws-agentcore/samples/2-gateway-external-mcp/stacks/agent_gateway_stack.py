@@ -255,7 +255,7 @@ class AgentCoreGatewayStack(Stack):
         )
 
         # 7. Gateway Target — register the Neo4j MCP custom domain as target
-        bedrockagentcore.CfnGatewayTarget(
+        mcp_gateway_target = bedrockagentcore.CfnGatewayTarget(
             self, "McpGatewayTarget",
             gateway_identifier=mcp_gateway.attr_gateway_identifier,
             name="neo4j-mcp",
@@ -268,6 +268,7 @@ class AgentCoreGatewayStack(Stack):
                 )
             ),
         )
+        mcp_gateway_target.node.add_dependency(fargate_service.service)
 
         # 8. Outputs
         CfnOutput(

@@ -260,10 +260,10 @@ cdk deploy Neo4jAgentCoreGatewayStack \
    ```
 6. **Call Gateway**:
    ```bash
-   curl -X POST "$GATEWAY_URL/mcp" \
+   curl -X POST "$GATEWAY_URL" \
      -H "Authorization: Bearer $OAUTH_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"mcp_server":"neo4j-mcp", "tool":"get_schema"}'
+     -d '{"jsonrpc":"2.0","id":"list-tools-request","method":"tools/list"}'
    ```
 7. **Verify Flow**:
    - Gateway validates token
