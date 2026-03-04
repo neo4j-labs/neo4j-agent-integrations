@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This sample demonstrates how to use AWS AgentCore Gateway to connect to external Neo4j MCP servers running on AWS Fargate. The Gateway handles OAuth authentication for external agents and uses a **Lambda Interceptor** to translate OAuth tokens into Neo4j credentials, enabling the use of the **official Neo4j MCP server** in HTTP mode.
+This sample demonstrates how to use AWS AgentCore Gateway to connect to external Neo4j MCP servers running on AWS Fargate. The stack provisions a minimal Amazon Cognito OAuth setup for machine-to-machine (`client_credentials`) authentication, and uses a **Lambda Interceptor** to translate OAuth tokens into Neo4j credentials so you can run the **official Neo4j MCP server** in HTTP mode.
 
 **Key Features:**
 
@@ -10,7 +10,7 @@ This sample demonstrates how to use AWS AgentCore Gateway to connect to external
 - **Lambda Request Interceptor**: Translates OAuth tokens to Neo4j Basic Auth headers
 - **Official Neo4j MCP**: Uses unmodified official Docker image in HTTP mode
 - **ECS Fargate Deployment**: Serverless container orchestration
-- **OAuth Authentication**: Secure M2M authentication for external clients
+- **Built-in Cognito OAuth**: Secure M2M authentication for external clients
 
 **Use Cases:**
 
@@ -27,7 +27,7 @@ This sample demonstrates how to use AWS AgentCore Gateway to connect to external
 
 1. **AWS AgentCore Gateway**
    - Reverse proxy for MCP servers
-   - Inbound OAuth 2.0 validation
+   - Inbound JWT validation using Cognito OIDC discovery (`CUSTOM_JWT`)
    - Lambda Interceptor execution (REQUEST interception point)
 
 2. **Gateway Target**
@@ -62,7 +62,7 @@ The core innovation in this pattern is the **Auth Interceptor** that enables com
 ```
 External Agent (OAuth Token)
     ↓
-[OAuth Validation - Cognito/Auth0]
+[OAuth Validation - Cognito User Pool (created by stack)]
     ↓
 AgentCore Gateway
     ↓
@@ -107,15 +107,17 @@ AgentCore Gateway requires HTTPS endpoints for MCP target registration, so the A
 - **Health Check**: `/mcp` endpoint, codes `200-499`
 - **Security Groups**: Allow inbound from AgentCore Gateway IP ranges (optional hardening)
 
-### Domain & Certificate Configuration
+### Domain and Certificate Configuration
 
-The stack reads three CDK context variables to wire up the custom domain:
+The stack reads three CDK context variables:
 
-| Context key       | Default      | Description                                                                                                      |
-| ----------------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `domain_name`     | _(required)_ | Apex domain of an existing Route53 hosted zone (e.g. `example.com`)                                              |
-| `subdomain`       | `mcp`        | Subdomain prefix — results in `mcp.example.com`                                                                  |
+| Context key       | Default      | Description                                                                                                        |
+| ----------------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `domain_name`     | _(required)_ | Apex domain of an existing Route53 hosted zone (e.g. `example.com`)                                               |
+| `subdomain`       | `mcp`        | Subdomain prefix — results in `mcp.example.com`                                                                   |
 | `certificate_arn` | _(required)_ | ARN of an existing ACM certificate covering the FQDN (e.g. `arn:aws:acm:us-east-1:123456789012:certificate/...`) |
+
+The Cognito hosted domain prefix is generated automatically as `neo4j-mcp-<account>-<region>`.
 
 The certificate is imported by ARN (`from_certificate_arn`) and must reside in the same region as the stack.
 
@@ -128,6 +130,7 @@ The certificate is imported by ARN (`from_certificate_arn`) and must reside in t
 - Neo4j database (or use the default Neo4j Demo Database)
 - A Route53 public hosted zone for your domain already configured in your AWS account
 - An ACM certificate in the deploy region covering `<subdomain>.<domain_name>` (or a matching wildcard) — copy its ARN from the ACM console
+- No pre-existing Cognito setup is required; this stack creates User Pool, app client, and hosted domain
 
 ### Step 1: Clone the Repository
 
@@ -156,15 +159,13 @@ Open `cdk.json` and fill in your domain details under the `context` key:
 }
 ```
 
-Alternatively, pass them directly on the CLI (see Step 4).
-
 ### Step 4: Deploy Infrastructure
 
 ```bash
 # Bootstrap CDK (first time only)
 cdk bootstrap
 
-# Deploy the stack — optionally override domain via CLI flags
+# Deploy the stack
 cdk deploy Neo4jAgentCoreGatewayStack \
   -c domain_name=example.com \
   -c subdomain=mcp \
@@ -179,22 +180,28 @@ cdk deploy Neo4jAgentCoreGatewayStack \
 - Route53 A-record alias → ALB (`<subdomain>.<domain_name>`)
 - Lambda Interceptor Function
 - Secrets Manager Secret (Neo4j credentials)
+- Amazon Cognito User Pool, hosted domain, resource server scope, and app client
 - IAM Roles (Fargate task, Lambda, Gateway)
 - AgentCore MCP Gateway
 - Gateway Target to Neo4j MCP (using custom domain endpoint)
 
 **Stack Outputs:**
 
-| Output                 | Description                             |
-| ---------------------- | --------------------------------------- |
-| `McpFqdn`              | Custom domain for the Neo4j MCP Service |
-| `McpServiceUrl`        | HTTPS URL of the Neo4j MCP Service      |
-| `Neo4jSecretArn`       | ARN of the Neo4j credentials secret     |
-| `InterceptorLambdaArn` | ARN of the Request Interceptor Lambda   |
-| `GatewayArn`           | ARN of the AgentCore MCP Gateway        |
-| `GatewayUrl`           | URL of the AgentCore MCP Gateway        |
+| Output                 | Description                                           |
+| ---------------------- | ----------------------------------------------------- |
+| `McpFqdn`              | Custom domain for the Neo4j MCP Service               |
+| `McpServiceUrl`        | HTTPS URL of the Neo4j MCP Service                    |
+| `Neo4jSecretArn`       | ARN of the Neo4j credentials secret                   |
+| `InterceptorLambdaArn` | ARN of the Request Interceptor Lambda                 |
+| `GatewayArn`           | ARN of the AgentCore MCP Gateway                      |
+| `GatewayUrl`           | URL of the AgentCore MCP Gateway                      |
+| `CognitoUserPoolId`    | Cognito User Pool ID used by the gateway authorizer   |
+| `CognitoAppClientId`   | Cognito app client ID for OAuth client credentials    |
+| `CognitoDiscoveryUrl`  | OIDC discovery URL configured in gateway authorizer   |
+| `CognitoTokenEndpoint` | Cognito token endpoint for client credentials flow    |
+| `CognitoScope`         | Required scope for gateway calls (`neo4j-mcp-gateway/invoke`) |
 
-### Step 5: Test Integration
+### Step 5: Get OAuth Token and Test Integration
 
 1. **Verify DNS**: The Route53 alias record should resolve to the ALB immediately after deploy.
    ```bash
@@ -204,17 +211,70 @@ cdk deploy Neo4jAgentCoreGatewayStack \
    ```bash
    curl https://mcp.example.com/mcp
    ```
-3. **Get Token**: Request an OAuth token from Cognito/Auth0.
-4. **Call Gateway** (use `GatewayUrl` from stack outputs):
+3. **Read stack outputs**:
    ```bash
-   curl -X POST <GatewayUrl>/mcp \
+   STACK_NAME=Neo4jAgentCoreGatewayStack
+
+   GATEWAY_URL=$(aws cloudformation describe-stacks \
+     --stack-name "$STACK_NAME" \
+     --query "Stacks[0].Outputs[?OutputKey=='GatewayUrl'].OutputValue" \
+     --output text)
+
+   COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
+     --stack-name "$STACK_NAME" \
+     --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" \
+     --output text)
+
+   COGNITO_CLIENT_ID=$(aws cloudformation describe-stacks \
+     --stack-name "$STACK_NAME" \
+     --query "Stacks[0].Outputs[?OutputKey=='CognitoAppClientId'].OutputValue" \
+     --output text)
+
+   COGNITO_TOKEN_ENDPOINT=$(aws cloudformation describe-stacks \
+     --stack-name "$STACK_NAME" \
+     --query "Stacks[0].Outputs[?OutputKey=='CognitoTokenEndpoint'].OutputValue" \
+     --output text)
+
+   COGNITO_SCOPE=$(aws cloudformation describe-stacks \
+     --stack-name "$STACK_NAME" \
+     --query "Stacks[0].Outputs[?OutputKey=='CognitoScope'].OutputValue" \
+     --output text)
+   ```
+4. **Retrieve Cognito app client secret**:
+   ```bash
+   COGNITO_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
+     --user-pool-id "$COGNITO_USER_POOL_ID" \
+     --client-id "$COGNITO_CLIENT_ID" \
+     --query "UserPoolClient.ClientSecret" \
+     --output text)
+   ```
+5. **Request OAuth token** (`client_credentials`):
+   ```bash
+   OAUTH_TOKEN=$(curl -s -X POST "$COGNITO_TOKEN_ENDPOINT" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     --data-urlencode "grant_type=client_credentials" \
+     --data-urlencode "client_id=$COGNITO_CLIENT_ID" \
+     --data-urlencode "client_secret=$COGNITO_CLIENT_SECRET" \
+     --data-urlencode "scope=$COGNITO_SCOPE" \
+     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+   ```
+6. **Call Gateway**:
+   ```bash
+   curl -X POST "$GATEWAY_URL/mcp" \
      -H "Authorization: Bearer $OAUTH_TOKEN" \
+     -H "Content-Type: application/json" \
      -d '{"mcp_server":"neo4j-mcp", "tool":"get_schema"}'
    ```
-5. **Verify Flow**:
+7. **Verify Flow**:
    - Gateway validates token
    - Interceptor swaps token for Basic Auth
    - Neo4j MCP accepts request and returns schema
+
+### Troubleshooting
+
+- `invalid_client`: confirm `COGNITO_CLIENT_ID` and `COGNITO_CLIENT_SECRET` were taken from the same `CognitoUserPoolId`.
+- `insufficient_scope`: ensure token request includes `scope=$COGNITO_SCOPE` exactly as returned by stack outputs.
+- Unauthorized response from gateway: verify the token is unexpired and issued by this stack's `CognitoDiscoveryUrl`.
 
 ### Step 6: Clean Up
 

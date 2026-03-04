@@ -13,6 +13,8 @@ from aws_cdk import (
     aws_route53 as route53,
     aws_certificatemanager as acm,
     aws_bedrockagentcore as bedrockagentcore,
+    aws_cognito as cognito,
+    aws_ecr_assets as ecr_assets,
 )
 from constructs import Construct
 
@@ -79,13 +81,61 @@ class AgentCoreGatewayStack(Stack):
             removal_policy=RemovalPolicy.DESTROY  # Clean up secret when stack is destroyed
         )
 
-        # 4a. Route53 hosted zone lookup
+        # 4. Cognito setup for M2M OAuth (client_credentials)
+        cognito_user_pool = cognito.UserPool(
+            self, "GatewayUserPool",
+            self_sign_up_enabled=False,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+
+        cognito_user_pool_domain = cognito.UserPoolDomain(
+            self, "GatewayUserPoolDomain",
+            user_pool=cognito_user_pool,
+            cognito_domain=cognito.CognitoDomainOptions(
+                domain_prefix=f"neo4j-mcp-{self.account}-{self.region}"
+            )
+        )
+
+        gateway_scope = cognito.ResourceServerScope(
+            scope_name="invoke",
+            scope_description="Invoke the Neo4j MCP Gateway"
+        )
+        cognito_resource_server = cognito.UserPoolResourceServer(
+            self, "GatewayResourceServer",
+            user_pool=cognito_user_pool,
+            identifier="neo4j-mcp-gateway",
+            scopes=[gateway_scope]
+        )
+
+        cognito_user_pool_client = cognito.UserPoolClient(
+            self, "GatewayM2MClient",
+            user_pool=cognito_user_pool,
+            generate_secret=True,
+            o_auth=cognito.OAuthSettings(
+                flows=cognito.OAuthFlows(client_credentials=True),
+                scopes=[
+                    cognito.OAuthScope.resource_server(
+                        cognito_resource_server,
+                        gateway_scope
+                    )
+                ]
+            )
+        )
+
+        cognito_scope = "neo4j-mcp-gateway/invoke"
+        cognito_discovery_url = (
+            f"https://cognito-idp.{self.region}.amazonaws.com/"
+            f"{cognito_user_pool.user_pool_id}/.well-known/openid-configuration"
+        )
+        cognito_token_endpoint = f"{cognito_user_pool_domain.base_url()}/oauth2/token"
+
+        # 5a. Route53 hosted zone lookup
         hosted_zone = route53.HostedZone.from_lookup(
             self, "HostedZone",
             domain_name=domain_name,
         )
 
-        # 4b. Import existing ACM certificate by ARN (set via 'certificate_arn' context key).
+        # 5b. Import existing ACM certificate by ARN (set via 'certificate_arn' context key).
         # The certificate must cover the subdomain (wildcard *.example.com or exact mcp.example.com)
         # and must reside in the same region as the stack.
         certificate = acm.Certificate.from_certificate_arn(
@@ -93,7 +143,7 @@ class AgentCoreGatewayStack(Stack):
             certificate_arn=certificate_arn,
         )
 
-        # 4c. Fargate Service (Neo4j MCP) with HTTPS listener
+        # 5c. Fargate Service (Neo4j MCP) with HTTPS listener
         # Using the ApplicationLoadBalancedFargateService pattern for simplicity.
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
             self, "Neo4jMcpService",
@@ -110,7 +160,10 @@ class AgentCoreGatewayStack(Stack):
             domain_name=mcp_fqdn,
             domain_zone=hosted_zone,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
-                image=ecs.ContainerImage.from_registry("mcp/neo4j:latest"),
+                image=ecs.ContainerImage.from_asset(
+                    "/Users/dev/Projects/Neo4jDevRel/Repos/mcp",
+                    platform=ecr_assets.Platform.LINUX_ARM64,
+                ),
                 container_port=8080,
                 environment={
                     "NEO4J_TRANSPORT_MODE": "http",
@@ -166,13 +219,20 @@ class AgentCoreGatewayStack(Stack):
         ))
         interceptor_lambda.grant_invoke(gateway_role)
 
-        # MCP Gateway with Lambda Request Interceptor
+        # MCP Gateway with Cognito JWT authorizer and Lambda Request Interceptor
         mcp_gateway = bedrockagentcore.CfnGateway(
             self, "McpGateway",
-            name="neo4j-mcp-gateway",
-            authorizer_type="NONE",
+            name="neo4j-mcp-gw",
+            authorizer_type="CUSTOM_JWT",
             protocol_type="MCP",
             role_arn=gateway_role.role_arn,
+            authorizer_configuration=bedrockagentcore.CfnGateway.AuthorizerConfigurationProperty(
+                custom_jwt_authorizer=bedrockagentcore.CfnGateway.CustomJWTAuthorizerConfigurationProperty(
+                    discovery_url=cognito_discovery_url,
+                    allowed_clients=[cognito_user_pool_client.user_pool_client_id],
+                    allowed_scopes=[cognito_scope],
+                )
+            ),
             description="AgentCore MCP Gateway for Neo4j",
             protocol_configuration=bedrockagentcore.CfnGateway.GatewayProtocolConfigurationProperty(
                 mcp=bedrockagentcore.CfnGateway.MCPGatewayConfigurationProperty(
@@ -195,7 +255,7 @@ class AgentCoreGatewayStack(Stack):
         )
 
         # 7. Gateway Target — register the Neo4j MCP custom domain as target
-        mcp_gateway_target = bedrockagentcore.CfnGatewayTarget(
+        bedrockagentcore.CfnGatewayTarget(
             self, "McpGatewayTarget",
             gateway_identifier=mcp_gateway.attr_gateway_identifier,
             name="neo4j-mcp",
@@ -244,4 +304,34 @@ class AgentCoreGatewayStack(Stack):
             self, "GatewayUrl",
             value=mcp_gateway.attr_gateway_url,
             description="URL of the AgentCore MCP Gateway"
+        )
+
+        CfnOutput(
+            self, "CognitoUserPoolId",
+            value=cognito_user_pool.user_pool_id,
+            description="Cognito User Pool ID used by the Gateway authorizer"
+        )
+
+        CfnOutput(
+            self, "CognitoAppClientId",
+            value=cognito_user_pool_client.user_pool_client_id,
+            description="Cognito app client ID for client_credentials OAuth"
+        )
+
+        CfnOutput(
+            self, "CognitoDiscoveryUrl",
+            value=cognito_discovery_url,
+            description="OIDC discovery URL used by the Gateway JWT authorizer"
+        )
+
+        CfnOutput(
+            self, "CognitoTokenEndpoint",
+            value=cognito_token_endpoint,
+            description="Cognito OAuth2 token endpoint for client_credentials"
+        )
+
+        CfnOutput(
+            self, "CognitoScope",
+            value=cognito_scope,
+            description="OAuth scope required for Gateway access"
         )
