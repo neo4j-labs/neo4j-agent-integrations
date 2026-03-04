@@ -201,7 +201,11 @@ cdk deploy Neo4jAgentCoreGatewayStack \
 | `CognitoTokenEndpoint` | Cognito token endpoint for client credentials flow    |
 | `CognitoScope`         | Required scope for gateway calls (`neo4j-mcp-gateway/invoke`) |
 
-### Step 5: Get OAuth Token and Test Integration
+### Step 5: Test with the Demo Notebook (optional)
+
+Open [demo.ipynb](demo.ipynb) in Jupyter or VS Code. Set `STACK_NAME` to your stack name, then run the cells to obtain an OAuth token from Cognito and call the Gateway (list tools, call Neo4j MCP tools). Requires `requests` and AWS credentials.
+
+### Step 6: Get OAuth Token and Test Integration (CLI)
 
 1. **Verify DNS**: The Route53 alias record should resolve to the ALB immediately after deploy.
    ```bash
@@ -276,7 +280,7 @@ cdk deploy Neo4jAgentCoreGatewayStack \
 - `insufficient_scope`: ensure token request includes `scope=$COGNITO_SCOPE` exactly as returned by stack outputs.
 - Unauthorized response from gateway: verify the token is unexpired and issued by this stack's `CognitoDiscoveryUrl`.
 
-### Step 6: Clean Up
+### Step 7: Clean Up
 
 ```bash
 cdk destroy Neo4jAgentCoreGatewayStack

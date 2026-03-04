@@ -14,7 +14,6 @@ from aws_cdk import (
     aws_certificatemanager as acm,
     aws_bedrockagentcore as bedrockagentcore,
     aws_cognito as cognito,
-    aws_ecr_assets as ecr_assets,
 )
 from constructs import Construct
 
@@ -42,6 +41,11 @@ class AgentCoreGatewayStack(Stack):
                 "CDK context variable 'certificate_arn' is required. "
                 "Pass it via cdk.json or: cdk deploy -c certificate_arn=arn:aws:acm:..."
             )
+
+        neo4j_uri: str = self.node.try_get_context("neo4j_uri")
+        neo4j_username: str = self.node.try_get_context("neo4j_username")
+        neo4j_password: str = self.node.try_get_context("neo4j_password")
+        neo4j_database: str = self.node.try_get_context("neo4j_database")
 
         mcp_fqdn = f"{subdomain}.{domain_name}"
 
@@ -73,12 +77,12 @@ class AgentCoreGatewayStack(Stack):
             self, "Neo4jCredentials",
             description="Credentials for Neo4j MCP to be used by AgentCore Gateway Interceptor",
             secret_object_value={
-                "NEO4J_URI": SecretValue.unsafe_plain_text("neo4j+s://demo.neo4jlabs.com:7687"),
-                "NEO4J_USERNAME": SecretValue.unsafe_plain_text("companies"),
-                "NEO4J_PASSWORD": SecretValue.unsafe_plain_text("companies"),
-                "NEO4J_DATABASE": SecretValue.unsafe_plain_text("companies")
+                "NEO4J_URI": SecretValue.unsafe_plain_text(neo4j_uri),
+                "NEO4J_USERNAME": SecretValue.unsafe_plain_text(neo4j_username),
+                "NEO4J_PASSWORD": SecretValue.unsafe_plain_text(neo4j_password),
+                "NEO4J_DATABASE": SecretValue.unsafe_plain_text(neo4j_database)
             },
-            removal_policy=RemovalPolicy.DESTROY  # Clean up secret when stack is destroyed
+            removal_policy=RemovalPolicy.DESTROY
         )
 
         # 4. Cognito setup for M2M OAuth (client_credentials)
@@ -160,10 +164,7 @@ class AgentCoreGatewayStack(Stack):
             domain_name=mcp_fqdn,
             domain_zone=hosted_zone,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
-                image=ecs.ContainerImage.from_asset(
-                    "/Users/dev/Projects/Neo4jDevRel/Repos/mcp",
-                    platform=ecr_assets.Platform.LINUX_ARM64,
-                ),
+                image=ecs.ContainerImage.from_registry("mcp/neo4j:latest"),
                 container_port=8080,
                 environment={
                     "NEO4J_TRANSPORT_MODE": "http",
@@ -187,7 +188,7 @@ class AgentCoreGatewayStack(Stack):
         # Configure ALB health check to use /mcp endpoint
         fargate_service.target_group.configure_health_check(
             path="/mcp",
-            healthy_http_codes="200-499"
+            healthy_http_codes="200,401"
         )
 
         # 5. Lambda Request Interceptor

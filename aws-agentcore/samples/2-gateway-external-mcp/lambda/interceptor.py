@@ -21,10 +21,8 @@ def get_secret(secret_name):
     except ClientError as e:
         raise e
 
-    if 'SecretString' in get_secret_value_response:
-        return get_secret_value_response['SecretString']
-
-    return base64.b64decode(get_secret_value_response['SecretBinary'])
+    secret_json: dict = json.loads(get_secret_value_response["SecretString"])
+    return secret_json
 
 def handler(event, context):
     gateway_request = event["mcp"]["gatewayRequest"]
@@ -34,8 +32,7 @@ def handler(event, context):
     secret_name = os.environ.get('SECRET_ARN')
     if not secret_name:
         raise Exception("SECRET_ARN environment variable not set")
-    secret_str = get_secret(secret_name)
-    secret_json = json.loads(secret_str)
+    secret_json = get_secret(secret_name)
 
     username = secret_json.get('NEO4J_USERNAME')
     password = secret_json.get('NEO4J_PASSWORD')
