@@ -1,16 +1,16 @@
 import os
+
 from aws_cdk import (
     Aws,
     Stack,
     CfnOutput,
-    SecretValue,
     BundlingOptions,
     DockerImage,
     BundlingOutput,
     aws_bedrockagentcore as bedrockagentcore,
     aws_iam as iam,
     aws_s3_assets as s3_assets,
-    aws_secretsmanager as secretsmanager,
+    aws_secretsmanager as secretsmanager, RemovalPolicy, SecretValue,
 )
 from constructs import Construct
 
@@ -71,6 +71,7 @@ class Neo4jSdkRuntimeStack(Stack):
                 "NEO4J_PASSWORD": SecretValue.unsafe_plain_text(neo4j_password),
                 "NEO4J_DATABASE": SecretValue.unsafe_plain_text(neo4j_database),
             },
+            removal_policy=RemovalPolicy.DESTROY
         )
 
         # 3. Create IAM Role for AgentCore Runtime
@@ -183,6 +184,10 @@ class Neo4jSdkRuntimeStack(Stack):
             },
         )
 
+        # Ensure the runtime is created only after the IAM role and secret are fully provisioned
+        runtime_instance.node.add_dependency(runtime_role)
+        runtime_instance.node.add_dependency(neo4j_secret)
+
         # 5. Outputs
         CfnOutput(
             self, "McpAppS3Bucket",
@@ -213,4 +218,3 @@ class Neo4jSdkRuntimeStack(Stack):
             value=neo4j_secret.secret_arn,
             description="ARN of the Secrets Manager secret for Neo4j credentials",
         )
-

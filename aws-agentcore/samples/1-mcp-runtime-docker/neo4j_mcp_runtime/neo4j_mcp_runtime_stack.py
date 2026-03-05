@@ -132,6 +132,9 @@ class Neo4jMCPRuntimeStack(Stack):
             ),
         )
 
+        # Ensure the runtime is created only after the IAM role is fully provisioned
+        mcp_runtime.node.add_dependency(runtime_role)
+
         # 5. Outputs
         CfnOutput(
             self, "Neo4jMcpImageUri",
