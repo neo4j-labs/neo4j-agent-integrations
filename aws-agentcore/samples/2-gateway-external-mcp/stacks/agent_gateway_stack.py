@@ -164,7 +164,7 @@ class AgentCoreGatewayStack(Stack):
             domain_name=mcp_fqdn,
             domain_zone=hosted_zone,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
-                image=ecs.ContainerImage.from_registry("mcp/neo4j:latest"),
+                image=ecs.ContainerImage.from_registry("ghcr.io/neo4j-labs/neo4j-mcp-canary:latest"),
                 container_port=8080,
                 environment={
                     "NEO4J_TRANSPORT_MODE": "http",
