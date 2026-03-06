@@ -168,9 +168,9 @@ Neo4j connection credentials are supplied via CDK context. Default values are pr
 {
   "context": {
     "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
-    "neo4j_username": "companies",
-    "neo4j_password": "companies",
-    "neo4j_database": "companies"
+     "neo4j_database": "companies",
+     "neo4j_username": "companies",
+     "neo4j_password": "companies"
   }
 }
 ```
@@ -180,9 +180,9 @@ The sample uses the public companies demo database by default. To use your own N
 ```bash
 cdk deploy Neo4jSdkRuntimeStack \
   -c neo4j_uri=neo4j+s://your-instance:7687 \
+  -c neo4j_database=neo4j \
   -c neo4j_username=neo4j \
-  -c neo4j_password=your-password \
-  -c neo4j_database=neo4j
+  -c neo4j_password=your-password
 ```
 
 ### Step 4: Deploy Infrastructure

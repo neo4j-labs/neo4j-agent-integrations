@@ -8,3 +8,4 @@ CLAUDE.md
 **/cdk.out/
 **/cdk.context.json
 .env
+__pycache__

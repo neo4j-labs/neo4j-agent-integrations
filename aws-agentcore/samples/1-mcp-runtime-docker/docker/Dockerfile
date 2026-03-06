@@ -1,4 +1,4 @@
-FROM mcp-neo4j:latest
+FROM mcp/neo4j:latest
 
 ENV NEO4J_MCP_HTTP_HOST=0.0.0.0
 ENV NEO4J_MCP_HTTP_PORT=8000
