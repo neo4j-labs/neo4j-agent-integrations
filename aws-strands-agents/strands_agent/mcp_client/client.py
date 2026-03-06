@@ -62,18 +62,32 @@ def _get_access_token():
     cognito_client_secret = secrets.get("COGNITO_CLIENT_SECRET") or os.getenv("COGNITO_CLIENT_SECRET")
     cognito_scope = os.getenv("COGNITO_SCOPE")
 
-    response = requests.post(
-        cognito_token_endpoint,
-        auth=(cognito_client_id, cognito_client_secret),
-        data={
-            "grant_type": "client_credentials",
-            "scope": cognito_scope,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
+    if not cognito_token_endpoint:
+        raise RuntimeError("Missing required configuration: COGNITO_TOKEN_ENDPOINT")
+    if not cognito_client_id:
+        raise RuntimeError("Missing required configuration: COGNITO_CLIENT_ID")
+    if not cognito_client_secret:
+        raise RuntimeError("Missing required configuration: COGNITO_CLIENT_SECRET")
+    try:
+        response = requests.post(
+            cognito_token_endpoint,
+            auth=(cognito_client_id, cognito_client_secret),
+            data={
+                "grant_type": "client_credentials",
+                "scope": cognito_scope,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError("Failed to obtain access token from Cognito") from exc
     token_response = response.json()
+    access_token = token_response.get("access_token")
+    if not access_token:
+        raise RuntimeError("Cognito token endpoint response did not include 'access_token'")
 
-    _token_cache["access_token"] = token_response["access_token"]
+    _token_cache["access_token"] = access_token
     _token_cache["expires_at"] = now + token_response.get("expires_in", 3600)
 
     return _token_cache["access_token"]

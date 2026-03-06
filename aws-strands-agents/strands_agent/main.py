@@ -1,5 +1,5 @@
 import os
-import time
+import uuid
 
 from bedrock_agentcore import BedrockAgentCoreApp
 from bedrock_agentcore.memory import MemoryClient
@@ -72,7 +72,7 @@ def clear_preferences(tool_context: ToolContext):
 @app.entrypoint
 async def invoke(payload, context):
     # ── Resolve session ID from the AgentCore request context ────────────
-    session_id = context.session_id if context and context.session_id else f"research-session-{int(time.time())}"
+    session_id = context.session_id if context and context.session_id else f"{uuid.uuid4()}"
     actor_id = payload.get("actor_id")
     if not actor_id:
         raise ValueError("actor_id is required in the payload")
