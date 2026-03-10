@@ -2,18 +2,26 @@
 
 ## Introduction
 
-This guide demonstrates how to connect to a **Neo4j database** directly from **Databricks Unity Catalog (UC) Functions**.  
-The setup allows you to query a remote Neo4j graph, directly from Databricks notebooks or agents without using a dedicated Neo4j MCP server.  
+This guide demonstrates how to use a **Neo4j database** directly from **Databricks Unity Catalog (UC) Functions**.  
 
-By following this guide, you can expose Neo4j queries as UC Functions callable from Python in Databricks (Tools), enabling integration with LLM agents or other workflows.
+This setup allows you to define **MCP tools** that perform queries on a remote Neo4j instance, directly from Databricks notebooks or agents, in no time and without using a dedicated Neo4j MCP server.  
+
+By following this guide, you can expose Neo4j queries as UC Functions that can be called from Python in Databricks (Tools), enabling integration with LLM agents or other workflows.
 
 The example shows a simple Agent implementation that returns the competitors for a given company name.
 
 ---
 
+## Preliminary Notes
+
+This integration pattern **is not intended for production**, but it is the fastest way to prototype your application ideas.
+
+---
+
+
 ## Architecture Overview
 
--> Databricks Agent / Notebook
+-> Databricks Agent / Playground
 
 -> UC Function (Python) as Tools
 
@@ -38,15 +46,15 @@ The example shows a simple Agent implementation that returns the competitors for
 ## Limitations
 
 - Python/SQL only (no direct Cypher in UC functions)
-- Must wrap Neo4j driver calls in functions using HTTP, serverless functions do not give the possibility to use python dependencies outside of a notebook
-- Connection credentials must be hardcoded in the UC Function, dbutils is not available inside the UC function - it's an architectural limitation. Unity Catalog functions don't have access to:
+- Must wrap Neo4j driver calls in functions using HTTP, serverless functions do not give the possibility to use python dependencies outside of a notebook.
+- Connection credentials must be hardcoded in the UC Function, secrets are not available inside the UC function - it's an architectural limitation. Unity Catalog functions don't have access to:
   - dbutils (including secrets)
   - Notebook session variables
   - Databricks SDK authentication context
 
 ## Prerequisites
 
-- Databricks Subscription (Trial version with free initial credit works, but a payment method must be set for LLMs to work)
+- Databricks Subscription with Compute capabilities.
 - Create a Databricks Token from your personal area, under Developer -> Access Tokens.
 
 ## Implementation
@@ -64,8 +72,8 @@ CREATE SCHEMA IF NOT EXISTS knowledge_graph.company_data;
 ```
 
 ```
-/* Define the UC function and implements its behavior, in this example, the function finds the competitors of a given company by performing a cypher query through HTTP */
 %sql
+/* Define the UC function and implements its behavior, in this example, the function finds the competitors of a given company by performing a cypher query through HTTP */
 CREATE OR REPLACE FUNCTION knowledge_graph.company_data.find_competitors(
   company_name STRING,
   max_results INT
@@ -138,7 +146,7 @@ Parameters:
 - Max results
 
 Data Sources:
-- Use the find_competitors API when requested with questions about company's competitors.
+- Use the find_competitors API tool when requested with questions about company's competitors.
 
 Actions:
 1. Retrieve company info
