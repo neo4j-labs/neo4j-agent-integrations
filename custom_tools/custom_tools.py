@@ -1,18 +1,21 @@
-
 import os
 import json
 import logging
+import asyncio
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
+from openai import OpenAI
 
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com:7687")
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "companies")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "companies")
 NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "companies")
-
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def get_driver():
     """Returns a Neo4j driver instance."""
@@ -44,17 +47,10 @@ async def query_company(company_name: str) -> str:
         logging.error(f"Error in query_company: {e}")
         return f"Error querying company: {str(e)}"
 
-async def search_news(company_name: str, query: str, limit: int = 5) -> str:
+async def search_news(company_name: str, query: str, limit: int = 5, embedding_model: str = "default") -> str:
     """
     Vector search for news articles about a company.
-    This function requires an embedding for the query, which is not implemented here.
-    A placeholder is used for the embedding.
     """
-    # This is a placeholder for a real embedding function
-    def embed_query(text: str) -> List[float]:
-        # In a real implementation, this would call an embedding model
-        return [0.1] * 1536 # Assuming a 1536-dimension embedding
-
     query_cypher = """
     MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
     MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
@@ -69,7 +65,7 @@ async def search_news(company_name: str, query: str, limit: int = 5) -> str:
     ORDER BY score DESC
     """
     try:
-        embedding = embed_query(query)
+        embedding = await embed_query(query, model=embedding_model)
         with get_driver() as driver:
             records, _, _ = driver.execute_query(
                 query_cypher,
@@ -92,7 +88,7 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
     MATCH path = (o1:Organization {name: $company})-[*1..$depth]-(o2:Organization)
     WHERE o1 <> o2
     RETURN DISTINCT o2.name as organization,
-           [r in relationships(path) | type(r)] as relationships,
+           reduce(s = "", r IN relationships(path) | s + "(" + type(r) + ")->") as relationships,
            length(path) as distance
     ORDER BY distance
     LIMIT 20
@@ -110,36 +106,6 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
     except Exception as e:
         logging.error(f"Error in analyze_relationships: {e}")
         return f"Error analyzing relationships: {str(e)}"
-
-async def synthesize_report(company_data: str, news_articles: str, relationships: str) -> str:
-    """
-    Generate investment research report using an LLM (simulated).
-    This function would typically call an external LLM API.
-    """
-    # This is a placeholder for a real LLM call
-    company_info = json.loads(company_data)
-    news = json.loads(news_articles)
-    relations = json.loads(relationships)
-
-    prompt = f"""
-    Generate an investment research report for {company_info.get('name', 'N/A')}.
-
-    Company Information:
-    - Locations: {', '.join(company_info.get('locations', []))}
-    - Industries: {', '.join(company_info.get('industries', []))}
-    - Leadership: {len(company_info.get('leadership', []))} key executives
-
-    Recent News ({len(news)} articles):
-    {[article['title'] for article in news]}
-
-    Organizational Network:
-    {[rel['organization'] for rel in relations]}
-
-    Provide: Executive summary, key developments, risks, and outlook.
-    """
-    # Simulate LLM response
-    return f"## Investment Research Report for {company_info.get('name', 'N/A')}\\n\\nThis is a synthesized report based on the provided data.\\n{prompt}"
-
 
 async def list_industries() -> str:
     """
@@ -381,3 +347,21 @@ async def get_investments(company: str) -> str:
     except Exception as e:
         logging.error(f"Error executing custom tool: {e}")
         return f"Error fetching investments: {str(e)}"
+
+async def embed_query(text: str, model: str = "text-embedding-ada-002") -> List[float]:
+    """
+    Generate an embedding for a given text using a specified model.
+    This function uses the OpenAI API to generate embeddings.
+    To use a different embedding provider, you can modify this function
+    to call the respective API.
+    """
+    logging.info(f"Generating embedding for text: '{text}' using model: {model}")
+    try:
+        response = client.embeddings.create(
+            input=text,
+            model=model
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logging.error(f"Error generating embedding: {e}")
+        return [0.1] * 1536
