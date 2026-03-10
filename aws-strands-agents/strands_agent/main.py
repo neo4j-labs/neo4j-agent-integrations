@@ -7,9 +7,9 @@ from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemory
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from dotenv import load_dotenv
 from strands import Agent, tool, ToolContext
+from strands.models import BedrockModel
 
 from mcp_client.client import get_streamable_http_mcp_client
-from model.load import load_model
 
 load_dotenv()
 
@@ -22,15 +22,22 @@ log = app.logger
 # ---------------------------------------------------------------------------
 
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
+# see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html for supported models
+MODEL_ID = os.getenv("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 
 # ---------------------------------------------------------------------------
 # System Prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
-Use the MCP tools to answer the questions.
-Always use read-schema first to evaluate the graph schema if you want to execute any cypher queries.
-Use all you know about the user to provide helpful responses.
+SYSTEM_PROMPT = """
+You are an expert agent for graph operations and user support.
+
+1. Always use the available tools for all tasks and queries.
+2. Before running any Cypher query, use the 'read-schema' tool to understand the graph structure and avoid errors.
+3. Personalize your responses by leveraging all available user information and preferences.
+4. If a tool fails or returns an error, explain the issue and suggest alternative actions or troubleshooting steps.
+
+Your goal is to provide accurate, helpful, and context-aware answers by using the tools provided.
 """
 
 
@@ -102,7 +109,7 @@ async def invoke(payload, context):
 
     # ── Run single turn ──────────────────────────────────────────────────
     agent = Agent(
-        model=load_model(),
+        model=BedrockModel(model_id=MODEL_ID),
         session_manager=session_manager,
         system_prompt=SYSTEM_PROMPT,
         tools=tools,

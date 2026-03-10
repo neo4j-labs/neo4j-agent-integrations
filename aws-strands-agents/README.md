@@ -41,13 +41,14 @@ AgentCore Runtime (Strands Agent)
 
 ### CDK Context Parameters
 
-| Context key                | Source                         | Description                              |
-| -------------------------- | ------------------------------ | ---------------------------------------- |
-| `cognito_client_id`        | Sample 2 stack output          | Cognito app client ID                    |
-| `cognito_client_secret`    | Sample 2 stack output          | Cognito app client secret                |
-| `cognito_scope`            | Sample 2 stack output          | OAuth scope (e.g. `neo4j-mcp-gateway/invoke`) |
-| `cognito_token_endpoint`   | Sample 2 stack output          | Cognito token endpoint URL               |
-| `gateway_url`              | Sample 2 stack output          | AgentCore Gateway MCP URL                |
+| Context key              | Source                           | Description                                                                                                                                                                                      |
+|--------------------------|----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cognito_client_id`      | Sample 2 stack output            | Cognito app client ID                                                                                                                                                                            |
+| `cognito_client_secret`  | Sample 2 stack output            | Cognito app client secret                                                                                                                                                                        |
+| `cognito_scope`          | Sample 2 stack output            | OAuth scope (e.g. `neo4j-mcp-gateway/invoke`)                                                                                                                                                    |
+| `cognito_token_endpoint` | Sample 2 stack output            | Cognito token endpoint URL                                                                                                                                                                       |
+| `gateway_url`            | Sample 2 stack output            | AgentCore Gateway MCP URL                                                                                                                                                                        |
+| `model_id`               | Command-line argument or default | The model ID to use for inference (for available Ids see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html), default is `global.anthropic.claude-sonnet-4-6`  |
 
 ## In-Depth Analysis
 
@@ -118,14 +119,15 @@ The `AgentCoreMemorySessionManager` saves conversations and retrieves preference
 
 ### Environment Variables
 
-| Variable                        | Description                                      |
-| ------------------------------- | ------------------------------------------------ |
-| `SECRET_ARN`                    | Secrets Manager ARN for Cognito credentials      |
-| `BEDROCK_AGENTCORE_MEMORY_ID`   | AgentCore Memory resource ID                      |
-| `GATEWAY_URL`                   | AgentCore Gateway MCP endpoint                   |
-| `COGNITO_SCOPE`                 | OAuth scope for the Gateway                      |
-| `COGNITO_TOKEN_ENDPOINT`        | Cognito token endpoint URL                       |
-| `AWS_DEFAULT_REGION`            | AWS region (set explicitly for AgentCore)         |
+| Variable                      | Description                                                                                                                                                                                     |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SECRET_ARN`                  | Secrets Manager ARN for Cognito credentials                                                                                                                                                     |
+| `BEDROCK_AGENTCORE_MEMORY_ID` | AgentCore Memory resource ID                                                                                                                                                                    |
+| `GATEWAY_URL`                 | AgentCore Gateway MCP endpoint                                                                                                                                                                  |
+| `COGNITO_SCOPE`               | OAuth scope for the Gateway                                                                                                                                                                     |
+| `COGNITO_TOKEN_ENDPOINT`      | Cognito token endpoint URL                                                                                                                                                                      |
+| `AWS_DEFAULT_REGION`          | AWS region (set explicitly for AgentCore)                                                                                                                                                       |
+| `MODEL_ID`                    | The model ID to use for inference (for available Ids see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html), default is `global.anthropic.claude-sonnet-4-6` |
 
 ### MCP Tools Available
 
@@ -204,7 +206,8 @@ cdk deploy Neo4jStrandsAgentStack \
   -c cognito_client_secret="$COGNITO_CLIENT_SECRET" \
   -c cognito_scope="$COGNITO_SCOPE" \
   -c cognito_token_endpoint="$COGNITO_TOKEN_ENDPOINT" \
-  -c gateway_url="$GATEWAY_URL"
+  -c gateway_url="$GATEWAY_URL" \
+  -c model_id="global.anthropic.claude-sonnet-4-6"
 ```
 
 **Stack Outputs:**

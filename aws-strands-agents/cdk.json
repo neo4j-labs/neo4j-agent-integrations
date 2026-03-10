@@ -16,6 +16,7 @@
   },
   "context": {
     "cognito_scope": "neo4j-mcp-gateway/invoke",
+    "model_id": "global.anthropic.claude-sonnet-4-6",
 
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,

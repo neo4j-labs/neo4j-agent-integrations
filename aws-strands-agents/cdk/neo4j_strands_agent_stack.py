@@ -31,6 +31,7 @@ class Neo4jStrandsAgentStack(Stack):
         cognito_scope = self.node.try_get_context("cognito_scope")
         cognito_token_endpoint = self.node.try_get_context("cognito_token_endpoint")
         gateway_url = self.node.try_get_context("gateway_url")
+        model_id = self.node.try_get_context("model_id")
 
         # ---------------------------------------------------------------------
         # 2. Bundle the strands_agent/ application code and upload to S3
@@ -264,6 +265,7 @@ class Neo4jStrandsAgentStack(Stack):
                 "GATEWAY_URL": gateway_url,
                 "COGNITO_SCOPE": cognito_scope,
                 "COGNITO_TOKEN_ENDPOINT": cognito_token_endpoint,
+                "MODEL_ID": model_id,
                 # Region must be set explicitly for AgentCore runtimes
                 "AWS_DEFAULT_REGION": Aws.REGION,
             },
