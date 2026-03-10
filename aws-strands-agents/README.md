@@ -90,7 +90,7 @@ The agent is deployed as **Python source code** bundled to S3 (no container imag
 The handler in [strands_agent/main.py](strands_agent/main.py) uses `BedrockAgentCoreApp`:
 
 - **`@app.entrypoint`** — Async handler receiving `payload` and `context`
-- **Session ID** — From `context.session_id`, fallback to timestamp-based ID
+- **Session ID** — From `context.session_id`, fallback to uuid
 - **Actor ID** — Required in payload; namespaces memory records per user
 - **Streaming** — `agent.stream_async()` yields text chunks to the caller
 
@@ -106,7 +106,7 @@ The `AgentCoreMemorySessionManager` saves conversations and retrieves preference
 
 ### Model
 
-- **Model:** `global.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region inference profile)
+- **Model:** `global.anthropic.claude-sonnet-4-6` (cross-region inference profile)
 - **Auth:** IAM via the runtime execution role
 
 ### CDK Stack Resources
