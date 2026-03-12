@@ -4,18 +4,18 @@ import logging
 import asyncio
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
-from openai import OpenAI
+import google.generativeai as genai
 
-
+# Gemini API Key
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com:7687")
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "companies")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "companies")
 NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "companies")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GOOGLE_API_KEY)
 
 def get_driver():
     """Returns a Neo4j driver instance."""
@@ -47,7 +47,7 @@ async def query_company(company_name: str) -> str:
         logging.error(f"Error in query_company: {e}")
         return f"Error querying company: {str(e)}"
 
-async def search_news(company_name: str, query: str, limit: int = 5, embedding_model: str = "default") -> str:
+async def search_news(company_name: str, query: str, limit: int = 5) -> str:
     """
     Vector search for news articles about a company.
     """
@@ -65,7 +65,7 @@ async def search_news(company_name: str, query: str, limit: int = 5, embedding_m
     ORDER BY score DESC
     """
     try:
-        embedding = await embed_query(query, model=embedding_model)
+        embedding = await embed_query(query)
         with get_driver() as driver:
             records, _, _ = driver.execute_query(
                 query_cypher,
@@ -284,23 +284,22 @@ async def find_influential_companies(limit: int = 10) -> str:
     """
     Find most influential companies using PageRank algorithm.
     """
-    # Drop graph if it exists
-    drop_query = "CALL gds.graph.drop('companies', false) YIELD graphName"
-    # Project graph
-    project_query = """
-    MATCH (o1:Organization)--(o2:Organization)
-    WITH o1, o2, count(*) as freq
-    WHERE freq > 1
-    WITH gds.graph.project(
-        'companies',
-        o1,
-        o2,
-        {
-            relationshipProperties: 'freq'
-        }
-    ) as graph
-    RETURN graph.graphName as graph
-    """
+    # The graph is already projected in the server if using the demo instance. If not, you can uncomment the following lines to drop and create the graph projection.
+    # drop_query = "CALL gds.graph.drop('companies', false) YIELD graphName"
+    # project_query = """
+    # MATCH (o1:Organization)--(o2:Organization)
+    # WITH o1, o2, count(*) as freq
+    # WHERE freq > 1
+    # WITH gds.graph.project(
+    #     'companies',
+    #     o1,
+    #     o2,
+    #     {
+    #         relationshipProperties: 'freq'
+    #     }
+    # ) as graph
+    # RETURN graph.graphName as graph
+    # """
     # Run PageRank
     pagerank_query = """
     CALL gds.pageRank.stream('companies')
@@ -312,8 +311,8 @@ async def find_influential_companies(limit: int = 10) -> str:
     """
     try:
         with get_driver() as driver:
-            driver.execute_query(drop_query, database_=NEO4J_DATABASE)
-            driver.execute_query(project_query, database_=NEO4J_DATABASE)
+            # driver.execute_query(drop_query, database_=NEO4J_DATABASE)
+            # driver.execute_query(project_query, database_=NEO4J_DATABASE)
             records, _, _ = driver.execute_query(
                 pagerank_query,
                 limit=limit,
@@ -348,20 +347,22 @@ async def get_investments(company: str) -> str:
         logging.error(f"Error executing custom tool: {e}")
         return f"Error fetching investments: {str(e)}"
 
-async def embed_query(text: str, model: str = "text-embedding-ada-002") -> List[float]:
+async def embed_query(text: str, model: str = "models/text-embedding-004") -> List[float]:
     """
-    Generate an embedding for a given text using a specified model.
-    This function uses the OpenAI API to generate embeddings.
-    To use a different embedding provider, you can modify this function
-    to call the respective API.
+    Generate an embedding for a given text using Google Gemini's embedding model.
     """
-    logging.info(f"Generating embedding for text: '{text}' using model: {model}")
+    logging.info(f"Generating Gemini embedding for text using model: {model}")
+    
     try:
-        response = client.embeddings.create(
-            input=text,
-            model=model
+        response = genai.embed_content(
+            model=model,
+            content=text,
+            task_type="retrieval_document" 
         )
-        return response.data[0].embedding
+        return response["embedding"]
+        
     except Exception as e:
-        logging.error(f"Error generating embedding: {e}")
-        return [0.1] * 1536
+        logging.error(f"Error generating Gemini embedding: {e}")
+        # Fallback to a default 768-dimensional embedding in case of error
+        # Note: Gemini's text-embedding-004 outputs 768 dimensions by default.
+        return [0.1] * 768
