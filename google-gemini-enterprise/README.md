@@ -69,7 +69,7 @@ We use Google Cloud Secret Manager for storing credentials. Tracking related cre
     echo -n "neo4j db password" | gcloud secrets create NEO4J_PASSWORD --data-file=-
 ```
 
-## Setp 3: Grant Cloud Run access to read the secrets:
+## Setup 3: Grant Cloud Run access to read the secrets:
 
 ```bash
 # Grants the Secret Accessor role to the default Compute Engine service account

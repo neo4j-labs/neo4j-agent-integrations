@@ -32,7 +32,6 @@ class OAuthValidationMiddleware:
         # ASGI headers are byte-strings and always lowercase
         headers = dict(scope.get("headers", []))
         auth_header = headers.get(b"authorization", b"").decode("utf-8")
-        logging.debug(f"Authorization header: {auth_header}")
 
         async def respond_401(message):
             logging.warning(f"Authentication failed: {message}")
@@ -61,7 +60,6 @@ class OAuthValidationMiddleware:
             return await respond_401("Invalid OAuth access token")
 
         token_data = resp.json()
-        logging.debug(f"Token data received: {token_data}")
 
         user_identity = token_data.get("email", token_data.get("sub", "unknown_user"))
         if user_identity == "unknown_user":
