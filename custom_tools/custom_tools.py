@@ -4,10 +4,9 @@ import logging
 import asyncio
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
-import google.generativeai as genai
+from google import genai
 
-# Gemini API Key
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com:7687")
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "companies")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "companies")
@@ -15,8 +14,9 @@ NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "companies")
 
 logging.basicConfig(level=logging.INFO)
 
-genai.configure(api_key=GOOGLE_API_KEY)
-
+# client definition for embeddings. Users can define their own embedding function.
+client = genai.Client(vertexai=True, project=os.environ.get("GOOGLE_CLOUD_PROJECT"), location='us-central1') 
+                      
 def get_driver():
     """Returns a Neo4j driver instance."""
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
@@ -54,12 +54,12 @@ async def search_news(company_name: str, query: str, limit: int = 5) -> str:
     query_cypher = """
     MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
     MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-    CALL db.index.vector.queryNodes('news', $limit, $embedding)
+    CALL db.index.vector.queryNodes('news_google', $limit, $embedding)
     YIELD node, score
     WHERE node = c
     RETURN a.title as title,
            a.date as date,
-           a.url as url,
+           a.siteName as site,
            c.text as text,
            score
     ORDER BY score DESC
@@ -213,9 +213,8 @@ async def get_article(article_id: str) -> str:
     RETURN a.id as article_id,
            a.author as author,
            a.date as date,
-           a.site as site,
+           a.siteName as site,
            a.title as title,
-           a.url as url,
            a.sentiment as sentiment,
            apoc.text.join(contents, ' ') as content
     """
@@ -347,19 +346,18 @@ async def get_investments(company: str) -> str:
         logging.error(f"Error executing custom tool: {e}")
         return f"Error fetching investments: {str(e)}"
 
-async def embed_query(text: str, model: str = "models/text-embedding-004") -> List[float]:
+async def embed_query(text: str, model: str = "text-embedding-004") -> List[float]:
     """
     Generate an embedding for a given text using Google Gemini's embedding model.
     """
     logging.info(f"Generating Gemini embedding for text using model: {model}")
     
     try:
-        response = genai.embed_content(
+        response = await client.aio.models.embed_content(
             model=model,
-            content=text,
-            task_type="retrieval_document" 
+            contents=text
         )
-        return response["embedding"]
+        return response.embeddings[0].values
         
     except Exception as e:
         logging.error(f"Error generating Gemini embedding: {e}")
