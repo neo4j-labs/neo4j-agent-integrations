@@ -69,7 +69,7 @@ class TokenManager:
 
         except Exception as e:
             logging.error(f"Failed to check token limit for user {user_id}: {e}")
-            return True  # Fail open to not block users on DB error
+            return False
 
     def add_tokens(self, user_id: str, tokens: int):
         """Adds the used tokens to the user's daily total and updates the timestamp."""

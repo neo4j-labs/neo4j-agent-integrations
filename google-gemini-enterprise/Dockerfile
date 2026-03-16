@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # Force Python logs to show up immediately in Cloud Logging
 ENV PYTHONUNBUFFERED=True
 
+# Create a dedicated, non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
 # Set the working directory inside the container
 WORKDIR /app
 
@@ -16,6 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code into the container
 COPY app/ ./app
 COPY main.py .
+
+# Change ownership of the working directory to our non-root user
+RUN chown -R appuser:appuser /app
+
+# Explicitly switch to the non-root user before running the application
+USER appuser
 
 # Expose port 8080 (the default port expected by Google Cloud Run)
 EXPOSE 8080
