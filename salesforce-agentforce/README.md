@@ -40,7 +40,7 @@ Setup → Agents → MCP Servers → New
 Run the Neo4j MCP server as an HTTP service:
 
 ```bash
-# Official Neo4j MCP server (HTTP transport)
+# Official Neo4j MCP docker images (HTTP transport)
 docker run -p 8080:8080 \
   -e NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
   -e NEO4J_DATABASE=companies \
@@ -48,12 +48,17 @@ docker run -p 8080:8080 \
   --neo4j-transport-mode http \
   --neo4j-http-host 0.0.0.0 --neo4j-http-port 8000
 
-# OR labs mcp server (https://github.com/neo4j/mcp/releases)
+# OR Official Neo4j MCP binary (https://github.com/neo4j/mcp/releases)
 ./neo4j-mcp \
     --neo4j-uri "neo4j+s://demo.neo4jlabs.com:7687" \
     --neo4j-database "companies" \
     --neo4j-transport-mode "http" --neo4j-http-port 8080
+
+# OR user demo server (https://mcp.demo.neo4jlabs.com/mcp)
 ```
+
+⚠️ When setting up the Neo4j MCP server in HTTP transport mode, the credentials are provided per-request via Basic Auth headers. 
+Neo4j username and password should not be set (as environment variables or parameters) for HTTP transport mode;
 
 **Architecture:**
 
