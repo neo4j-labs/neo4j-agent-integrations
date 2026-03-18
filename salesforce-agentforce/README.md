@@ -33,7 +33,7 @@ Agentforce now includes a native MCP (Model Context Protocol) client. Register a
 ```
 Setup → Agents → MCP Servers → New
   Name: Neo4j Knowledge Graph
-  Server URL: https://your-neo4j-mcp-server:8080/sse
+  Server URL: https://your-neo4j-mcp-server:8080/mcp
   Auth: Bearer token (via Named Credential)
 ```
 
@@ -43,17 +43,16 @@ Run the Neo4j MCP server as an HTTP service:
 # Official Neo4j MCP server (HTTP transport)
 docker run -p 8080:8080 \
   -e NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
-  -e NEO4J_USERNAME=companies \
-  -e NEO4J_PASSWORD=companies \
-  neo4j/mcp \
-  --neo4j-transport-mode http --host 0.0.0.0 --port 8080
+  -e NEO4J_DATABASE=companies \
+  mcp/neo4j \
+  --neo4j-transport-mode http \
+  --neo4j-http-host 0.0.0.0 --neo4j-http-port 8000
 
-# OR labs Python server (SSE transport)
-pip install mcp-neo4j-cypher
-NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
-NEO4J_USERNAME=companies \
-NEO4J_PASSWORD=companies \
-python -m mcp_neo4j_cypher --transport sse --port 8080
+# OR labs mcp server (https://github.com/neo4j/mcp/releases)
+./neo4j-mcp \
+    --neo4j-uri "neo4j+s://demo.neo4jlabs.com:7687" \
+    --neo4j-database "companies" \
+    --neo4j-transport-mode "http" --neo4j-http-port 8080
 ```
 
 **Architecture:**
