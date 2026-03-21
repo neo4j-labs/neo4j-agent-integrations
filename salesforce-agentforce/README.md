@@ -101,7 +101,7 @@ Neo4j username and password should not be set (as environment variables or param
 └────────────────────────────────────────────┘
 ```
 
-### Track B: External Service Actions ⭐ (Spring 2025 GA — Most Stable)
+### Track B: External Service Actions ⭐ 
 
 Use the Query API, which allows to execute Cypher statements against a Neo4j server through HTTP requests.
 
@@ -172,7 +172,7 @@ curl -X 'POST' 'https://demo.neo4jlabs.com:7473/db/companies/query/v2' \
 └────────────────────────────────────────────┘
 ```
 
-### Track C: Apex Actions (Maximum Flexibility)
+### Track C: Apex Actions
 
 Write Apex classes with `@InvocableMethod` annotations. These become agent actions with full access to Salesforce platform features (CRM records, flows, etc.).
 
