@@ -298,6 +298,36 @@ Setup → Integrations → External Services → [Your ES] → Test Operations
 # Test individual API calls
 ```
 
+### Problems and limitations
+
+As of March 2026, there are networking issues between AuraDB (Neo4j Cloud Offering) and Salesforce. HTTP calls initiated directly from SF (Apex code) and blocked and results in `400 Bad Response`. A intermediary workaround, it to put a proxy in between (for example Cloudflare workers - `workers.dev`). That way an Apex `HttpRequest` will work.
+
+```
+export default {
+    async fetch(request, env) {
+        // my Aura instance
+        const neo4jUrl = "https://xxxxxxx.databases.neo4j.io/db/xxxxx/query/v2";
+
+        // Clone the request but strip all Salesforce headers
+        const newRequest = new Request(neo4jUrl, {
+            method: request.method,
+            body: await request.arrayBuffer(),
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+
+                // Pass through your Authorization header from SF
+                "Authorization": request.headers.get("Authorization"),
+                "User-Agent": "curl/7.68.0" // Mimic curl
+            }
+        });
+
+     return fetch(newRequest);
+    }
+};
+```
+
+
 ---
 
 ## Get company insights — Implementation
