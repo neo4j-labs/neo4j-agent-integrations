@@ -221,7 +221,82 @@ Write Apex classes with `@InvocableMethod` annotations. These become agent actio
 
 ## Salesforce Configuration
 
+The following steps provide foundational setup for all tracks, to connect to external services.
 
+**1. External Credentials — Setup → Security → External Credentials → New**
+
+Create custom external credentials for Neo4j authentication:
+```
+Label: `demo_companies_neo4jlabs_auth` (or descriptive name)
+Name: `demo_companies_neo4jlabs_auth`
+Principal: Named Principal
+Authentication Protocol: Basic Authentication
+
+Create a Principal with parameters:
+  - Parameter Name: "username" → Value: "companies"
+  - Parameter Name: "password" → Value: "companies"
+```
+
+**Important notes:**
+- External Credentials allow Named Credentials to manage authentication securely without hardcoding credentials
+- The "Generate Authorization Header" option should be enabled or handled via Custom Headers
+- For HTTP transport with legacy setups, ensure the custom headers are properly configured
+
+**2. Named Credentials — Setup → Security → Named Credentials → New**
+
+Create a Named Credential that references the External Credential:
+```
+Name: demo_companies_neo4jlabs_url (must match ENDPOINT constant in your Apex code)
+URL: https://demo.neo4jlabs.com:7473
+External Credential: demo_companies_neo4jlabs_auth (from Step 1)
+Allow Merge Fields in HTTP Body: ☑ (enables dynamic Cypher parameters)
+Allowed Namespaces for Callouts: Ensure your namespace (or 'None') is allowed
+```
+
+**Key considerations:**
+- The Named Credential name must match the `callout:` prefix in your Apex code (e.g., `callout:demo_companies_neo4jlabs_url`)
+- This centralizes authentication — update credentials here without modifying Apex code
+- Authorization headers are automatically managed by the Named Credential
+
+**3. Remote Site Settings — Setup → Security → Remote Site Settings**
+
+Although Named Credentials bypass Remote Site Settings for the specific URL:
+```
+Remote Site Name: Neo4j Demo Companies
+Remote Site URL: https://demo.neo4jlabs.com:7473
+☑ Disable Protocol Security (if using non-HTTPS in dev environments only)
+```
+
+**When to add:**
+- If not using Named Credentials for other integrations
+- If other Salesforce features need direct access to this endpoint
+- To ensure org-wide connectivity for this server
+
+**4. Permissions — Setup → Users/Profiles/Permission Sets**
+
+Grant users access to the Neo4j integration:
+```
+Permission Set: Create or select existing
+Enable Permissions:
+  → External Credential Principal Access: 
+    [Select] demo_companies_neo4jlabs_auth
+  → Execute Named Credential: 
+    [Select] demo_companies_neo4jlabs_url
+  → (If using Apex) Execute Apex Classes: 
+    [Select] Neo4jService, Neo4jAction
+```
+
+**Monitoring and Troubleshooting:**
+```
+Setup → AgentForce → Agents → [Your Agent] → Debug Logs
+# View ARE reasoning traces and action execution logs
+
+Setup → Security → Named Credentials → [Your NC] → Test Connection
+# Verify authentication is working
+
+Setup → Integrations → External Services → [Your ES] → Test Operations
+# Test individual API calls
+```
 
 ---
 
@@ -290,39 +365,125 @@ RETURN
 
 ```yaml
 # AgentForce Agent Configuration (Agent Builder)
-Agent:
-  Name: Industry Research Agent
-  Description: Investment research assistant using Neo4j knowledge graph
-  Model: claude-3-5-sonnet (via Bedrock BYOM) or gpt-4o (default)
+system:
+  instructions: |
+    STRICT GROUNDING RULES:
+    1. Zero-Knowledge Policy: You have no prior knowledge of any company. You must ONLY use the information returned by the Get Neo4j Organization Insights action.
+    2. Verification: Before stating a company is a "competitor" or "supplier," verify it exists in the competitors or suppliers JSON arrays returned by the tool.
+    3. News Handling: If the relatedArticles array is empty, explicitly state "No recent news articles were found in the database." Do not say you "don't have access to news."
+    4. No Internal Knowledge: Never describe a company's sector (e.g., "Graph Database") unless that specific phrase is found in the summary or motto fields of the tool's JSON output.
+    5. Direct Reporting: Summarize the data exactly as it appears. If the tool returns data for "TigerGraph" under competitors, report it. If the tool returns an empty list, report that no data is available.
 
-Topics:
-  - Name: Company Research
-    Description: >
-      Handles requests to research specific companies, find company profiles,
-      leadership information, industry classification, and organizational
-      relationships from the Neo4j knowledge graph.
-      Does NOT handle contract, billing, or Salesforce CRM data questions.
-    Instructions: |
-      Always return company_id when looking up companies.
-      Search for news when discussing recent developments.
-      Use relationship analysis for competitive intelligence.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (company lookup queries)
-      - Neo4j MCP: get_neo4j_schema (understand data model)
+    ORG INSIGHTS SAFETY GUARDRAILS:
+    A. Do not draft insights, summaries, or lists until after the organization insights tool completes successfully for the current turn.
+    B. Do not infer or hallucinate missing fields. For any absent field, state "No <field> information was found."
+    C. Do not call other summarization or LLM-only chains before the insights tool returns when an orgName is identified.
+    D. Generate grounded responses only from the fields returned by the insights tool. Do not use external knowledge.
 
-  - Name: Industry Analysis
-    Description: >
-      Handles requests about industry sectors, market trends, competitive
-      landscape, and identifying key players within a sector.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (industry queries)
+  messages:
+    welcome: |
+      Hi, I'm an AI assistant. How can I help you? You can write: "I have a meeting with Neo4j tomorrow. Can you give me a briefing on their competitors and what's been happening in their news lately?"
+    error: "Sorry, it looks like something has gone wrong."
 
-  - Name: News Research
-    Description: >
-      Finds and analyzes news articles, recent developments, and events
-      related to companies or industries in the knowledge graph.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (news/article queries)
+config:
+    developer_name: "company_insights"
+    default_agent_user: "neo4jtest@00dvb000008pm7b1232290554.ext"
+    agent_label: "company_insights"
+    description: "New agent description"
+
+language:
+    default_locale: "en_US"
+    additional_locales: ""
+    all_additional_locales: False
+
+variables:
+    EndUserId: linked string
+        source: @MessagingSession.MessagingEndUserId
+        description: "This variable may also be referred to as MessagingEndUser Id"
+    RoutableId: linked string
+        source: @MessagingSession.Id
+        description: "This variable may also be referred to as MessagingSession Id"
+    ContactId: linked string
+        source: @MessagingEndUser.ContactId
+        description: "This variable may also be referred to as MessagingEndUser ContactId"
+    EndUserLanguage: linked string
+        source: @MessagingSession.EndUserLanguage
+        description: "This variable may also be referred to as MessagingSession EndUserLanguage"
+    VerifiedCustomerId: mutable string
+        description: "This variable may also be referred to as VerifiedCustomerId"
+    orgName: mutable string = ""
+        description: "Resolved organization name captured from entity extraction or latest user input for invoking insights actions."
+    company_insights_result: mutable string = ""
+        description: "Holds the latest insights JSON returned from Get_Neo4j_Organization_Insights for response composition."
+    last_insights_record_count: mutable number = 0
+        description: "Number of records returned by the insights tool in the current turn for tracing and checks."
+    tool_check: mutable string = ""
+        description: "Flag to record that the insights tool executed in the current turn."
+    safe_message: mutable string = ""
+        description: "Prepared safe response when the tool returns no data or an error."
+
+knowledge:
+    rag_feature_config_id: ""
+    citations_enabled: False
+    citations_url: ""
+
+start_agent topic_selector:
+    label: "Topic Selector"
+
+    description: "Welcome the user and determine the appropriate topic based on user input"
+
+    reasoning:
+        instructions: ->
+            | Select the best tool to call based on conversation history and user's intent.
+
+        actions:
+            go_to_Company_Insights: @utils.transition to @topic.Company_Insights
+
+
+
+topic Company_Insights:
+    label: "Company Insights"
+
+    description: "Get Company Insights"
+
+    reasoning:
+        instructions: ->
+            | Your goal is to provide a comprehensive strategic briefing on an organization. To achieve this, you must use  the Get_Neo4j_Organization_Insights action to gather data on competitors, suppliers, subsidiaries and news. Present a summarized view of all available data points to the user in a single, professional response.
+              If the user names a company, call the insights action immediately; only clarify if the name is ambiguous
+              When the user requests insights about a named company, immediately call Get_Neo4j_Organization_Insights.
+              Only ask clarifying questions if the company name is missing or ambiguous. Do not ask about competitors, suppliers, subsidiaries, or news unless explicitly requested or after returning base insights
+
+        actions:
+            set_variable_org_name: @utils.setVariables
+                description: "Set the organization name from detected entity or latest user input."
+                with orgName = ...
+
+            tool_GetInsights: @actions.Get_Neo4j_Organization_Insights
+                available when ( @variables.orgName is not None and @variables.orgName != "")
+                with orgName = @variables.orgName
+                set @variables.company_insights_result = @outputs.result
+
+    actions:
+        Get_Neo4j_Organization_Insights:
+          description: "Get Neo4j Organization Insights"
+          inputs:
+            orgName: string
+              description: "The full legal name of the organization to research (e.g., 'Neo4j', 'Microsoft', or 'Tesla'). This name is used to match the primary node in the graph database."
+              label: "Organization Name"
+              is_required: True
+              is_user_input: False
+              complex_data_type_name: "lightning__textType"
+          outputs:
+            result: string
+              description: "A JSON object containing the definitive list of competitors, suppliers, and subsidiaries for the requested organization, along with a list of related news articles. Use this as the ONLY source of truth for the company's relationships and recent news. The 'relatedArticles' field contains the most recent headlines."
+              label: "Neo4j Insights"
+              complex_data_type_name: "lightning__textType"
+              filter_from_agent: False
+              is_displayable: False
+          target: "apex://Neo4jAction"
+          label: "Get Neo4j Organization Insights"
+          require_user_confirmation: False
+          include_in_progress_indicator: False
 ```
 
 ---
