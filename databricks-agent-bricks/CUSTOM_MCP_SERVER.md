@@ -258,11 +258,13 @@ if __name__ == "__main__":
 
 Now we can create the Databricks App that will use our custom Python MCP Server.
 
-Open a terminal in the root of your custom-mcp-server folder:
+Open a terminal in the root of your custom-mcp-server folder and run the command to create the Databricks app.
+
+**It is important that the app name starts with "mcp-", otherwise Databricks will not be able to treat it as an MCP**
 ```
 databricks apps create mcp-<app_name>
 ```
-**It is important that the app name starts with "mcp-", otherwise Databricks will not be able to treat it as an MCP Tool**
+Then we sync our code with the Databricks app and we deploy/start the app.
 
 ```
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
