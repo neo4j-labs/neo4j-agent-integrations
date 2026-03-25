@@ -79,11 +79,8 @@ Neo4j Database
 | `NEO4J_URI` | Yes | - | Neo4j connection URI |
 | `NEO4J_DATABASE` | No | `neo4j` | Target database name |
 | `NEO4J_READ_ONLY` | No | `true` | Restrict to read-only operations |
-| `NEO4J_MCP_HTTP_HOST` | Yes | `0.0.0.0` | Bind address inside the container |
-| `NEO4J_MCP_HTTP_PORT` | Yes | `8000` | HTTP port for AgentCore |
 | `NEO4J_HTTP_AUTH_HEADER_NAME` | No | - | Custom header for Neo4j credentials |
 | `NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING` | No | `true` | Allow unauthenticated health checks |
-| `NEO4J_TRANSPORT_MODE` | Yes | `http` | Transport mode (must be `http` for AgentCore) |
 | `NEO4J_LOG_LEVEL` | No | `info` | Log verbosity |
 | `NEO4J_LOG_FORMAT` | No | `text` | Log format (`text` or `json`) |
 
@@ -211,12 +208,6 @@ aws iam delete-role --role-name <ROLE_NAME>
 ### CDK Alternative
 
 If you prefer infrastructure-as-code, [Sample 1: MCP Runtime - Docker](../aws-agentcore/samples/1-mcp-runtime-docker/) provides a full AWS CDK deployment.
-To use the marketplace image instead of building a local Docker image, pass the container URI via CDK context:
-
-```bash
-cdk deploy Neo4jMCPRuntimeStack \
-  -c container_uri=709825985650.dkr.ecr.us-east-1.amazonaws.com/neo4j/mcp:v0.1.7
-```
 
 ## References
 
@@ -228,5 +219,5 @@ cdk deploy Neo4jMCPRuntimeStack \
 
 ### Neo4j Resources
 
-- [Neo4j MCP Server](https://github.com/neo4j/mcp)
+- [Neo4j MCP Server (Canary)](https://github.com/neo4j-labs/neo4j-mcp-canary)
 - [Neo4j MCP Support](https://github.com/neo4j-labs/neo4j-mcp-canary/issues)

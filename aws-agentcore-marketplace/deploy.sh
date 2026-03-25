@@ -66,7 +66,7 @@ aws iam put-role-policy \
         \"Sid\": \"ECRImageAccess\",
         \"Effect\": \"Allow\",
         \"Action\": [\"ecr:BatchGetImage\", \"ecr:GetDownloadUrlForLayer\"],
-        \"Resource\": \"arn:aws:ecr:*:*:repository/*\"
+        \"Resource\": \"arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/*\"
       },
       {
         \"Sid\": \"ECRTokenAccess\",
@@ -124,8 +124,6 @@ aws bedrock-agentcore-control create-agent-runtime \
     \"NEO4J_URI\":\"${NEO4J_URI}\",
     \"NEO4J_DATABASE\":\"${NEO4J_DATABASE}\",
     \"NEO4J_READ_ONLY\":\"${NEO4J_READ_ONLY}\",
-    \"NEO4J_MCP_HTTP_HOST\":\"0.0.0.0\",
-    \"NEO4J_MCP_HTTP_PORT\":\"8000\",
     \"NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING\":\"true\",
     \"NEO4J_HTTP_AUTH_HEADER_NAME\":\"X-Amzn-Bedrock-AgentCore-Runtime-Custom-Authorization\"
   }"
