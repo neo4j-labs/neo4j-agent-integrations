@@ -6,7 +6,7 @@
 
 **Key Features:**
 - Atlas Reasoning Engine (plan → act → observe → decide loop)
-- Topics (semantic routing layer) + Actions (tool execution layer)I 
+- Topics (semantic routing layer) + Actions (tool execution layer)
 - Native MCP client (Pilot July 2025, Beta features October 2025)
 - External Service Actions — import any OpenAPI 3.0 spec as agent tools
 - Apex Actions — full Java-like server-side code for complex integrations
@@ -51,9 +51,11 @@ This section outlines the primary methods to extend Salesforce Agentforce capabi
 └────────────────────────────────┼────────────────────────────────────────┘
                                  │ HTTPS (Named Credential)
                                  ▼
-                      ┌────────────────────┐
-                      │Neo4j HTTP Query API│
-                      └──────────┬─────────┘
+                     ┌──────────────────────┐
+                     │. Neo4j MCP Server    │                      
+                     │. Neo4j HTTP QueryAPI │
+                     │. Remote API bridge   │
+                     └───────────┬──────────┘
                                  │
                                  ▼
                       ┌────────────────────┐
@@ -83,17 +85,17 @@ Three integration tracks — implementations of "Salesforce Bindings":
 
 **⚠️ THIS SECTION IS A WORK IN PROGRESS**
 
-Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as agent tools with no custom code.
+Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as an agent tool with no custom code.
 
-⚠️ A custom server MCP support by Salesforce is currently in beta, not available for general use (Pilot July 2025, Beta October 2025, GA April 2026)
+⚠️ Custom MCP server support in Salesforce is currently in beta and not available for general use (Pilot July 2025, Beta October 2025, GA April 2026).
 
 ### Track B: External Service Actions  
 
-Deploy a custom REST adapter and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative. The REST adapter serves as the bridge between Salesforce and the Neo4j's Query API, which allows to execute Cypher statements against a Neo4j server through HTTP requests.
+Deploy a custom REST adapter and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative. The REST adapter serves as a bridge between Salesforce and Neo4j's Query API, allowing you to execute Cypher statements against a Neo4j server through HTTP requests.
 
-A sample bridge server based on `nodejs` and `itty-router`, which provides a relevant `openapi.json` schema endpoint for Salesforce discover. The server can be easily deployed as for example [Cloudflare workers](https://workers.dev).
+We provide a sample bridge server based on `nodejs` and `itty-router`, which exposes a relevant `openapi.json` schema endpoint for Salesforce to discover. The server can be easily deployed to platforms like [Cloudflare Workers](https://workers.dev).
 
-Once the bridge is set up, the required Salesforce configuration required importing service to Salesforce External Services (`Setup → Integrations → External Services → New`). The newly created action is available for reference in (for example) flow.
+Once the bridge is set up, the required Salesforce configuration involves importing the service to Salesforce External Services (`Setup → Integrations → External Services → New`). The newly created action is then available to be referenced in tools like Salesforce Flow.
 
 
 ### Track C: Apex Actions
@@ -108,23 +110,41 @@ Write Apex classes with `@InvocableMethod` annotations. These become agent actio
     }
 ```
 
-The complete, deployable and tested Apex code is in the [examples/apex](examples/apex) folder. Once the Apex classes are deployed, the code is available for action references in (for example) flow. 
+The complete, deployable, and tested Apex code is in the `examples/apex` folder. Once the Apex classes are deployed, the code is available to be referenced as an action in Salesforce Flow.
+
+### Advanced UI and Graph Visualization (LWC)
+
+Beyond feeding Neo4j data into an LLM, you can use **Lightning Web Components (LWC)** to visualize graph data directly within the Salesforce UI. By reusing the same Apex classes (using the `@AuraEnabled` annotation alongside `@InvocableMethod`), you can fetch graph data and render it using a JavaScript visualization library (like D3.js, vis.js, or Cytoscape).
+
+**Use Cases:**
+1. **Rich Agentforce Responses:** Return an interactive LWC inside the Agentforce chat window instead of a plain text summary.
+2. **Standalone Record Pages:** Embed a Neo4j Knowledge Graph widget directly onto a standard Salesforce Account or Contact record page to show localized connections.
+
+Once appropriate Apex method is annotated with `@AuraEnabled(cacheable=true)`, resolving the method from an LWC can work as follows:
+
+```
+// Imperatively fetch fresh data from Neo4j through your Apex service
+const rawData = await getInsights([{ recordId: this.recordId }]);
+this.processNeo4jData(rawData);
+ ```
+
+A starter implementation of a Neo4j Graph Widget can be found in the `examples/lwc/neo4jGraphWidget` directory.
 
 ### Code Examples
 
 See the `examples/` directory:
 
-| File                 | Description                    |
-| -------------------- | ------------------------------ |
-| agent.yaml | YAML script defining the agent |
-| `track-c/apex/*`   | Apex files with tests  |
-| `track-b/index.js` | A sample neo4j bridge server  |
+| File | Description |
+| --- | --- |
+| `examples/track-c/agent.yaml` | YAML script defining the agent |
+| `examples/apex/*` | Apex files with tests |
+| `examples/track-b/neo4j-bridge/index.ts` | A sample Neo4j bridge server |
 
 ---
 
 ## Salesforce Configuration
 
-The following steps provide foundational setup for all tracks, to connect to external services.
+The following steps provide the foundational setup required for all tracks to connect to external services.
 
 **1. External Credentials — Setup → Security → External Credentials → New**
 
@@ -201,9 +221,9 @@ Setup → Integrations → External Services → [Your ES] → Test Operations
 # Test individual API calls
 ```
 
-### Problems and limitations
+### Problems and Limitations
 
-As of March 2026, there are networking issues between AuraDB (Neo4j Cloud Offering) and Salesforce. HTTP calls initiated directly from SF (Apex code) and blocked and results in `400 Bad Response`. A intermediary workaround, it to put a proxy in between (for example [Cloudflare workers](https://workers.dev)). That way an Apex `HttpRequest` will work.
+As of March 2026, there are networking limitations between AuraDB (Neo4j's Cloud Offering) and Salesforce. HTTP calls initiated directly from Salesforce (via Apex code) are blocked and result in a `400 Bad Request` response. An intermediary workaround is to place a proxy between them (for example, using [Cloudflare Workers](https://workers.dev)). This allows the Apex `HttpRequest` to succeed.
 
 ```
 export default {
