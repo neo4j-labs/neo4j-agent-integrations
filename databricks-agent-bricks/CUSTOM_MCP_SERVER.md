@@ -15,7 +15,7 @@ The example shows a simple MCP Server implementation that returns the competitor
 ## Preliminary Notes
 
 This integration pattern fits really well when you need to create MCP Servers that exploits Neo4j queries alongside Rest APIs and/or Databricks SQL Warehouse queries.
-If you need Neo4j MCP Server with full capabilities (chat memory, etc...) we advice you to host an Official Neo4j MCP Server and define it as an External Connection in Databricks.
+If you need Neo4j MCP Server with full capabilities (chat memory, etc...) we advice you to see to the OFFICIAL_MCP_SERVER example.
 
 ---
 
@@ -38,18 +38,18 @@ If you need Neo4j MCP Server with full capabilities (chat memory, etc...) we adv
 
 ## Advantages
 
-- Low Code & Low infrastructure (Databricks App)
-- Fast Prototyping (Local Tests)
-- Allows for Complex MCP definition
-- Automatic permission inheritance
+- Low Code & Low infrastructure (Databricks App).
+- Fast Prototyping (Local Tests).
+- Allows for Complex MCP definition.
+- Automatic permission inheritance.
 - Credentials hided behind Databricks secrets.
-- Schema-level exposure (multiple functions → multiple tools)
-- Works in Playground immediately
+- Schema-level exposure (multiple functions → multiple tools).
+- Works in Playground immediately.
 
 ## Limitations
 
-- Python only
-- Neo4j MCP Server capabilities are limited
+- Python only.
+- Neo4j MCP Server capabilities are limited.
 
 ## Prerequisites
 
@@ -269,7 +269,7 @@ Then we sync our code with the Databricks app and we deploy/start the app.
 ```
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
 databricks sync . "/Users/$DATABRICKS_USERNAME/mcp-<app-name>"
-databricks apps deploy mcp-<app_name> --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/mcp-custom-server/custom-server"
+databricks apps deploy mcp-<app_name> --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/mcp-custom-server"
 ```
 
 Check your Workspace to review the app name and the synced files.
