@@ -1,4 +1,4 @@
-# 1. Databricks Custom MCP server (Neo4j via Databricks App)
+# 1. Databricks Official MCP server (Neo4j via Databricks App)
 
 ## Introduction
 
