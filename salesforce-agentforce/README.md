@@ -26,151 +26,19 @@
 
 Three integration tracks — use the one that fits your org's readiness:
 
-### Track A: Native MCP Client (Pilot July 2025, Beta October 2025, GA April 2026)
+### Track A: Native MCP Client 
+
+**⚠️ THIS SECTION IS A WORK IN PROGRESS**
 
 Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as agent tools with no custom code.
 
-```
-Setup → Agents → MCP Servers → New
-  Name: Neo4j Knowledge Graph
-  Server URL: https://mcp.demo.neo4jlabs.com/mcp
-  Auth: Bearer token (via Named Credential)
-```
+⚠️ A custom server MCP support by Salesforce is currently in beta, not available for general use (Pilot July 2025, Beta October 2025, GA April 2026)
 
-Run the Neo4j MCP server as an HTTP service:
+### Track B: External Service Actions  
 
-```bash
-# Official Neo4j MCP docker images (HTTP transport)
-docker run -p 8080:8080 \
-  -e NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
-  -e NEO4J_DATABASE=companies \
-  mcp/neo4j \
-  --neo4j-transport-mode http \
-  --neo4j-http-host 0.0.0.0 --neo4j-http-port 8000
+**⚠️ THIS SECTION IS A WORK IN PROGRESS**
 
-# OR Official Neo4j MCP binary (https://github.com/neo4j/mcp/releases)
-./neo4j-mcp \
-    --neo4j-uri "neo4j+s://demo.neo4jlabs.com:7687" \
-    --neo4j-database "companies" \
-    --neo4j-transport-mode "http" --neo4j-http-port 8080
-
-# OR user demo server (https://mcp.demo.neo4jlabs.com/mcp)
-```
-
-⚠️ When setting up the Neo4j MCP server in HTTP transport mode, the credentials are provided per-request via Basic Auth headers. 
-Neo4j username and password should not be set (as environment variables or parameters) for HTTP transport mode;
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │    Agent     │    │   Atlas Reasoning Engine (ARE)   │   │
-│  │              │───▶│   Plan → Act → Observe → Decide  │   │
-│  │  Topics:     │    └──────────────┬───────────────────┘   │
-│  │  - Research  │                   │                        │
-│  │  - Industry  │          ┌────────▼─────────┐             │
-│  │  - News      │          │  MCP Client      │             │
-│  └──────────────┘          │  (Native Pilot)  │             │
-└───────────────────────────┬──────────────────┬─────────────┘
-                            │ MCP Protocol     │ Named Credential
-                            │ (SSE/HTTP)       │ Bearer Token
-                            ▼                  │
-┌────────────────────────────────────────────┐ │
-│         Neo4j MCP Server                   │◀┘
-│  ┌────────────────────────────────────┐    │
-│  │ Tools:                             │    │
-│  │  • read_neo4j_cypher               │    │
-│  │  • get_neo4j_schema                │    │
-│  │  • graph algorithm execution       │    │
-│  └────────────────────────────────────┘    │
-│  Transport: HTTP SSE or Streamable HTTP    │
-└─────────────────────────┬──────────────────┘
-                          │ Bolt Protocol
-                          ▼
-┌────────────────────────────────────────────┐
-│         Neo4j Database                     │
-│  demo.neo4jlabs.com:7687 (companies DB)    │
-│                                            │
-│  Organizations ──[:IN_INDUSTRY]──▶ Industry│
-│  Organizations ──[:LOCATED_IN]──▶ Location │
-│  Articles ──[:MENTIONS]──▶ Organization    │
-│  Articles ──[:HAS_CHUNK]──▶ Chunk          │
-│                           (vector indexed) │
-└────────────────────────────────────────────┘
-```
-
-### Track B: External Service Actions ⭐ 
-
-Use the Query API, which allows to execute Cypher statements against a Neo4j server through HTTP requests.
-
-Deploy a REST adapter (FastAPI) and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative.
-
-```bash
-# 1. Deploy bridge server
-git clone ...
-cd examples
-pip install -r requirements.txt
-cp .env.example .env  # edit with your credentials
-uvicorn mcp_bridge_server:app --port 8080
-
-# 2. Get OpenAPI spec (Salesforce-ready)
-curl http://localhost:8080/openapi.json > neo4j_openapi.json
-
-curl -X 'POST' 'https://demo.neo4jlabs.com:7473/db/companies/query/v2' \
-    -H 'content-type: application/json' \
-    -H 'accept: application/json' \
-    -H "Authorization: Basic Y29tcGFuaWVzOmNvbXBhbmllcw==" \
-    -d '{"statement": "MATCH (o:Organization {name: \"Neo4j\"})-[:HAS_CEO]->(p:Person) RETURN p.name AS CEO"}'
-
-# 3. Import into Salesforce External Services
-# Setup → Integrations → External Services → New
-# → Upload neo4j_openapi.json
-# → Select operations to expose as agent actions
-```
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │    Agent     │    │   Atlas Reasoning Engine (ARE)   │   │
-│  │              │───▶│                                  │   │
-│  │  Topic:      │    └──────────────┬───────────────────┘   │
-│  │  Company     │                   │ External Service Action│
-│  │  Research    │          ┌────────▼─────────┐             │
-│  └──────────────┘          │ Named Credential │             │
-│                            │ "Neo4j_KG_API"   │             │
-│                            │ X-Api-Key: ***   │             │
-└───────────────────────────┬──────────────────┬─────────────┘
-                            │ HTTPS POST       │
-                            │ /research/company│
-                            ▼                  │
-┌────────────────────────────────────────────┐ │
-│  Neo4j REST Bridge (FastAPI)               │◀┘
-│  mcp_bridge_server.py                      │
-│                                            │
-│  Endpoints:                                │
-│  POST /research/company     ← combined     │
-│  POST /tools/query_company                 │
-│  POST /tools/search_companies              │
-│  POST /tools/search_news                   │
-│  POST /tools/find_influential_companies    │
-│  GET  /tools/list_industries               │
-│  GET  /openapi.json  ← import to SF        │
-│                                            │
-│  Deploy: Heroku / Cloud Run / Railway      │
-└─────────────────────────┬──────────────────┘
-                          │ neo4j Python driver
-                          │ Bolt protocol
-                          ▼
-┌────────────────────────────────────────────┐
-│         Neo4j Database                     │
-│  demo.neo4jlabs.com:7687 (companies DB)    │
-└────────────────────────────────────────────┘
-```
+Deploy a custom REST adapter and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative. The REST adapter serves as the bridge between Salesforce and the Neo4j's Query API, which allows to execute Cypher statements against a Neo4j server through HTTP requests.
 
 ### Track C: Apex Actions
 
@@ -184,38 +52,64 @@ Write Apex classes with `@InvocableMethod` annotations. These become agent actio
     }
 ```
 
+The complete, deployable and tested Apex code is in the [examples/apex](examples/apex) folder
+
 **Architecture:**
 
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Salesforce Agentforce                           │
+│                                                                         │
+│ 1. User: "Provide me insights about the company Microsoft"              │
+│ 2. Agent captures "Microsoft" and triggers Prompt Template action       │
+│                                │                                        │
+│                       ┌────────▼────────┐                               │
+│                       │ Prompt Template │                               │
+│                       └────────┬────────┘                               │
+│                                │ 3. Describes intent & response format  │
+│                                │ 4. Invokes Flow                        │
+│                       ┌────────▼────────┐                               │
+│                       │ Salesforce Flow │                               │
+│                       └────────┬────────┘                               │
+│                                │ 5. Calls Apex class                    │
+│                       ┌────────▼────────┐                               │
+│                       │   Apex Class    │                               │
+│                       │(Neo4jAction.cls)│                               │
+│                       └────────┬────────┘                               │
+└────────────────────────────────┼────────────────────────────────────────┘
+                                 │ HTTPS (Named Credential)
+                                 ▼
+                      ┌────────────────────┐
+                      │Neo4j HTTP Query API│
+                      └──────────┬─────────┘
+                                 │
+                                 ▼
+                      ┌────────────────────┐
+                      │   Neo4j Database   │
+                      └────────────────────┘
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│                                                             │
-│  Agent → ARE → selects "Research Company in KG" action      │
-│                        │                                    │
-│               ┌────────▼─────────────────────────────┐     │
-│               │  Neo4jAction.cls (@InvocableMethod)   │     │
-│               │  - Validates input                    │     │
-│               │  - Calls Neo4jService.cls             │     │
-│               │  - Formats output for ARE             │     │
-│               └────────┬─────────────────────────────┘     │
-│                        │                                    │
-│               ┌────────▼─────────────────────────────┐     │
-│               │  Neo4jService.cls (HTTP callout)      │     │
-│               │  callout:Neo4j_KG_API/research/co..   │     │
-│               │  Named Credential handles auth        │     │
-│               └────────┬─────────────────────────────┘     │
-└────────────────────────┼────────────────────────────────────┘
-                         │ HTTPS (Named Credential)
-                         ▼
-              ┌──────────────────────────┐
-              │  Neo4j HTTP Query API    │
-              └────────────┬─────────────┘
-                           │
-                           ▼
-              ┌──────────────────────────┐
-              │  Neo4j Database          │
-              └──────────────────────────┘
-```
+
+**Design Considerations:**
+
+1. **The agent has to be instruction light** and delegate additional work to other elements (like Prompt Templates)
+2. **Why use Prompt Templates?**
+   - **Grounding and Formatting:** A Prompt Template effectively grounds the LLM. Rather than letting the agent arbitrarily decide how to present the raw data coming from Neo4j, the template explicitly defines the intent, structure (e.g., bullet points, summaries), persona, and tone of the final response.
+   - **Reduced Hallucinations:** By firmly constraining the instructions on how to interpret the retrieved data, it minimizes the risk of the model hallucinating or omitting critical data points.
+   - **Declarative Control:** Admins can iterate on the LLM's prompt and output formatting dynamically without touching any code.
+
+3. **Why use Salesforce Flow to wrap Apex?**
+   - **Orchestration and Decoupling:** Flow acts as a declarative orchestration layer. It decouples the business logic (the Apex callout to Neo4j) from the agent's prompt presentation logic.
+   - **Data Enrichment:** Before returning the data to the Prompt Template, a Flow can seamlessly combine the Neo4j Graph responses with local Salesforce CRM data (e.g., fetching Account records, past Opportunities), providing a unified context to the LLM.
+   - **Flexibility and Reusability:** If error handling, routing, or additional logic needs to change, Salesforce admins can update the Flow without requiring a developer to modify and deploy new Apex code.
+
+**Code Examples**
+
+See the `examples/` directory:
+
+| File                 | Description                    |
+| -------------------- | ------------------------------ |
+| `apex/*`             | Apex files with tests          |
+| `track-c/agent.yaml` | YAML script defining the agent |
 
 ---
 
@@ -390,141 +284,6 @@ RETURN
     subsidiaries, 
     collect(article) AS related_articles
 ```
-
-### Track C: Apex Actions
-
-```yaml
-# AgentForce Agent Configuration (Agent Builder)
-system:
-  instructions: |
-    STRICT GROUNDING RULES:
-    1. Zero-Knowledge Policy: You have no prior knowledge of any company. You must ONLY use the information returned by the Get Neo4j Organization Insights action.
-    2. Verification: Before stating a company is a "competitor" or "supplier," verify it exists in the competitors or suppliers JSON arrays returned by the tool.
-    3. News Handling: If the relatedArticles array is empty, explicitly state "No recent news articles were found in the database." Do not say you "don't have access to news."
-    4. No Internal Knowledge: Never describe a company's sector (e.g., "Graph Database") unless that specific phrase is found in the summary or motto fields of the tool's JSON output.
-    5. Direct Reporting: Summarize the data exactly as it appears. If the tool returns data for "TigerGraph" under competitors, report it. If the tool returns an empty list, report that no data is available.
-
-    ORG INSIGHTS SAFETY GUARDRAILS:
-    A. Do not draft insights, summaries, or lists until after the organization insights tool completes successfully for the current turn.
-    B. Do not infer or hallucinate missing fields. For any absent field, state "No <field> information was found."
-    C. Do not call other summarization or LLM-only chains before the insights tool returns when an orgName is identified.
-    D. Generate grounded responses only from the fields returned by the insights tool. Do not use external knowledge.
-
-  messages:
-    welcome: |
-      Hi, I'm an AI assistant. How can I help you? You can write: "I have a meeting with Neo4j tomorrow. Can you give me a briefing on their competitors and what's been happening in their news lately?"
-    error: "Sorry, it looks like something has gone wrong."
-
-config:
-    developer_name: "company_insights"
-    default_agent_user: "neo4jtest@00dvb000008pm7b1232290554.ext"
-    agent_label: "company_insights"
-    description: "New agent description"
-
-language:
-    default_locale: "en_US"
-    additional_locales: ""
-    all_additional_locales: False
-
-variables:
-    EndUserId: linked string
-        source: @MessagingSession.MessagingEndUserId
-        description: "This variable may also be referred to as MessagingEndUser Id"
-    RoutableId: linked string
-        source: @MessagingSession.Id
-        description: "This variable may also be referred to as MessagingSession Id"
-    ContactId: linked string
-        source: @MessagingEndUser.ContactId
-        description: "This variable may also be referred to as MessagingEndUser ContactId"
-    EndUserLanguage: linked string
-        source: @MessagingSession.EndUserLanguage
-        description: "This variable may also be referred to as MessagingSession EndUserLanguage"
-    VerifiedCustomerId: mutable string
-        description: "This variable may also be referred to as VerifiedCustomerId"
-    orgName: mutable string = ""
-        description: "Resolved organization name captured from entity extraction or latest user input for invoking insights actions."
-    company_insights_result: mutable string = ""
-        description: "Holds the latest insights JSON returned from Get_Neo4j_Organization_Insights for response composition."
-    last_insights_record_count: mutable number = 0
-        description: "Number of records returned by the insights tool in the current turn for tracing and checks."
-    tool_check: mutable string = ""
-        description: "Flag to record that the insights tool executed in the current turn."
-    safe_message: mutable string = ""
-        description: "Prepared safe response when the tool returns no data or an error."
-
-knowledge:
-    rag_feature_config_id: ""
-    citations_enabled: False
-    citations_url: ""
-
-start_agent topic_selector:
-    label: "Topic Selector"
-
-    description: "Welcome the user and determine the appropriate topic based on user input"
-
-    reasoning:
-        instructions: ->
-            | Select the best tool to call based on conversation history and user's intent.
-
-        actions:
-            go_to_Company_Insights: @utils.transition to @topic.Company_Insights
-
-
-
-topic Company_Insights:
-    label: "Company Insights"
-
-    description: "Get Company Insights"
-
-    reasoning:
-        instructions: ->
-            | Your goal is to provide a comprehensive strategic briefing on an organization. To achieve this, you must use  the Get_Neo4j_Organization_Insights action to gather data on competitors, suppliers, subsidiaries and news. Present a summarized view of all available data points to the user in a single, professional response.
-              If the user names a company, call the insights action immediately; only clarify if the name is ambiguous
-              When the user requests insights about a named company, immediately call Get_Neo4j_Organization_Insights.
-              Only ask clarifying questions if the company name is missing or ambiguous. Do not ask about competitors, suppliers, subsidiaries, or news unless explicitly requested or after returning base insights
-
-        actions:
-            set_variable_org_name: @utils.setVariables
-                description: "Set the organization name from detected entity or latest user input."
-                with orgName = ...
-
-            tool_GetInsights: @actions.Get_Neo4j_Organization_Insights
-                available when ( @variables.orgName is not None and @variables.orgName != "")
-                with orgName = @variables.orgName
-                set @variables.company_insights_result = @outputs.result
-
-    actions:
-        Get_Neo4j_Organization_Insights:
-          description: "Get Neo4j Organization Insights"
-          inputs:
-            orgName: string
-              description: "The full legal name of the organization to research (e.g., 'Neo4j', 'Microsoft', or 'Tesla'). This name is used to match the primary node in the graph database."
-              label: "Organization Name"
-              is_required: True
-              is_user_input: False
-              complex_data_type_name: "lightning__textType"
-          outputs:
-            result: string
-              description: "A JSON object containing the definitive list of competitors, suppliers, and subsidiaries for the requested organization, along with a list of related news articles. Use this as the ONLY source of truth for the company's relationships and recent news. The 'relatedArticles' field contains the most recent headlines."
-              label: "Neo4j Insights"
-              complex_data_type_name: "lightning__textType"
-              filter_from_agent: False
-              is_displayable: False
-          target: "apex://Neo4jAction"
-          label: "Get Neo4j Organization Insights"
-          require_user_confirmation: False
-          include_in_progress_indicator: False
-```
-
----
-
-## Code Examples
-
-See the `examples/` directory:
-
-| File | Description | Track |
-|------|-------------|-------|
-| `apex/*` | Apex files with tests | C |
 
 ---
 
