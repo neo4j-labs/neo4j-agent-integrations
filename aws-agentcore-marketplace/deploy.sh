@@ -66,7 +66,7 @@ aws iam put-role-policy \
         \"Sid\": \"ECRImageAccess\",
         \"Effect\": \"Allow\",
         \"Action\": [\"ecr:BatchGetImage\", \"ecr:GetDownloadUrlForLayer\"],
-        \"Resource\": \"arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/*\"
+        \"Resource\": \"arn:aws:ecr:${REGION}:*:repository/*\"
       },
       {
         \"Sid\": \"ECRTokenAccess\",
