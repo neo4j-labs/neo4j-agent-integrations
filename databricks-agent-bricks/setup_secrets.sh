@@ -56,4 +56,7 @@ databricks secrets put-secret $SCOPE username $PROFILE_FLAG \
 databricks secrets put-secret $SCOPE password $PROFILE_FLAG \
   --string-value "$NEO4J_PASSWORD"
 
+databricks secrets put-secret $SCOPE database $PROFILE_FLAG \
+  --string-value "$NEO4J_DATABASE"
+
 echo "✅ Secrets uploaded successfully"

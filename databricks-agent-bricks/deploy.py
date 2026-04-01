@@ -50,27 +50,16 @@ def main():
         print("❌ Unexpected response from Databricks CLI.")
         sys.exit(1)
 
+    username = user_info["userName"]
+    workspace_path = f"/Workspace/Users/{username}/{args.app_name}"
+    profile_args = ["--profile", args.profile] if args.profile else []
+
     print("✅ Databricks CLI authenticated")
 
-    if args.sync:
-        print(f"Syncing files for app '{args.app_name}'...")
-
-        sync_cmd = ["databricks", "workspace", "import-dir", "./app",
-                     f"/Workspace/Users/{user_info['userName']}/.bundle/{args.app_name}/default/files/app",
-                     "--overwrite"]
-        if args.profile:
-            sync_cmd += ["--profile", args.profile]
-
-        result = subprocess.run(sync_cmd)
-        if result.returncode != 0:
-            print("❌ File sync failed.")
-            sys.exit(1)
-
-        print(f"✅ Files synced for app '{args.app_name}'")
-    else:
+    if not args.sync:
         print(f"Deploying app '{args.app_name}'...")
 
-        # Generate databricks.yml
+        # Generate databricks.yml for app resources (secrets bindings)
         bundle_config = {
             "bundle": {"name": args.app_name},
             "resources": {
@@ -103,6 +92,14 @@ def main():
                                     "permission": "READ",
                                 },
                             },
+                            {
+                                "name": "database",
+                                "secret": {
+                                    "scope": "neo4j-agent",
+                                    "key": "database",
+                                    "permission": "READ",
+                                },
+                            },
                         ],
                     }
                 }
@@ -115,17 +112,36 @@ def main():
         # Clean stale local Terraform state to avoid old app name references
         shutil.rmtree(".databricks/bundle", ignore_errors=True)
 
-        # Deploy the bundle
-        deploy_cmd = ["databricks", "bundle", "deploy"]
-        if args.profile:
-            deploy_cmd += ["--profile", args.profile]
-
-        result = subprocess.run(deploy_cmd)
+        # Create app and bind secret resources
+        result = subprocess.run(["databricks", "bundle", "deploy"] + profile_args)
         if result.returncode != 0:
-            print("❌ Deployment failed.")
+            print("❌ Bundle deploy failed.")
             sys.exit(1)
 
-        print(f"✅ App '{args.app_name}' deployed successfully")
+        print("✅ App resources configured")
+
+    # Sync source files to workspace
+    print(f"Syncing files to {workspace_path}...")
+    result = subprocess.run(
+        ["databricks", "sync", "./app", workspace_path] + profile_args
+    )
+    if result.returncode != 0:
+        print("❌ File sync failed.")
+        sys.exit(1)
+
+    print("✅ Files synced")
+
+    # Deploy the app with source code path
+    print(f"Deploying app '{args.app_name}'...")
+    result = subprocess.run(
+        ["databricks", "apps", "deploy", args.app_name,
+         "--source-code-path", workspace_path] + profile_args
+    )
+    if result.returncode != 0:
+        print("❌ App deploy failed.")
+        sys.exit(1)
+
+    print(f"✅ App '{args.app_name}' deployed successfully")
 
 
 if __name__ == "__main__":

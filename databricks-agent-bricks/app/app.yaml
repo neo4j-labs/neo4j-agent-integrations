@@ -7,3 +7,6 @@ env:
 
   - name: NEO4J_PASS
     valueFrom: password
+
+  - name: NEO4J_DATABASE
+    valueFrom: database

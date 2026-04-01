@@ -21,3 +21,8 @@ resources:
           scope: neo4j-agent
           key: password
           permission: READ
+      - name: database
+        secret:
+          scope: neo4j-agent
+          key: database
+          permission: READ

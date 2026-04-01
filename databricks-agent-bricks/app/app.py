@@ -78,7 +78,7 @@ def run_neo4j_server():
     try:
         neo4j_mcp_server(args=[
             '--neo4j-uri', os.getenv("NEO4J_URI", URI),
-            '--neo4j-database', os.getenv("NEO4J_DATABASE", "companies"),
+            '--neo4j-database', os.getenv("NEO4J_DATABASE", "neo4j"),
             '--neo4j-transport-mode', 'http',
             '--neo4j-read-only', 'true',
             '--neo4j-telemetry', 'false',
