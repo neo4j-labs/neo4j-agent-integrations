@@ -1,0 +1,23 @@
+bundle:
+  name: mcp-neo4j-server-v2
+resources:
+  apps:
+    neo4j-mcp:
+      name: mcp-neo4j-server-v2
+      source_code_path: ./app
+      resources:
+      - name: neo4j-uri
+        secret:
+          scope: neo4j-agent
+          key: neo4j-uri
+          permission: READ
+      - name: username
+        secret:
+          scope: neo4j-agent
+          key: username
+          permission: READ
+      - name: password
+        secret:
+          scope: neo4j-agent
+          key: password
+          permission: READ

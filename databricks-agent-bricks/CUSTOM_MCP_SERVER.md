@@ -64,7 +64,7 @@ The first thing to do is to define the Databricks secrets for the Neo4j credenti
 
 .env
 ``` 
-NEO4J_BOLT_URL=bolt+ssc://<your-neo4j>:7687
+NEO4J_URI=bolt+ssc://<your-neo4j>:7687
 NEO4J_USERNAME=
 NEO4J_PASSWORD=
 ```
@@ -106,8 +106,8 @@ databricks secrets create-scope $SCOPE >/dev/null 2>&1 || echo "Scope already ex
 # ---- upload secrets ----
 echo "Uploading secrets..."
 
-databricks secrets put-secret $SCOPE bolt-url \
-  --string-value "$NEO4J_BOLT_URL"
+databricks secrets put-secret $SCOPE neo4j-uri \
+  --string-value "$NEO4J_URI"
 
 databricks secrets put-secret $SCOPE username \
   --string-value "$NEO4J_USERNAME"
@@ -140,7 +140,7 @@ app.env
 ``` yaml
 env:
   - name: NEO4J_URI
-    valueFrom: bolt-url
+    valueFrom: neo4j-uri
 
   - name: NEO4J_USER
     valueFrom: username

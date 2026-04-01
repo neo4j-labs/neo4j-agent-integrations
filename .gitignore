@@ -1,4 +1,10 @@
 .DS_Store
+.env
+.bundle/
+.databricks/
+__pycache__/
+.idea/
+.mcp.json
 plan.md
 mcp-auth-support.md
 ai-agent-platforms.csv
