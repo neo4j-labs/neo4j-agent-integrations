@@ -20,7 +20,7 @@ pip install langchain langchain-neo4j langchain-mcp-adapters
 
 | Notebook | Description |
 |----------|-------------|
-| [langchain.ipynb](./langchain.ipynb) | Walkthrough of LangChain with Neo4j integration, including MCP server setup, custom tool creation, vector search, and query execution |
+| [langchain.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/langchain/langchain.ipynb) | Walkthrough of LangChain with Neo4j integration, including MCP server setup, custom tool creation, vector search, and query execution |
 
 ## Extension Points
 

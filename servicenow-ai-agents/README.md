@@ -36,7 +36,6 @@ Use pre-built connectors with custom Neo4j integration.
 
 ✅ **OAuth 2.1** (Primary) - Modern M2M authentication
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#10-servicenow-ai-agents--now-assist)
 
 ## Resources
 

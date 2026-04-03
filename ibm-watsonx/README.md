@@ -49,7 +49,6 @@ graph_rag = GraphRAG(
 
 ✅ **IBM Cloud IAM** - Role-based access
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#12-ibm-watsonx-orchestrate)
 
 ## Resources
 

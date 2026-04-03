@@ -19,7 +19,7 @@ pip install pydantic-ai neo4j
 
 | Notebook | Description |
 |----------|-------------|
-| [pydantic_ai.ipynb](./pydantic_ai.ipynb) | Walkthrough of Pydantic AI with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
+| [pydantic_ai.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/pydantic-ai/pydantic_ai.ipynb) | Walkthrough of Pydantic AI with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
 
 ## Extension Points
 

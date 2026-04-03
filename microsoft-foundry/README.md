@@ -73,7 +73,6 @@ Use Azure Functions or Azure Container Apps with Neo4j driver for custom tools.
 - APIM for additional auth layers
 - CORS configuration for cloud deployments
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#4-microsoft-foundry-copilot-studio-agent-framework)
 
 ## Industry Research Agent Example
 

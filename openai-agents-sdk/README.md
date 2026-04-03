@@ -20,7 +20,7 @@ pip install openai-agents
 
 | Notebook | Description |
 |----------|-------------|
-| [openai_agents.ipynb](./openai_agents.ipynb) | Walkthrough of OpenAI Agent SDK with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
+| [openai_agents.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/openai-agents-sdk/openai_agents.ipynb) | Walkthrough of OpenAI Agent SDK with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
 
 ## Extension Points
 
