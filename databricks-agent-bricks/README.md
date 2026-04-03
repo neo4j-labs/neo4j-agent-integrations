@@ -1,164 +1,177 @@
-# Neo4j MCP Server on Databricks Apps
+# Databricks Agent Bricks + Neo4j Integration
 
-Deploy the official Neo4j MCP Server as a Databricks App, exposing Neo4j graph tools to Databricks agents and the Playground.
+## Overview
 
-## Quick Start
+**Databricks Agent Bricks** (Mosaic AI Agent Framework) launched June 2025 with auto-optimization, evaluations, and governance. It features an MCP Catalog, Unity Catalog integration, and support for multiple models (GPT-5, Gemini, Claude, Llama).
 
-**Prerequisites:** [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) installed and authenticated, a Neo4j instance.
+**Key Features:**
+- MCP Catalog for managed MCP servers
+- Unity Catalog integration for governance
+- Auto-generates evaluations and tunes agents
+- Multi-model support
+- Document Intelligence
+- MLflow for observability
 
-```bash
-# 1. Authenticate with Databricks
-databricks auth login --host https://<your-databricks-workspace>
+**Official Resources:**
+- Documentation: https://docs.databricks.com/aws/en/generative-ai/agent-framework/create-agent
+- MCP Guide: https://docs.databricks.com/en/generative-ai/mcp/
+- Authentication: https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent
 
-# 2. Configure Neo4j credentials
-cp .env.sample .env
-# Edit .env with your Neo4j URI, username, and password
+## Samples
 
-# 3. Upload secrets to Databricks
-./setup_secrets.sh [--profile <databricks-profile>]
+This directory contains three end-to-end samples, each demonstrating a different integration pattern between Databricks
+and Neo4j via custom and official [Neo4j MCP server](https://github.com/neo4j/mcp).
+Samples can be deployed using Databricks SDK/CLI or via Databricks UI and use the public Neo4j companies demo database: `neo4j+s://demo.neo4jlabs.com:7687` by default.
 
-# 4. Deploy the app
-./deploy.py --app-name mcp-neo4j [--profile <databricks-profile>]
+| # | Sample | Pattern | Auth Model | Deployment |
+|---|--------|---------|------------|------------|
+| 1 | [UC Functions MCP Tools](samples/1-uc-functions/) | UC Functions as Tools | In code, protected by UC Governance | Databricks Notebook |
+| 2 | [Custom MCP Server — Using Databricks App](samples/2-custom-mcp-server/) | Python Custom MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+| 3 | [Official MCP Server — Using Databricks App](samples/3-official-mcp-server/) | Official MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+
+### Sample 1: UC Functions MCP Tools
+
+Uses custom UC Functions Tools that perform requests on Neo4j.
+Neo4j credentials are kept in the function, not intended for production but for fast-prototyping.
+
+→ **[Full documentation](samples/1-uc-functions/README.md)**
+
+### Sample 2: Custom MCP Server — Using Databricks App
+
+Uses Databricks App to deploy a Custom MCP Server written in Python who defines Neo4j driver queries as Tools.
+Neo4j Basic Auth credentials retrieved from Databricks Secrets.
+
+→ **[Full documentation](samples/2-custom-mcp-server/README.md)**
+
+### Sample 3: Official MCP Server — Using Databricks App
+
+Uses Databricks App to deploy the Neo4j Official MCP Server.
+Neo4j Basic Auth credentials retrieved from Databricks Secrets.
+
+→ **[Step-by-step documentation](samples/3-official-mcp-server/STEP_BY_STEP.md)**
+
+→ **[Straightforward documentation](samples/3-official-mcp-server/STRAIGHTFORWARD.md)**
+
+
+## Extension Points
+
+### 1. MCP Catalog (Primary)
+
+Install Neo4j MCP server from Databricks Marketplace or manually:
+
+```python
+from databricks_mcp import DatabricksMCPClient
+from databricks.sdk import WorkspaceClient
+
+workspace_client = WorkspaceClient(profile="DEFAULT")
+host = workspace_client.config.host
+
+client = DatabricksMCPClient(
+    servers=[
+        f"{host}/api/2.0/mcp/neo4j/prod/company_research"
+    ],
+    workspace_client=workspace_client
+)
+
+# Use tools
+tools = client.as_tools()
 ```
 
-The app name **must** start with `mcp-` for Databricks to treat it as an MCP server.
+### 2. Unity Catalog Connection
 
-After deploying, open the Databricks **Playground**, add your MCP server from **Tools > Add Tool > MCP Servers**, and start querying.
+Create Unity Catalog connection for Neo4j:
 
-To sync file changes without a full redeploy:
-
-```bash
-./deploy.py --app-name mcp-neo4j --sync [--profile <databricks-profile>]
+```sql
+CREATE CONNECTION neo4j_prod
+  TYPE http
+  URL 'https://your-neo4j-mcp-server.com/mcp'
+  WITH (
+    CREDENTIAL bearer_token SECRET 'your-token'
+  );
 ```
 
----
+### 3. Direct Integration in Notebooks
 
-## Introduction
+```python
+from neo4j import GraphDatabase
 
-This guide demonstrates how to deploy the **Official Neo4j MCP Server** using **Databricks Apps**.
-
-The setup allows you to use the official Neo4j MCP Tools to interact with a remote Neo4j instance directly from Databricks. By exposing Neo4j-based MCP Tools, you can integrate with LLM agents, the Databricks Playground, or other workflows.
-
-## Architecture Overview
-
-```
-Databricks Agent / Playground
-  -> Databricks App (Official MCP Server)
-    -> Proxy forwarding requests to neo4j-mcp-server package
-      -> Neo4j Database (e.g., demo.neo4jlabs.com / companies dataset)
+driver = GraphDatabase.driver(
+    "neo4j+s://demo.neo4jlabs.com:7687",
+    auth=("companies", "companies")
+)
 ```
 
-**Key points:**
-- The official `neo4j-mcp-server` Python package exposes tools to interact with Neo4j.
-- A proxy is the entry point for the Databricks App, controlling requests to the MCP Server.
-- The Neo4j connection is secured using SSL.
-- Credentials are stored as Databricks secrets.
+## MCP Authentication
 
-**Advantages:**
-- No code / low infrastructure (Databricks App)
-- Fast prototyping with local testing
-- Automatic permission inheritance
-- Schema-level exposure (multiple functions as multiple tools)
-- Works in Playground immediately
+✅ **Personal Access Tokens (PAT)** - For user access
 
-**Limitations:**
-- Python only
+✅ **Service Principals** (Primary for M2M)
+- OAuth M2M required for Agent Bricks Multi-Agent Supervisor
+- OAuth application registration in Databricks account
 
-## Implementation
+✅ **M2M OIDC**
+- OAuth 2.0 with Databricks as Identity Provider
+- Dynamic Client Registration support
+- Azure AD integration for Azure Databricks
 
-### Step 1 - Configure Secrets
+**Other Mechanisms:**
+- Unity Catalog permissions
+- Managed MCP Proxies (token refresh handled by Databricks)
+- On-Behalf-Of-User (OBO) authentication
+- Automatic authentication passthrough
 
-Copy the sample env file and fill in your Neo4j credentials:
 
-```bash
-cp .env.sample .env
+## Industry Research Agent Example
+
+```python
+import mlflow
+from databricks_mcp import DatabricksMCPClient
+from databricks.sdk import WorkspaceClient
+
+# Setup
+workspace_client = WorkspaceClient()
+mcp_client = DatabricksMCPClient(
+    servers=["https://your-workspace/api/2.0/mcp/neo4j/prod"],
+    workspace_client=workspace_client
+)
+
+# Define agent
+class ResearchAgent:
+    def __init__(self, tools):
+        self.tools = tools
+    
+    def research_company(self, company_name: str) -> str:
+        # Query company data
+        company_data = self.tools["query_company"](company_name)
+        # Search news
+        news = self.tools["search_news"](company_name)
+        # Generate report
+        return self.synthesize_report(company_data, news)
+
+# Log agent to MLflow
+tools = mcp_client.as_tools()
+agent = ResearchAgent(tools)
+
+with mlflow.start_run():
+    mlflow.log_param("model", "claude-3-5-sonnet")
+    mlflow.pyfunc.log_model("research_agent", python_model=agent)
+
+# Deploy
+deployment = mlflow.deployments.create_deployment(
+    name="research-agent",
+    model_uri=f"runs:/{run.info.run_id}/research_agent",
+    endpoint="agents"
+)
 ```
 
-The `.env` file requires:
-```
-NEO4J_URI=neo4j+s://<your-neo4j>:7687
-NEO4J_USERNAME=
-NEO4J_PASSWORD=
-```
+## Additional Integration Opportunities
 
-Upload the secrets to Databricks:
+- Neo4j as episodic memory backend
+- Unity Catalog governance for graph queries
+- MLflow tracking for agent performance
+- Auto-evaluation of graph query accuracy
 
-```bash
-./setup_secrets.sh [--profile <databricks-profile>]
-```
+## Additional Resources
 
-### Step 2 - The MCP Server App
-
-The app structure:
-
-```
-app/
-  app.py                      # Uvicorn entry point / proxy
-  app.yaml                    # Maps Databricks secrets to env vars
-  requirements.txt            # Python dependencies
-  neo4j_mcp_server_process.py # Launches and manages the MCP server process
-```
-
-- `app.yaml` binds Databricks Secrets to environment variables.
-- `neo4j_mcp_server_process.py` launches the official MCP server as a subprocess.
-- `app.py` is a uvicorn app that proxies requests to the MCP server process, adding authentication headers.
-
-You can test the server locally using the provided client:
-
-```bash
-python client.py
-```
-
-### Step 3 - Deploy
-
-Deploy using the deploy script, which uses Databricks Asset Bundles to create the app and bind secrets automatically:
-
-```bash
-./deploy.py --app-name mcp-<app_name> [--profile <databricks-profile>]
-```
-
-Check your Workspace to review the app and synced files. The App is associated with a Service Principal -- ensure it has grants to read secrets.
-
-## Test and Use
-
-### Playground
-
-In the Playground, select your MCP Server from **Tools > Add Tool > MCP Servers**. Add a system prompt such as:
-
-```
-Purpose: Assist users in getting companies/organizations info.
-
-Limitations:
-- Focus on companies.
-- Be conversational but do not answer unrelated queries.
-- Handle queries for multiple companies.
-- If there is no company information, inform the user.
-
-Data Sources:
-- Use the mcp tools you have been provided when requested with questions about companies.
-
-Sample Questions:
-- "What are the competitors of 'BigFix'?"
-- "Show me the top 3 software companies by revenue"
-```
-
-If the model says it cannot use the MCP Server, try switching to another model such as Claude.
-
-### External Use
-
-Find the public URL for your app under **Compute > Apps** in your Databricks workspace.
-
-To integrate the app externally, obtain a Databricks token:
-
-```bash
-databricks auth token -p <your-profile>
-```
-
-See [client_workspace.py](client_workspace.py) for a Python client example using Workspace authentication.
-
-You can also publish your App to the Databricks Marketplace.
-
-## Other Guides
-
-- [Custom MCP Server](CUSTOM_MCP_SERVER.md) -- Build a custom MCP server with your own Neo4j query logic
-- [UC Function Tools](UC_FUNCTION_TOOL.md) -- Expose Neo4j queries as Unity Catalog functions
+- **Databricks MCP**: https://docs.databricks.com/en/generative-ai/mcp/
+- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
