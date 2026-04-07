@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authorize Neo4j Agent</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f8f9fa; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+        h2 { color: #202124; margin-bottom: 10px; }
+        p { color: #5f6368; line-height: 1.5; margin-bottom: 30px; }
+        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-block; transition: background-color 0.2s; }
+        .btn:hover { background-color: #1557b0; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Connect Neo4j Agent</h2>
+        <p>Gemini Enterprise is requesting permission to access your Neo4j Graph Database agent.</p>
+        <a href="{{ final_redirect }}" class="btn">Allow Access</a>
+    </div>
+</body>
+</html>
