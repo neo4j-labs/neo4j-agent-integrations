@@ -18,6 +18,10 @@ It features a custom Starlette/FastAPI ASGI middleware layer to securely validat
 
 ## Architecture Flow
 
+
+![Google Gemini Enterprise + Neo4j MCP + ADK A2A Integration](architecture.png)
+
+
 1.  **Discovery**: Gemini Enterprise sends `/.well-known/agent.json` request. The service returns the AgentCard (manifest) detailing the agent's skills and confirming it requires authentication.
 2.  **Authentication**: Gemini prompts the user to log in via Google OAuth 2.0.
 3.  **Execution**: Gemini sends a `POST /` request containing the user's prompt and the `Authorization: Bearer <TOKEN>` header.
