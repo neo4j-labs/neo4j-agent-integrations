@@ -24,7 +24,7 @@ Choose the architecture that best fits your deployment needs:
 **Best for:** Internal enterprise tools where different teams need to access their specific graphs using their existing corporate Google identities.  
 
 
-### 3. [a2a-ge-marketplace](./2-a2a-ge-marketplace)
+### 3. [a2a-ge-marketplace](./3-a2a-ge-marketplace)
 
 **Focus:** Agent-as-a-Service (AaaS) & Commercialization.  
 **How it works:** The full-featured **Google Cloud Marketplace** implementation. Includes automated onboarding via Pub/Sub, Dynamic Client Registration (DCR), custom OAuth 2.0 flows, and automated token-based billing.  
