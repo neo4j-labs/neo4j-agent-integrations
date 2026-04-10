@@ -29,6 +29,7 @@ class TokenManager:
         MERGE (u:User {id: $user_id})
         ON CREATE SET 
             u.tokens_used_today = 0, 
+            u.total_tokens_used = 0,
             u.last_reset_date = $today,
             u.daily_token_limit = $default_limit,
             u.is_active = true,
@@ -81,6 +82,7 @@ class TokenManager:
         query = """
         MATCH (u:User {id: $user_id})
         SET u.tokens_used_today = u.tokens_used_today + $tokens,
+            u.total_tokens_used = coalesce(u.total_tokens_used, 0) + $tokens,
             u.updated_at = datetime()
         """
         try:

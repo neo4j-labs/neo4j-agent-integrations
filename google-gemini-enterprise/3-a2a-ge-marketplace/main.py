@@ -11,7 +11,7 @@ from app.services.agent_executor import Neo4jADKExecutor
 from app.api.middleware import OAuthValidationMiddleware
 from app.api.marketplace import pubsub_handler, setup_page_handler, setup_save_handler
 
-from app.api.auth_routes import dcr_handler, authorize_handler, token_handler
+from app.api.auth_routes import dcr_handler, authorize_handler, token_handler, google_callback_handler
 from starlette.responses import RedirectResponse
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
@@ -42,16 +42,25 @@ def create_app():
 
     app.add_route("/dcr", dcr_handler, methods=["POST"])
     logging.info("[main] Added /dcr route")
+
     app.add_route("/auth/authorize", authorize_handler, methods=["GET"])
     logging.info("[main] Added /auth/authorize route")
+
+    app.add_route("/auth/google/callback", google_callback_handler, methods=["GET"])
+    logging.info("[main] Added /auth/google/callback route")
+
     app.add_route("/auth/token", token_handler, methods=["POST"])
     logging.info("[main] Added /auth/token route")
+
     app.add_route("/pubsub", pubsub_handler, methods=["POST"])
     logging.info("[main] Added /pubsub route")
+
     app.add_route("/setup", setup_page_handler, methods=["GET","POST"])
     logging.info("[main] Added /setup route")
+
     app.add_route("/setup/save", setup_save_handler, methods=["POST"])
     logging.info("[main] Added /setup/save route")
+
     app.add_route("/", root_redirect_handler, methods=["GET"])
     logging.info("[main] Added / root redirect route")
 

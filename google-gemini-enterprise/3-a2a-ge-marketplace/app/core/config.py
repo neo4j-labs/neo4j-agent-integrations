@@ -1,19 +1,20 @@
 """Configuration settings for the application."""
 import os
 from dotenv import load_dotenv
-import contextvars
 from a2a.types import AgentCard, AgentSkill, AgentProvider, AgentCapabilities
+
 load_dotenv()
 
-current_request_tokens = contextvars.ContextVar("current_request_tokens", default=0)
-
+# Feature Flags
 TRACK_TOKEN_USAGE = os.environ.get("TRACK_TOKEN_USAGE", "false").lower() == "true"
 
+# Tracking Database (Admin/Billing)
 TRACKING_NEO4J_URI = os.environ.get("TRACKING_NEO4J_URI")
 TRACKING_NEO4J_USER = os.environ.get("TRACKING_NEO4J_USER")
 TRACKING_NEO4J_PASS = os.environ.get("TRACKING_NEO4J_PASS")
 DAILY_TOKEN_LIMIT = int(os.environ.get("DAILY_TOKEN_LIMIT", "50000"))
 
+# Core App Settings
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 SERVICE_URL = os.environ.get("SERVICE_URL")
 SETUP_URL = os.environ.get("SETUP_URL")
@@ -22,6 +23,11 @@ PROVIDER_ORGANIZATION = os.environ.get("PROVIDER_ORGANIZATION")
 AGENT_ICON_URL = os.environ.get("AGENT_ICON_URL")
 REDIRECT_URL = os.environ.get("REDIRECT_URL")
 
+# Google Identity Settings (Federated Auth)
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+
+# Marketplace Security & Secrets
 INTERNAL_SECRET_KEY = os.environ.get("INTERNAL_SECRET_KEY")
 MARKETPLACE_PROVIDER_ID = os.environ.get("MARKETPLACE_PROVIDER_ID")
 MARKETPLACE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/cloud-commerce-partner@system.gserviceaccount.com"
@@ -50,12 +56,12 @@ skill = AgentSkill(
 
 public_agent_card = AgentCard(
     name='Neo4j-Graph-Query-Agent',
-    description=f'An autonomous agent that queries a Neo4j database using natural language and custom tools. ⚠️ IMPORTANT: Before chatting, you must link your database credentials at: {SETUP_URL}',
+    description='An autonomous agent that queries a Neo4j database using natural language and custom tools.',
     url=SERVICE_URL,
     version='1.0.0',
     default_input_modes=['application/json'], 
     default_output_modes=['application/json'],
-    provider= AgentProvider(
+    provider=AgentProvider(
         organization=PROVIDER_ORGANIZATION,
         url=PROVIDER_URL
     ),
@@ -72,7 +78,7 @@ public_agent_card = AgentCard(
         ),
     skills=[skill], 
     supports_authenticated_extended_card=False,
-    iconUrl = AGENT_ICON_URL,
+    iconUrl=AGENT_ICON_URL,
     security=[{"oauth2": ["marketplacescopes.read"]}],
     security_schemes={
         "oauth2": {

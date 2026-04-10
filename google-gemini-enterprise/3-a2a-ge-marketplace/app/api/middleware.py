@@ -5,7 +5,7 @@ import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from app.core.context import current_order_id
+from app.core.context import current_order_id, current_user_email
 from app.services.token_manager import TokenManager
 
 class OAuthValidationMiddleware(BaseHTTPMiddleware):
@@ -22,6 +22,7 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
             "/favicon.ico",
             "/dcr", 
             "/auth/authorize", 
+            "/auth/google/callback",
             "/auth/token",
             "/pubsub",  
             "/setup",
@@ -43,13 +44,15 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
             logging.info("[middleware] Verifying access token")
             payload = TokenManager.verify_access_token(token)
 
+            email = payload.get("email")
             order_id = payload.get("order_id")
-            if not order_id:
-                logging.warning("[middleware] Token is missing 'order_id' claim")
-                return JSONResponse({"error": "Token missing order_id claim"}, status_code=401)
 
+            if not email or not order_id:
+                return JSONResponse({"error": "Token missing required claims (email/order_id)"}, status_code=401)
+
+            # Set Context Variables
+            current_user_email.set(email)
             current_order_id.set(order_id)
-            logging.info(f"[middleware] Authenticated request securely for Order ID: {order_id}")
 
             return await call_next(request)
 
