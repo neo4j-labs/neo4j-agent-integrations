@@ -15,7 +15,7 @@ Designed natively as an **Agent-as-a-Service (AaaS)** for the Google Cloud Marke
 
 The service operates as a serverless gateway on Google Cloud Run. It manages a sophisticated "one-to-many" relationship model where a single Marketplace **Order** (representing a company) can support multiple **Users** (employees) and **App Instances**, each with isolated token quotas and conversation histories.
 
-The system utilizes [app/core/context.py](app/core/context.py) to maintain strict cryptographic separation between the human user's identity (email) and the corporate database credentials throughout the execution lifecycle.
+The system utilizes [context.py](app/core/context.py) to maintain strict cryptographic separation between the human user's identity (email) and the corporate database credentials throughout the execution lifecycle.
 
 ---
 
