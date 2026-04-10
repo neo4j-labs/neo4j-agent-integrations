@@ -22,31 +22,31 @@ The system utilizes [app/core/context.py](app/core/context.py) to maintain stric
 ## ✨ Core Features
 
 
-**Federated Identity (OIDC):** Integrates directly with Google Workspace Identity. The agent uses a secure [Federated OAuth Flow](app/api/auth_routes.py) to verify the user's corporate email, ensuring token limits follow the individual across any Gemini app they use.
-**True Multi-Tenancy:** Dynamically routes queries to isolated target Neo4j databases. The [TokenManager](app/services/token_manager.py) resolves the correct encrypted credentials for each specific Marketplace Order ID.
-**Granular Token Economics:** Implements a dual-bucket tracking system. It monitors both **Daily Limits** (enforcing quotas) and **Lifetime Cumulative Usage** (for long-term analytics) at the individual user level.
-**Dynamic Client Registration (DCR):** Automatically provisions unique OAuth 2.0 credentials when Gemini connects to a new app instance, binding the connection strictly to an active Marketplace Entitlement.
-**Semantic Guardrails:** Features an [integrated security layer](app/services/agent_executor.py) that inspects every natural language query for prompt injection or malicious Cypher patterns before they reach the graph engine.
+**Federated Identity (OIDC):** Integrates directly with Google Workspace Identity. The agent uses a secure [Federated OAuth Flow](app/api/auth_routes.py) to verify the user's corporate email, ensuring token limits follow the individual across any Gemini app they use.  
+**True Multi-Tenancy:** Dynamically routes queries to isolated target Neo4j databases. The [TokenManager](app/services/token_manager.py) resolves the correct encrypted credentials for each specific Marketplace Order ID.  
+**Granular Token Economics:** Implements a dual-bucket tracking system. It monitors both **Daily Limits** (enforcing quotas) and **Lifetime Cumulative Usage** (for long-term analytics) at the individual user level.  
+**Dynamic Client Registration (DCR):** Automatically provisions unique OAuth 2.0 credentials when Gemini connects to a new app instance, binding the connection strictly to an active Marketplace Entitlement.  
+**Semantic Guardrails:** Features an [integrated security layer](app/services/agent_executor.py) that inspects every natural language query for prompt injection or malicious Cypher patterns before they reach the graph engine.  
 
 
 ---
 
 ## 🏛️ Internal Tracking Graph (State Management)
 
-Because this is a multi-tenant application, it relies on its own internal Neo4j database to manage routing and state. The graph schema elegantly connects Marketplace procurement with human identities:
+Because this is a multi-tenant application, it relies on its own internal Neo4j database to manage routing and state. The graph schema elegantly connects Marketplace procurement with human identities:  
 
 
-**`(:Order)`**: The master tenant node representing the corporate subscription. Holds the target database URI and encrypted password references.
-**`(:User)`**: The human employee (identified by email). Linked to an Order. Tracks `tokens_used_today` and `total_tokens_used`.
-**`(:OAuthClient)`**: The specific Gemini App installation. Links to the Order.
-**`(:RefreshToken)`**: Tied specifically to the User and the Client, ensuring identity persists securely across token refreshes.
+**`(:Order)`**: The master tenant node representing the corporate subscription. Holds the target database URI and encrypted password references.  
+**`(:User)`**: The human employee (identified by email). Linked to an Order. Tracks `tokens_used_today` and `total_tokens_used`.  
+**`(:OAuthClient)`**: The specific Gemini App installation. Links to the Order.  
+**`(:RefreshToken)`**: Tied specifically to the User and the Client, ensuring identity persists securely across token refreshes.  
 
 
 ---
 
 ## 🛰️ Marketplace & Pub/Sub Integration
 
-To automate provisioning, the application processes real-time events via a [Pub/Sub Handler](app/api/marketplace.py). This ensures the internal state in Neo4j always matches the customer's current billing status on the Google Cloud Marketplace.
+To automate provisioning, the application processes real-time events via a [Pub/Sub Handler](app/api/marketplace.py). This ensures the internal state in Neo4j always matches the customer's current billing status on the Google Cloud Marketplace.  
 
 | Event Type | System Action |
 | :--- | :--- |
@@ -60,11 +60,11 @@ To automate provisioning, the application processes real-time events via a [Pub/
 ## 🔄 Lifecycle Breakdown
 
 
-**Purchase:** A customer subscribes on the Marketplace. Pub/Sub triggers [marketplace.py](app/api/marketplace.py) to initialize the tenant's profile.
-**Configuration:** The IT Admin visits the `/setup` portal. Credentials for the target Neo4j instance are encrypted and stored in **Google Secret Manager** via the [TokenManager's secure vault logic](app/services/token_manager.py).
-**Registration:** Gemini calls the `/dcr` endpoint in [auth_routes.py](app/api/auth_routes.py) to generate unique credentials for a specific agent installation.
-**Authorization (Federated):** When a user chats, the [authorize_handler](app/api/auth_routes.py) redirects them to a native Google Login. Once verified, the user's email is cryptographically bound to an internal JWT.
-**Execution:** The [OAuthValidationMiddleware](app/api/middleware.py) extracts the identity. The [Neo4jADKExecutor](app/services/agent_executor.py) then loads the specific tenant tools and executes the query against the graph.
+**Purchase:** A customer subscribes on the Marketplace. Pub/Sub triggers [marketplace.py](app/api/marketplace.py) to initialize the tenant's profile.  
+**Configuration:** The IT Admin visits the `/setup` portal. Credentials for the target Neo4j instance are encrypted and stored in **Google Secret Manager** via the [TokenManager's secure vault logic](app/services/token_manager.py).  
+**Registration:** Gemini calls the `/dcr` endpoint in [auth_routes.py](app/api/auth_routes.py) to generate unique credentials for a specific agent installation.  
+**Authorization (Federated):** When a user chats, the [authorize_handler](app/api/auth_routes.py) redirects them to a native Google Login. Once verified, the user's email is cryptographically bound to an internal JWT.  
+**Execution:** The [OAuthValidationMiddleware](app/api/middleware.py) extracts the identity. The [Neo4jADKExecutor](app/services/agent_executor.py) then loads the specific tenant tools and executes the query against the graph.  
 
 
 ---
@@ -75,7 +75,7 @@ Ensure the following are configured in your Google Cloud Project:
 
 ### 1. Enable GCP APIs
 
-**Cloud Run API:** To host the Starlette application.  
+**Cloud Run API:** To host the Starlette application.   
 **Vertex AI API:** To allow the ADK agent to call Gemini.  
 **Secret Manager API:** To securely store and retrieve sensitive configuration data.  
 **Cloud Commerce Partner Procurement API:** To approve Marketplace purchases and manage entitlements.  
@@ -104,9 +104,9 @@ The application is configured via [app/core/config.py](app/core/config.py). Ensu
 ### 4. Secret Manager
 Add the following secrets to Google Secret Manager:
 
-**`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`**: Your Google OIDC credentials.
-**`INTERNAL_SECRET_KEY`**: A cryptographically secure string used to sign the internal AaaS JWT tokens.
-**`TRACKING_NEO4J_PASS`**: Password for the internal billing and routing database.
+**`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`**: Your Google OIDC credentials.  
+**`INTERNAL_SECRET_KEY`**: A cryptographically secure string used to sign the internal AaaS JWT tokens.  
+**`TRACKING_NEO4J_PASS`**: Password for the internal billing and routing database.  
 
 
 ---
@@ -117,9 +117,9 @@ Add the following secrets to Google Secret Manager:
 To enable Federated Login, you must configure the **OAuth consent screen** in the GCP Console:
 
 
-**User Type:** Select **External** (Required for Marketplace apps).
-**Scopes:** Explicitly add the `openid` and `.../auth/userinfo.email` scopes.
-**Credentials:** Create an OAuth 2.0 Web Client ID and add `https://[YOUR_SERVICE_URL]/auth/google/callback` to the Authorized Redirect URIs.
+**User Type:** Select **External** (Required for Marketplace apps).  
+**Scopes:** Explicitly add the `openid` and `.../auth/userinfo.email` scopes.  
+**Credentials:** Create an OAuth 2.0 Web Client ID and add `https://[YOUR_SERVICE_URL]/auth/google/callback` to the Authorized Redirect URIs.  
 
 
 ### 2. Deploy to Cloud Run
