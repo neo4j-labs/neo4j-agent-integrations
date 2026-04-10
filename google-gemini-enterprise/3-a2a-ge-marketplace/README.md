@@ -110,28 +110,17 @@ Ensure the following are configured in your Google Cloud Project:
 
 ## :open_file_folder: Project Structure
 
-```text
-├── main.py                  # Uvicorn entry point, Starlette app assembly, and Root 301 Redirect
-├── requirements.txt         # Python dependencies
-├── Dockerfile               # Production-ready container definition
-├── architecture.png         # System architecture diagram
-└── app/
-    ├── api/
-    │   ├── auth_routes.py   # DCR and Custom OAuth 2.0 endpoints
-    │   ├── marketplace.py   # Pub/Sub listeners, API approvals, and HTML form handlers
-    │   └── middleware.py    # JWT validation interceptor
-    ├── core/
-    │   ├── config.py        # Environment variables, Agent Card definition, and Base64 Icons
-    │   └── context.py       # ContextVars for multi-tenant state management
-    ├── services/
-    │   ├── agent_executor.py # Core ADK execution, dynamic DB routing, and Guardrails
-    │   ├── custom_tools.py  # Custom Neo4j Python functions
-    │   └── token_manager.py # Graph-backed OAuth, Billing, and User State engine
-    └── templates/           # Jinja2 HTML templates
-        ├── authorize.html   # Custom OAuth consent screen
-        ├── setup.html       # Customer DB configuration form
-        └── success.html     # Setup completion confirmation
-```
+| Component | Description |
+| :--- | :--- |
+| [auth_routes.py](app/api/auth_routes.py) | DCR and Custom OAuth 2.0 endpoints |
+| [marketplace.py](app/api/marketplace.py) | Pub/Sub listeners, API approvals, and HTML form handlers |
+| [middleware.py](app/api/middleware.py) | JWT validation interceptor |
+| [config.py](app/core/config.py) | Environment variables, Agent Card definition, and Base64 Icons |
+| [context.py](app/core/context.py) | ContextVars for multi-tenant state management |
+| [agent_executor.py](app/services/agent_executor.py) | Core ADK execution, dynamic DB routing, and Guardrails |
+| [custom_tools.py](app/services/custom_tools.py) | Custom Neo4j Python functions |
+| [token_manager.py](app/services/token_manager.py) | Graph-backed OAuth, Billing, and User State engine |
+
 ---
 
 ## Referral Documentation
