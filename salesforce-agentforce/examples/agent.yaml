@@ -1,0 +1,103 @@
+system:
+  instructions: "Present a summarized view of all available data points to the user in a single, professional response. "
+
+  messages:
+    welcome: |
+      Hi, I'm an AI assistant. How can I help you? You can write: "I have a meeting with Neo4j tomorrow. Can you give me a briefing on their competitors and what's been happening in their news lately?"
+    error: "Sorry, it looks like something has gone wrong."
+
+config:
+  developer_name: "company_insights"
+  default_agent_user: "neo4jtest@00dvb000008pm7b1232290554.ext"
+  agent_label: "company_insights"
+  description: "Calls the Apex action to retrieve and display organization insights for a specified company, returning all available data in a structured format"
+
+language:
+    default_locale: "en_US"
+    additional_locales: ""
+    all_additional_locales: False
+
+variables:
+    EndUserId: linked string
+        source: @MessagingSession.MessagingEndUserId
+        description: "This variable may also be referred to as MessagingEndUser Id"
+    RoutableId: linked string
+        source: @MessagingSession.Id
+        description: "This variable may also be referred to as MessagingSession Id"
+    ContactId: linked string
+        source: @MessagingEndUser.ContactId
+        description: "This variable may also be referred to as MessagingEndUser ContactId"
+    EndUserLanguage: linked string
+        source: @MessagingSession.EndUserLanguage
+        description: "This variable may also be referred to as MessagingSession EndUserLanguage"
+    VerifiedCustomerId: mutable string
+        description: "This variable may also be referred to as VerifiedCustomerId"
+    orgName: mutable string = ""
+        description: "Resolved organization name captured from entity extraction or latest user input for invoking insights actions."
+    company_insights_result: mutable string = ""
+        description: "Holds the latest insights JSON returned from Get_Neo4j_Organization_Insights for response composition."
+
+knowledge:
+    rag_feature_config_id: ""
+    citations_enabled: False
+    citations_url: ""
+
+start_agent topic_selector:
+    label: "Topic Selector"
+
+    description: "Welcome the user and determine the appropriate topic based on user input"
+
+    reasoning:
+        instructions: ->
+            | Select the best tool to call based on conversation history and user's intent.
+
+        actions:
+            go_to_Company_Insights: @utils.transition to @topic.Company_Insights
+
+topic Company_Insights:
+    label: "Company Insights"
+
+    description: "Get Company Insights"
+
+    reasoning:
+        instructions: ->
+            | Your goal is to provide a comprehensive strategic briefing on an organization. To achieve this, you must use the Get_Neo4j_Organization_Insights action to gather data on competitors, suppliers, subsidiaries and news. Present a summarized view of all available data points to the user in a single, professional response.
+              If the user names a company, call the insights action immediately; only clarify if the name is ambiguous
+              When the user requests insights about a named company, immediately call Get_Neo4j_Organization_Insights.
+              Only ask clarifying questions if the company name is missing or ambiguous. Do not ask about competitors, suppliers, subsidiaries, or news unless explicitly requested or after returning base insights
+
+        actions:
+            set_variable_org_name: @utils.setVariables
+                description: "Set the organization name from detected entity or latest user input."
+                with orgName = ...
+
+            Get_Neo4j_Organization_Insights: @actions.Get_Neo4j_Organization_Insights
+                available when ( @variables.orgName is not None and @variables.orgName != "")
+                with "Input:Org_Name" = @variables.orgName
+                set @variables.company_insights_result = @outputs.promptResponse
+
+
+
+
+
+    actions:
+        Get_Neo4j_Organization_Insights:
+          description: "Calls the Apex action to retrieve and display organization insights for a specified company, returning all available data in a structured format."
+          inputs:
+            "Input:Org_Name": string
+              description: "Pass the Org Name for which the user wants the insight"
+              label: "Org Name"
+              is_required: False
+              is_user_input: False
+              complex_data_type_name: "lightning__textType"
+          outputs:
+            promptResponse: string
+              description: "Present a summarized view of all available data points to the user in a single, professional response. "
+              label: "Prompt Response"
+              complex_data_type_name: "lightning__textType"
+              filter_from_agent: False
+              is_displayable: True
+          target: "generatePromptResponse://get_Company_Insights"
+          label: "Get Neo4j Organization Insights"
+          require_user_confirmation: False
+          include_in_progress_indicator: False

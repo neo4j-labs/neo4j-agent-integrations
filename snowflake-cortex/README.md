@@ -86,7 +86,6 @@ Call Neo4j via Snowflake external function (AWS Lambda, Azure Functions).
 - Snowflake native authentication
 - Unity Catalog-style governance
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#11-snowflake-cortex-agents)
 
 ## Industry Research Agent Example
 

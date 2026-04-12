@@ -1,11 +1,12 @@
 {
-  "app": "python3 app.py",
+  "app": "uv run python app.py",
   "watch": {
     "include": ["**"],
     "exclude": [
       "README.md",
       "cdk*.json",
-      "requirements*.txt",
+      "pyproject.toml",
+      "uv.lock",
       "source.bat",
       "**/__init__.py",
       "python/__pycache__",
@@ -13,6 +14,7 @@
     ]
   },
   "context": {
+    "neo4j_mcp_container_uri": "",
     "neo4j_uri": "neo4j+s://demo.neo4jlabs.com:7687",
     "neo4j_database": "companies",
 

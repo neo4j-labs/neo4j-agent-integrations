@@ -1,0 +1,26 @@
+name: Trigger Docs Refresh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*/README.md'
+      - '**/README.md'
+      - 'scripts/slug-map.yml'
+      - 'scripts/publish-to-labs.py'
+      - 'labs-pages/modules/**'
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch docs-refresh build
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DOCS_REFRESH_DISPATCH_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'neo4j-documentation',
+              repo: 'docs-refresh',
+              event_type: 'agent-integrations-updated'
+            })

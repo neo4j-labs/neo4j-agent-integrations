@@ -1,0 +1,9 @@
+[project]
+name = "neo4j-mcp-runtime-docker"
+version = "0.1.0"
+description = "AWS AgentCore Runtime with Neo4j MCP Docker Extension"
+requires-python = ">=3.9"
+dependencies = [
+    "aws-cdk-lib~=2.240.0",
+    "constructs>=10.0.0",
+]

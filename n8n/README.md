@@ -61,7 +61,6 @@ Call Neo4j MCP server via HTTP:
 
 ✅ **OAuth nodes** - OAuth 2.0
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#13-other-platforms-brief-overview)
 
 ## Resources
 

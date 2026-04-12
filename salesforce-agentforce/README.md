@@ -24,222 +24,236 @@
 
 ## Extension Points
 
-Three integration tracks — use the one that fits your org's readiness:
+This section outlines the primary methods to extend Salesforce Agentforce capabilities with Neo4j. The architecture diagram below serves as a foundational blueprint, illustrating the standard request flow from the user to the database, which you can customize using any of the three integration tracks.
 
-### Track A: Native MCP Client ⭐ (Pilot July 2025 / Beta October 2025)
+### Architecture
 
-Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as agent tools with no custom code.
-
-```
-Setup → Agents → MCP Servers → New
-  Name: Neo4j Knowledge Graph
-  Server URL: https://your-neo4j-mcp-server:8080/sse
-  Auth: Bearer token (via Named Credential)
-```
-
-Run the Neo4j MCP server as an HTTP service:
-
-```bash
-# Official Neo4j MCP server (HTTP transport)
-docker run -p 8080:8080 \
-  -e NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
-  -e NEO4J_USERNAME=companies \
-  -e NEO4J_PASSWORD=companies \
-  neo4j/mcp \
-  --neo4j-transport-mode http --host 0.0.0.0 --port 8080
-
-# OR labs Python server (SSE transport)
-pip install mcp-neo4j-cypher
-NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687 \
-NEO4J_USERNAME=companies \
-NEO4J_PASSWORD=companies \
-python -m mcp_neo4j_cypher --transport sse --port 8080
-```
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │    Agent     │    │   Atlas Reasoning Engine (ARE)   │   │
-│  │              │───▶│   Plan → Act → Observe → Decide  │   │
-│  │  Topics:     │    └──────────────┬───────────────────┘   │
-│  │  - Research  │                   │                        │
-│  │  - Industry  │          ┌────────▼─────────┐             │
-│  │  - News      │          │  MCP Client      │             │
-│  └──────────────┘          │  (Native Pilot)  │             │
-└───────────────────────────┬──────────────────┬─────────────┘
-                            │ MCP Protocol     │ Named Credential
-                            │ (SSE/HTTP)       │ Bearer Token
-                            ▼                  │
-┌────────────────────────────────────────────┐ │
-│         Neo4j MCP Server                   │◀┘
-│  ┌────────────────────────────────────┐    │
-│  │ Tools:                             │    │
-│  │  • read_neo4j_cypher               │    │
-│  │  • get_neo4j_schema                │    │
-│  │  • graph algorithm execution       │    │
-│  └────────────────────────────────────┘    │
-│  Transport: HTTP SSE or Streamable HTTP    │
-└─────────────────────────┬──────────────────┘
-                          │ Bolt Protocol
-                          ▼
-┌────────────────────────────────────────────┐
-│         Neo4j Database                     │
-│  demo.neo4jlabs.com:7687 (companies DB)    │
-│                                            │
-│  Organizations ──[:IN_INDUSTRY]──▶ Industry│
-│  Organizations ──[:LOCATED_IN]──▶ Location │
-│  Articles ──[:MENTIONS]──▶ Organization    │
-│  Articles ──[:HAS_CHUNK]──▶ Chunk          │
-│                           (vector indexed) │
-└────────────────────────────────────────────┘
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Salesforce Agentforce                           │
+│                                                                         │
+│ 1. User: "Provide me insights about the company Microsoft"              │
+│ 2. Agent captures "Microsoft" and triggers Prompt Template action       │
+│                                │                                        │
+│                       ┌────────▼────────┐                               │
+│                       │ Prompt Template │                               │
+│                       └────────┬────────┘                               │
+│                                │ 3. Describes intent & response format  │
+│                                │ 4. Invokes Flow                        │
+│                       ┌────────▼────────┐                               │
+│                       │ Salesforce Flow │                               │
+│                       └────────┬────────┘                               │
+│                                │ 5. Calls Apex class                    │
+│                       ┌────────▼────────┐                               │
+│                       │   Salesforce    │                               │
+│                       │    Bindings     │                               │
+│                       └────────┬────────┘                               │
+└────────────────────────────────┼────────────────────────────────────────┘
+                                 │ HTTPS (Named Credential)
+                                 ▼
+                     ┌──────────────────────┐
+                     │. Neo4j MCP Server    │                      
+                     │. Neo4j HTTP QueryAPI │
+                     │. Remote API bridge   │
+                     └───────────┬──────────┘
+                                 │
+                                 ▼
+                      ┌────────────────────┐
+                      │   Neo4j Database   │
+                      └────────────────────┘
 ```
 
-### Track B: External Service Actions ⭐ (Spring 2025 GA — Most Stable)
+**Design Considerations:**
 
-Deploy a REST adapter (FastAPI) and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative.
+1. **The agent has to be instruction light** and delegate additional work to other elements (like Prompt Templates)
+2. **Why use Prompt Templates?**
+   - **Grounding and Formatting:** A Prompt Template effectively grounds the LLM. Rather than letting the agent arbitrarily decide how to present the raw data coming from Neo4j, the template explicitly defines the intent, structure (e.g., bullet points, summaries), persona, and tone of the final response.
+   - **Reduced Hallucinations:** By firmly constraining the instructions on how to interpret the retrieved data, it minimizes the risk of the model hallucinating or omitting critical data points.
+   - **Declarative Control:** Admins can iterate on the LLM's prompt and output formatting dynamically without touching any code.
 
-```bash
-# 1. Deploy bridge server
-git clone ...
-cd examples
-pip install -r requirements.txt
-cp .env.example .env  # edit with your credentials
-uvicorn mcp_bridge_server:app --port 8080
+3. **Why use Salesforce Flow to wrap Apex?**
+   - **Orchestration and Decoupling:** Flow acts as a declarative orchestration layer. It decouples the business logic (the Apex callout to Neo4j) from the agent's prompt presentation logic.
+   - **Data Enrichment:** Before returning the data to the Prompt Template, a Flow can seamlessly combine the Neo4j Graph responses with local Salesforce CRM data (e.g., fetching Account records, past Opportunities), providing a unified context to the LLM.
+   - **Flexibility and Reusability:** If error handling, routing, or additional logic needs to change, Salesforce admins can update the Flow without requiring a developer to modify and deploy new Apex code.
 
-# 2. Get OpenAPI spec (Salesforce-ready)
-curl http://localhost:8080/openapi.json > neo4j_openapi.json
+Three integration tracks — implementations of "Salesforce Bindings":
+ - Native MCP Client
+ - External Service Actions
+ - Apex Actions
 
-# 3. Import into Salesforce External Services
-# Setup → Integrations → External Services → New
-# → Upload neo4j_openapi.json
-# → Select operations to expose as agent actions
-```
+### Track A: Native MCP Client 
 
-**Architecture:**
+**⚠️ THIS SECTION IS A WORK IN PROGRESS**
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │    Agent     │    │   Atlas Reasoning Engine (ARE)   │   │
-│  │              │───▶│                                  │   │
-│  │  Topic:      │    └──────────────┬───────────────────┘   │
-│  │  Company     │                   │ External Service Action│
-│  │  Research    │          ┌────────▼─────────┐             │
-│  └──────────────┘          │ Named Credential │             │
-│                            │ "Neo4j_KG_API"   │             │
-│                            │ X-Api-Key: ***   │             │
-└───────────────────────────┬──────────────────┬─────────────┘
-                            │ HTTPS POST       │
-                            │ /research/company│
-                            ▼                  │
-┌────────────────────────────────────────────┐ │
-│  Neo4j REST Bridge (FastAPI)               │◀┘
-│  mcp_bridge_server.py                      │
-│                                            │
-│  Endpoints:                                │
-│  POST /research/company     ← combined     │
-│  POST /tools/query_company                 │
-│  POST /tools/search_companies              │
-│  POST /tools/search_news                   │
-│  POST /tools/find_influential_companies    │
-│  GET  /tools/list_industries               │
-│  GET  /openapi.json  ← import to SF        │
-│                                            │
-│  Deploy: Heroku / Cloud Run / Railway      │
-└─────────────────────────┬──────────────────┘
-                          │ neo4j Python driver
-                          │ Bolt protocol
-                          ▼
-┌────────────────────────────────────────────┐
-│         Neo4j Database                     │
-│  demo.neo4jlabs.com:7687 (companies DB)    │
-└────────────────────────────────────────────┘
-```
+Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as an agent tool with no custom code.
 
-### Track C: Apex Actions (Maximum Flexibility)
+⚠️ Custom MCP server support in Salesforce is currently in beta and not available for general use (Pilot July 2025, Beta October 2025, GA April 2026).
+
+### Track B: External Service Actions  
+
+Deploy a custom REST adapter and import its OpenAPI spec into Salesforce External Services. Zero Apex code — fully declarative. The REST adapter serves as a bridge between Salesforce and Neo4j's Query API, allowing you to execute Cypher statements against a Neo4j server through HTTP requests.
+
+We provide a sample bridge server based on `nodejs` and `itty-router`, which exposes a relevant `openapi.json` schema endpoint for Salesforce to discover. The server can be easily deployed to platforms like [Cloudflare Workers](https://workers.dev).
+
+Once the bridge is set up, the required Salesforce configuration involves importing the service to Salesforce External Services (`Setup → Integrations → External Services → New`). The newly created action is then available to be referenced in tools like Salesforce Flow.
+
+
+### Track C: Apex Actions
 
 Write Apex classes with `@InvocableMethod` annotations. These become agent actions with full access to Salesforce platform features (CRM records, flows, etc.).
 
 ```apex
 @InvocableMethod(
-    label='Research Company in Knowledge Graph'
-    description='Retrieves company profile, news, and relationships from Neo4j. Use when user asks about a specific company.'
-    category='Neo4j Knowledge Graph'
-)
-public static List<ResearchOutput> researchCompany(List<ResearchInput> inputs) {
-    // calls Neo4jService.researchCompany() which uses Named Credential
-}
+    label='Get Neo4j Organization Insights' 
+    description='Queries Neo4j for strategic insights about an organization, including competitors, suppliers, and geographic presence.')
+    public static List<Response> getInsights(List<Request> requests) {
+    }
 ```
 
-**Architecture:**
+The complete, deployable, and tested Apex code is in the [`examples/track-c/apex`](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/salesforce-agentforce/examples/track-c/apex) folder. Once the Apex classes are deployed, the code is available to be referenced as an action in Salesforce Flow.
+
+### Advanced UI and Graph Visualization (LWC)
+
+Beyond feeding Neo4j data into an LLM, you can use **Lightning Web Components (LWC)** to visualize graph data directly within the Salesforce UI. By reusing the same Apex classes (using the `@AuraEnabled` annotation alongside `@InvocableMethod`), you can fetch graph data and render it using a JavaScript visualization library (like D3.js, vis.js, or Cytoscape).
+
+**Use Cases:**
+1. **Rich Agentforce Responses:** Return an interactive LWC inside the Agentforce chat window instead of a plain text summary.
+2. **Standalone Record Pages:** Embed a Neo4j Knowledge Graph widget directly onto a standard Salesforce Account or Contact record page to show localized connections.
+
+Once appropriate Apex method is annotated with `@AuraEnabled(cacheable=true)`, resolving the method from an LWC can work as follows:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Salesforce AgentForce                      │
-│                                                             │
-│  Agent → ARE → selects "Research Company in KG" action      │
-│                        │                                    │
-│               ┌────────▼─────────────────────────────┐     │
-│               │  Neo4jAction.cls (@InvocableMethod)   │     │
-│               │  - Validates input                    │     │
-│               │  - Calls Neo4jService.cls             │     │
-│               │  - Formats output for ARE             │     │
-│               └────────┬─────────────────────────────┘     │
-│                        │                                    │
-│               ┌────────▼─────────────────────────────┐     │
-│               │  Neo4jService.cls (HTTP callout)      │     │
-│               │  callout:Neo4j_KG_API/research/co..   │     │
-│               │  Named Credential handles auth        │     │
-│               └────────┬─────────────────────────────┘     │
-└────────────────────────┼────────────────────────────────────┘
-                         │ HTTPS (Named Credential)
-                         ▼
-              ┌──────────────────────────┐
-              │  Neo4j REST Bridge       │
-              │  (or direct Neo4j HTTP)  │
-              └────────────┬─────────────┘
-                           │
-                           ▼
-              ┌──────────────────────────┐
-              │  Neo4j Database          │
-              └──────────────────────────┘
-```
+// Imperatively fetch fresh data from Neo4j through your Apex service
+const rawData = await getInsights([{ recordId: this.recordId }]);
+this.processNeo4jData(rawData);
+ ```
+
+A starter implementation of a Neo4j Graph Widget can be found in the `examples/lwc/neo4jGraphWidget` directory (coming soon).
+
+### Code Examples
+
+See the [`examples/`](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/salesforce-agentforce/examples) directory:
+
+| File | Description |
+| --- | --- |
+| [`examples/agent.yaml`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/salesforce-agentforce/examples/agent.yaml) | YAML script defining the agent |
+| [`examples/track-c/apex/`](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/salesforce-agentforce/examples/track-c/apex) | Apex files with tests |
+| [`examples/track-b/neo4j-bridge/index.ts`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/salesforce-agentforce/examples/track-b/neo4j-bridge/index.ts) | A sample Neo4j bridge server |
 
 ---
 
-## MCP Authentication
+## Salesforce Configuration
 
-✅ **API Keys** — Custom header in Named Credential (`X-Api-Key: your-key`)
+The following steps provide the foundational setup required for all tracks to connect to external services.
 
-✅ **OAuth 2.0 Client Credentials** — M2M server-to-server via Connected App
+**1. External Credentials — Setup → Security → External Credentials → New**
 
-✅ **JWT Bearer** — Server-to-server with certificate-based auth
-
-✅ **MCP Bearer Token** — For native MCP client (Named Credential → MCP server)
-
-**Named Credential Setup for API Key Auth:**
+Create custom external credentials for Neo4j authentication:
 ```
-Setup → Security → External Credentials → New
-  Label: Neo4j API Auth
-  Protocol: Custom
-  Principal: Named
-  Custom Header: X-Api-Key = {your-bridge-api-key}
+Label: `demo_companies_neo4jlabs_auth` (or descriptive name)
+Name: `demo_companies_neo4jlabs_auth`
+Principal: Named Principal
+Authentication Protocol: Basic Authentication
 
-Setup → Security → Named Credentials → New
-  Label: Neo4j_KG_API
-  URL: https://your-neo4j-bridge.example.com
-  External Credential: Neo4j API Auth
+Create a Principal with parameters:
+  - Parameter Name: "username" → Value: "companies"
+  - Parameter Name: "password" → Value: "companies"
 ```
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#7-salesforce-agentforce)
+**Important notes:**
+- External Credentials allow Named Credentials to manage authentication securely without hardcoding credentials
+- The "Generate Authorization Header" option should be enabled or handled via Custom Headers
+- For HTTP transport with legacy setups, ensure the custom headers are properly configured
+
+**2. Named Credentials — Setup → Security → Named Credentials → New**
+
+Create a Named Credential that references the External Credential:
+```
+Name: demo_companies_neo4jlabs_url (must match ENDPOINT constant in your Apex code)
+URL: https://demo.neo4jlabs.com:7473
+External Credential: demo_companies_neo4jlabs_auth (from Step 1)
+Allow Merge Fields in HTTP Body: ☑ (enables dynamic Cypher parameters)
+Allowed Namespaces for Callouts: Ensure your namespace (or 'None') is allowed
+```
+
+**Key considerations:**
+- The Named Credential name must match the `callout:` prefix in your Apex code (e.g., `callout:demo_companies_neo4jlabs_url`)
+- This centralizes authentication — update credentials here without modifying Apex code
+- Authorization headers are automatically managed by the Named Credential
+
+**3. Remote Site Settings — Setup → Security → Remote Site Settings**
+
+Although Named Credentials bypass Remote Site Settings for the specific URL:
+```
+Remote Site Name: Neo4j Demo Companies
+Remote Site URL: https://demo.neo4jlabs.com:7473
+☑ Disable Protocol Security (if using non-HTTPS in dev environments only)
+```
+
+**When to add:**
+- If not using Named Credentials for other integrations
+- If other Salesforce features need direct access to this endpoint
+- To ensure org-wide connectivity for this server
+
+**4. Permissions — Setup → Users/Profiles/Permission Sets**
+
+Grant users access to the Neo4j integration:
+```
+Permission Set: Create or select existing
+Enable Permissions:
+  → External Credential Principal Access: 
+    [Select] demo_companies_neo4jlabs_auth
+  → Execute Named Credential: 
+    [Select] demo_companies_neo4jlabs_url
+  → (If using Apex) Execute Apex Classes: 
+    [Select] Neo4jService, Neo4jAction
+```
+
+**Monitoring and Troubleshooting:**
+```
+Setup → AgentForce → Agents → [Your Agent] → Debug Logs
+# View ARE reasoning traces and action execution logs
+
+Setup → Security → Named Credentials → [Your NC] → Test Connection
+# Verify authentication is working
+
+Setup → Integrations → External Services → [Your ES] → Test Operations
+# Test individual API calls
+```
+
+### Problems and Limitations
+
+As of March 2026, there are networking limitations between AuraDB (Neo4j's Cloud Offering) and Salesforce. HTTP calls initiated directly from Salesforce (via Apex code) are blocked and result in a `400 Bad Request` response. An intermediary workaround is to place a proxy between them (for example, using [Cloudflare Workers](https://workers.dev)). This allows the Apex `HttpRequest` to succeed.
+
+```
+export default {
+    async fetch(request, env) {
+        // my Aura instance
+        const neo4jUrl = "https://xxxxxxx.databases.neo4j.io/db/xxxxx/query/v2";
+
+        // Clone the request but strip all Salesforce headers
+        const newRequest = new Request(neo4jUrl, {
+            method: request.method,
+            body: await request.arrayBuffer(),
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+
+                // Pass through your Authorization header from SF
+                "Authorization": request.headers.get("Authorization"),
+                "User-Agent": "curl/7.68.0" // Mimic curl
+            }
+        });
+
+     return fetch(newRequest);
+    }
+};
+```
+
 
 ---
 
-## Industry Research Agent — Implementation
+## Get company insights — Implementation
 
 ### Scenario
 
@@ -247,8 +261,7 @@ The **Industry Research Agent** queries the Neo4j Company News Knowledge Graph (
 1. Company profiles (industry, location, leadership)
 2. Semantic news search (vector similarity over article embeddings)
 3. Organizational relationship mapping
-4. Network influence analysis (PageRank)
-5. Full investment research report synthesis
+4. Competitors, suppliers and subsidiaries
 
 ### Dataset
 
@@ -262,276 +275,44 @@ NEO4J_DATABASE = "companies"
 
 **Data Model:**
 ```
-(:Organization)-[:IN_INDUSTRY]->(:Industry / :IndustryCategory)
-(:Organization)-[:LOCATED_IN]->(:Location)
-(:Person)-[:WORKS_FOR]->(:Organization)
+(:Organization)-[:HAS_CEO]->(:Person)
+(:Organization)-[:HAS_COMPETITOR|HAS_SUPPLIER|HAS_SUBSIDIARY]->(:Person)
 (:Article)-[:MENTIONS]->(:Organization)
-(:Article)-[:HAS_CHUNK]->(:Chunk)  ← vector indexed ('news' index)
 ```
 
-### Track A: Native MCP — Agent Configuration
-
-```yaml
-# AgentForce Agent Configuration (Agent Builder)
-Agent:
-  Name: Industry Research Agent
-  Description: Investment research assistant using Neo4j knowledge graph
-  Model: claude-3-5-sonnet (via Bedrock BYOM) or gpt-4o (default)
-
-Topics:
-  - Name: Company Research
-    Description: >
-      Handles requests to research specific companies, find company profiles,
-      leadership information, industry classification, and organizational
-      relationships from the Neo4j knowledge graph.
-      Does NOT handle contract, billing, or Salesforce CRM data questions.
-    Instructions: |
-      Always return company_id when looking up companies.
-      Search for news when discussing recent developments.
-      Use relationship analysis for competitive intelligence.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (company lookup queries)
-      - Neo4j MCP: get_neo4j_schema (understand data model)
-
-  - Name: Industry Analysis
-    Description: >
-      Handles requests about industry sectors, market trends, competitive
-      landscape, and identifying key players within a sector.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (industry queries)
-
-  - Name: News Research
-    Description: >
-      Finds and analyzes news articles, recent developments, and events
-      related to companies or industries in the knowledge graph.
-    Actions:
-      - Neo4j MCP: read_neo4j_cypher (news/article queries)
-```
-
-**Sample Cypher queries for MCP tools:**
+**Cypher query**
 ```cypher
--- Company profile
-MATCH (o:Organization {name: $company})
-RETURN o.name as name,
-       o.id as company_id,
-       [(o)-[:IN_INDUSTRY]->(i:Industry) | i.name] as industries,
-       [(o)-[:LOCATED_IN]->(l:Location) | l.name] as locations,
-       [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}] as leadership
-LIMIT 1
+MATCH (org:Organization {name: "Neo4j"})
+OPTIONAL MATCH (org)-[:HAS_CEO]->(ceo:Person)
 
--- Recent news
-MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-RETURN a.id as article_id, a.title as title,
-       toString(a.date) as date, a.sentiment as sentiment
-ORDER BY a.date DESC LIMIT 5
+// 1. Get Network (Competitors, Suppliers, Subsidiaries) with their CEOs as complete nodes
+WITH org, ceo,
+     [(org)-[:HAS_COMPETITOR]-(comp) | {organization: comp, ceo: [(comp)-[:HAS_CEO]->(c) | c][0]}] AS competitors,
+     [(org)-[:HAS_SUPPLIER]->(supp) | {organization: supp, ceo: [(supp)-[:HAS_CEO]->(c) | c][0]}] AS suppliers,
+     [(org)-[:HAS_SUBSIDIARY]->(sub) | {organization: sub, ceo: [(sub)-[:HAS_CEO]->(c) | c][0]}] AS subsidiaries
 
--- PageRank (requires GDS plugin)
-CALL gds.pageRank.stream('companies')
-YIELD nodeId, score
-RETURN gds.util.asNode(nodeId).name as company, score
-ORDER BY score DESC LIMIT 10
+// 2. Fetch exactly 10 articles mentioning any entity in the network
+CALL (org, competitors, suppliers, subsidiaries) {
+    WITH [c IN competitors | c.organization] + 
+         [s IN suppliers | s.organization] + 
+         [sub IN subsidiaries | sub.organization] + 
+         [org] AS targets
+    UNWIND targets AS target
+    WITH DISTINCT target WHERE target IS NOT NULL
+    MATCH (article:Article)-[:MENTIONS]->(target)
+    RETURN DISTINCT article
+    LIMIT 10
+}
+
+// 3. Return everything as complete nodes
+RETURN 
+    org, 
+    ceo, 
+    competitors, 
+    suppliers, 
+    subsidiaries, 
+    collect(article) AS related_articles
 ```
-
-### Track B: External Service — Python Setup
-
-```python
-# Install and run the bridge server
-pip install -r examples/requirements.txt
-cp examples/.env.example examples/.env
-# Edit .env with your Neo4j + API key credentials
-
-uvicorn examples.mcp_bridge_server:app --port 8080
-
-# Test the API
-curl -X POST http://localhost:8080/research/company \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: your-key" \
-  -d '{"company_name": "Apple"}'
-
-# Get Salesforce-importable OpenAPI spec
-curl http://localhost:8080/openapi.json
-```
-
-**Salesforce setup (3 steps, no code):**
-```
-Step 1: Named Credential
-  Setup → Security → Named Credentials → New
-  URL: https://your-bridge.example.com
-  Auth: Custom header X-Api-Key
-
-Step 2: External Service
-  Setup → Integrations → External Services → New
-  Upload: openapi_spec.json (or paste /openapi.json URL)
-  Select operations to expose
-
-Step 3: Agent Actions
-  Setup → Agents → Your Agent → Topics → New Topic
-  Add Actions from External Service: researchCompany, searchCompanies, etc.
-```
-
-### Track C: Apex — Deploy and Register
-
-```bash
-# Deploy Apex to your Salesforce org via SFDX
-sf project deploy start \
-  --source-dir examples/apex/ \
-  --target-org your-sandbox-alias
-
-# Run tests
-sf apex run test \
-  --class-names Neo4jServiceTest \
-  --result-format human \
-  --target-org your-sandbox-alias
-
-# Register in Agent Builder:
-# Setup → Agents → Actions → New Action → Apex
-# Select: Neo4jAction → researchCompany method
-```
-
-### Multi-Agent Architecture (Advanced)
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                 Research Coordinator Agent                │
-│          (AgentForce Agent: orchestrates workflow)        │
-└──────────────┬────────────────────┬──────────────────────┘
-               │                    │
-    ┌──────────▼──────────┐  ┌──────▼──────────────────────┐
-    │  Database Agent     │  │    Analysis Agent            │
-    │                     │  │                              │
-    │  Actions:           │  │  Actions:                    │
-    │  - researchCompany  │  │  - Prompt Template           │
-    │  - searchCompanies  │  │    (synthesis + report)      │
-    │  - listIndustries   │  │  - CRM record write          │
-    │  - influential cos  │  │    (save findings)           │
-    └──────────┬──────────┘  └──────────────────────────────┘
-               │
-    ┌──────────▼──────────┐
-    │   Neo4j Knowledge   │
-    │   Graph             │
-    │   (via MCP or REST) │
-    └─────────────────────┘
-```
-
-### Python Client — Drive the Agent Externally
-
-```python
-# Install: pip install salesforce-agentforce requests
-from examples.agentforce_agent import run_industry_research_agent
-
-# Run full research workflow
-result = run_industry_research_agent("Apple", verbose=True)
-print(result["final_report"])
-```
-
----
-
-## Salesforce Developer Environment Setup
-
-> **New to Salesforce?** See [AGENTFORCE.md](./AGENTFORCE.md#getting-started) for step-by-step onboarding.
-
-**Quick start:**
-1. Create free Developer Edition org: https://developer.salesforce.com/signup
-2. Enable AgentForce: Setup → Einstein Setup → Turn on Einstein
-3. Install SFDX CLI: https://developer.salesforce.com/tools/salesforcecli
-4. Login: `sf org login web --set-default-dev-hub`
-
----
-
-## Challenges and Gaps
-
-### Current Limitations
-
-1. **Native MCP in Pilot** (Track A)
-   - Not yet GA — requires opt-in to Salesforce pilot program
-   - May not be available in Developer Edition orgs (needs production/sandbox)
-   - Severity: Moderate (use Track B/C as fallback)
-
-2. **Apex Callout Limit: 10 per Transaction** (Track C)
-   - Cannot chain more than 10 Neo4j HTTP calls in a single Apex transaction
-   - ARE's sequential action execution multiplies this across turns
-   - Severity: Moderate — mitigated by combined `/research/company` endpoint
-
-3. **Action Output Truncation by ARE**
-   - ARE truncates action outputs at ~2000 tokens
-   - Large graph query results (50+ nodes) will be silently cut off
-   - Severity: Moderate — design APIs to return top-5 concise results
-
-4. **No Parallel Action Execution**
-   - ARE executes actions sequentially, not in parallel
-   - Multi-step research (profile → news → relationships) is 3x slower
-   - Severity: Low — combined endpoint pattern mitigates this
-
-5. **Session Context Not Persisted**
-   - Sessions expire after 5 min inactivity (configurable to 60 min)
-   - No built-in cross-session memory
-   - Severity: Low for demo, Moderate for production research tools
-
-6. **External Service OAS Constraints**
-   - Only OAS 3.0 (not Swagger 2.x)
-   - Complex nested objects may not parse correctly
-   - No streaming support
-   - Severity: Low — keep spec flat and simple
-
-### Workarounds
-
-**For callout limit**: Use the combined `/research/company` endpoint that returns profile + news + relationships in one call.
-
-**For output truncation**: Structure Neo4j responses as concise JSON arrays (max 5 items), use `summary` fields instead of full `content`.
-
-**For session persistence**: Write research findings to a Salesforce custom object via an Apex action at end of session.
-
----
-
-## Additional Integration Opportunities
-
-### 1. Agent Memory with Neo4j
-
-Use `mcp-neo4j-memory` to store research findings as graph nodes:
-- Sessions write entities and relationships to Neo4j
-- Cross-session context via graph traversal
-- See: https://github.com/neo4j-labs/agent-memory
-
-### 2. Salesforce CRM Enrichment
-
-Agent discovers company info in Neo4j → writes enriched data to Salesforce Account objects:
-```apex
-Account acc = [SELECT Id, Name FROM Account WHERE Name = :companyName LIMIT 1];
-acc.Neo4j_Industries__c = extractedIndustries;
-acc.Neo4j_Last_Enriched__c = DateTime.now();
-update acc;
-```
-
-### 3. AgentExchange Packaging
-
-Package this integration as:
-- A managed AppExchange package (pre-configured Named Credentials, External Service, sample Topics)
-- An AgentExchange MCP server listing (when the marketplace opens)
-
-### 4. Graph Algorithms for Sales Intelligence
-
-Expose GDS algorithms as agent actions:
-- **PageRank** — identify most influential prospects
-- **Community Detection** — find industry clusters for ABM
-- **Shortest Path** — find connection paths to prospects via mutual contacts
-
----
-
-## Code Examples
-
-See the `examples/` directory:
-
-| File | Description | Track |
-|------|-------------|-------|
-| `neo4j_tools.py` | All 11 reference agent tool functions | All |
-| `mcp_bridge_server.py` | FastAPI REST adapter (auto-generates OpenAPI spec) | B |
-| `agentforce_agent.py` | Python client using AgentForce Agent API | All |
-| `apex/Neo4jService.cls` | Apex HTTP callout service | C |
-| `apex/Neo4jAction.cls` | Apex @InvocableMethod actions | C |
-| `apex/Neo4jServiceTest.cls` | Apex test class (75%+ coverage) | C |
-| `metadata/openapi_spec.json` | OpenAPI 3.0 spec for External Service import | B |
-| `requirements.txt` | Python dependencies | A, B |
-| `Dockerfile` / `Procfile` | Container / Heroku deployment | B |
 
 ---
 
@@ -547,15 +328,3 @@ See the `examples/` directory:
 - **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 - **BYOM Guide**: https://developer.salesforce.com/blogs/2024/10/build-generative-ai-solutions-with-llm-open-connector
 
-## Status
-
-- ✅ MCP integration (Pilot July 2025, Beta October 2025)
-- ✅ External Service Actions (Spring 2025 GA)
-- ✅ Apex Actions
-- ✅ Python Agent API client (`pip install salesforce-agentforce`)
-- ✅ OAuth 2.0 Client Credentials + JWT Bearer
-- ⚠️ Native MCP not yet GA (Pilot program required)
-- ⚠️ Apex callout limits require API design consideration
-
-**Effort Score**: 7.8/10 (Salesforce platform learning curve is steep)
-**Impact Score**: 7.9/10 (250k+ Salesforce orgs, deep CRM integration)

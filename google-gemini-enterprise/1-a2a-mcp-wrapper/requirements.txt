@@ -1,0 +1,10 @@
+fastapi==0.133.1
+uvicorn[standard]==0.41.0
+google-adk==1.25.1
+neo4j==6.1.0
+mcp==1.26.0
+requests==2.32.5
+pydantic==2.12.5
+google-genai==1.65.0
+a2a-sdk==0.3.24
+httpx==0.28.1

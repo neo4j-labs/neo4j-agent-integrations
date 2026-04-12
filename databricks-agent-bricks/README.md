@@ -17,6 +17,42 @@
 - MCP Guide: https://docs.databricks.com/en/generative-ai/mcp/
 - Authentication: https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent
 
+## Samples
+
+This directory contains three end-to-end samples, each demonstrating a different integration pattern between Databricks
+and Neo4j via custom and official [Neo4j MCP server](https://github.com/neo4j/mcp).
+Samples can be deployed using Databricks SDK/CLI or via Databricks UI and use the public Neo4j companies demo database: `neo4j+s://demo.neo4jlabs.com:7687` by default.
+
+| # | Sample | Pattern | Auth Model | Deployment |
+|---|--------|---------|------------|------------|
+| 1 | [UC Functions MCP Tools](samples/1-uc-functions/) | UC Functions as Tools | In code, protected by UC Governance | Databricks Notebook |
+| 2 | [Custom MCP Server — Using Databricks App](samples/2-custom-mcp-server/) | Python Custom MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+| 3 | [Official MCP Server — Using Databricks App](samples/3-official-mcp-server/) | Official MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+
+### Sample 1: UC Functions MCP Tools
+
+Uses custom UC Functions Tools that perform requests on Neo4j.
+Neo4j credentials are kept in the function, not intended for production but for fast-prototyping.
+
+→ **[Full documentation](samples/1-uc-functions/README.md)**
+
+### Sample 2: Custom MCP Server — Using Databricks App
+
+Uses Databricks App to deploy a Custom MCP Server written in Python who defines Neo4j driver queries as Tools.
+Neo4j Basic Auth credentials retrieved from Databricks Secrets.
+
+→ **[Full documentation](samples/2-custom-mcp-server/README.md)**
+
+### Sample 3: Official MCP Server — Using Databricks App
+
+Uses Databricks App to deploy the Neo4j Official MCP Server.
+Neo4j Basic Auth credentials retrieved from Databricks Secrets.
+
+→ **[Step-by-step documentation](samples/3-official-mcp-server/STEP_BY_STEP.md)**
+
+→ **[Straightforward documentation](samples/3-official-mcp-server/STRAIGHTFORWARD.md)**
+
+
 ## Extension Points
 
 ### 1. MCP Catalog (Primary)
@@ -54,7 +90,7 @@ CREATE CONNECTION neo4j_prod
   );
 ```
 
-### 3. Direct Integration
+### 3. Direct Integration in Notebooks
 
 ```python
 from neo4j import GraphDatabase
@@ -84,7 +120,6 @@ driver = GraphDatabase.driver(
 - On-Behalf-Of-User (OBO) authentication
 - Automatic authentication passthrough
 
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#9-databricks-agent-bricks--mosaic-ai)
 
 ## Industry Research Agent Example
 
@@ -129,12 +164,6 @@ deployment = mlflow.deployments.create_deployment(
 )
 ```
 
-## Challenges and Gaps
-
-1. **Custom MCP servers on Databricks Apps don't support PAT**
-2. **Unity Catalog connection setup required**
-3. **OAuth M2M required for multi-agent systems**
-
 ## Additional Integration Opportunities
 
 - Neo4j as episodic memory backend
@@ -142,15 +171,7 @@ deployment = mlflow.deployments.create_deployment(
 - MLflow tracking for agent performance
 - Auto-evaluation of graph query accuracy
 
-## Resources
+## Additional Resources
 
 - **Databricks MCP**: https://docs.databricks.com/en/generative-ai/mcp/
 - **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ✅ MCP Catalog support
-- ✅ Unity Catalog integration
-- ✅ OAuth M2M for production
-- **Effort Score**: 8.1/10
-- **Impact Score**: 8.8/10

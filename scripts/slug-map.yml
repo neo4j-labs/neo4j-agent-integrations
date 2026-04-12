@@ -1,0 +1,239 @@
+integrations:
+  # ── Agent Frameworks ──────────────────────────────────────────────────────
+  - folder: langgraph
+    slug: langgraph
+    title: "LangGraph + Neo4j Integration"
+    tags: "langgraph, langchain, agents, neo4j, mcp, checkpoint"
+    product: LangGraph
+    category: "Agent Frameworks"
+    nav_label: LangGraph
+    thin: false
+
+  - folder: openai-agents-sdk
+    slug: openai-agents
+    title: "OpenAI Agents SDK + Neo4j Integration"
+    tags: "openai, agents, neo4j, mcp, tools"
+    product: "OpenAI Agents SDK"
+    category: "Agent Frameworks"
+    nav_label: "OpenAI Agents SDK"
+    thin: false
+
+  - folder: aws-strands-agents
+    slug: aws-strands-agents
+    title: "AWS Strands Agents + Neo4j Integration"
+    tags: "aws, strands, agents, neo4j, mcp"
+    product: "AWS Strands Agents"
+    category: "Agent Frameworks"
+    nav_label: "AWS Strands Agents"
+    thin: false
+
+  - folder: pydantic-ai
+    slug: pydantic-ai
+    title: "Pydantic AI + Neo4j Integration"
+    tags: "pydantic, agents, neo4j, mcp, python"
+    product: "Pydantic AI"
+    category: "Agent Frameworks"
+    nav_label: "Pydantic AI"
+    thin: false
+
+  - folder: claude-agent
+    slug: claude-agent
+    title: "Claude Agent SDK + Neo4j Integration"
+    tags: "claude, anthropic, agents, neo4j, mcp"
+    product: "Claude Agent SDK"
+    category: "Agent Frameworks"
+    nav_label: "Claude Agent SDK"
+    thin: false
+
+  - folder: microsoft-agent-framework
+    slug: microsoft-agent-framework
+    title: "Microsoft Agent Framework + Neo4j Integration"
+    tags: "microsoft, semantic-kernel, agents, neo4j, mcp, autogen"
+    product: "Microsoft Agent Framework"
+    category: "Agent Frameworks"
+    nav_label: "Microsoft Agent Framework"
+    thin: false
+
+  - folder: crewai
+    slug: crewai
+    title: "CrewAI + Neo4j Integration"
+    tags: "crewai, agents, neo4j, mcp, multi-agent"
+    product: CrewAI
+    category: "Agent Frameworks"
+    nav_label: CrewAI
+    thin: true
+
+  - folder: langflow
+    slug: langflow
+    title: "Langflow + Neo4j Integration"
+    tags: "langflow, low-code, agents, neo4j, mcp"
+    product: Langflow
+    category: "Agent Frameworks"
+    nav_label: Langflow
+    thin: true
+
+  # ── Cloud & Enterprise Platforms ──────────────────────────────────────────
+  - folder: aws-agentcore
+    slug: aws-agentcore
+    title: "AWS AgentCore + Neo4j Integration"
+    tags: "aws, agentcore, bedrock, neo4j, mcp, iam"
+    product: "AWS AgentCore"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "AWS AgentCore"
+    thin: false
+    sub_pages:
+      - src: samples/1-mcp-runtime-docker/README.md
+        slug: aws-agentcore-mcp-docker
+        title: "AWS AgentCore — MCP Runtime (Docker)"
+        nav_label: "MCP Runtime (Docker)"
+      - src: samples/2-gateway-external-mcp/README.md
+        slug: aws-agentcore-gateway
+        title: "AWS AgentCore — Gateway + External MCP"
+        nav_label: "Gateway + External MCP"
+      - src: samples/3-mcp-runtime-neo4j-sdk/README.md
+        slug: aws-agentcore-neo4j-sdk
+        title: "AWS AgentCore — MCP Runtime (Neo4j SDK)"
+        nav_label: "MCP Runtime (Neo4j SDK)"
+
+  - folder: aws-agentcore-marketplace
+    slug: aws-agentcore-marketplace
+    title: "AWS Marketplace: Neo4j MCP on AgentCore"
+    tags: "aws, agentcore, marketplace, neo4j, mcp, cli"
+    product: "AWS AgentCore"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "AgentCore Marketplace (CLI)"
+    thin: false
+
+  - folder: microsoft-foundry
+    slug: microsoft-foundry
+    title: "Microsoft Foundry (Azure AI Foundry) + Neo4j Integration"
+    tags: "microsoft, azure, foundry, agents, neo4j, mcp"
+    product: "Azure AI Foundry"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Azure AI Foundry"
+    thin: false
+
+  - folder: databricks-agent-bricks
+    slug: databricks-agent-bricks
+    title: "Databricks Agent Bricks + Neo4j Integration"
+    tags: "databricks, agent-bricks, mosaic, neo4j, mcp"
+    product: "Databricks Agent Bricks"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Databricks Agent Bricks"
+    thin: false
+    sub_pages:
+      - src: samples/1-uc-functions/README.md
+        slug: databricks-uc-functions
+        title: "Databricks Agent Bricks — UC Functions"
+        nav_label: "UC Functions"
+      - src: samples/2-custom-mcp-server/README.md
+        slug: databricks-custom-mcp
+        title: "Databricks Agent Bricks — Custom MCP Server"
+        nav_label: "Custom MCP Server"
+      - src: samples/3-official-mcp-server/README.md
+        slug: databricks-official-mcp
+        title: "Databricks Agent Bricks — Official MCP Server"
+        nav_label: "Official MCP Server"
+
+  - folder: google-adk
+    slug: google-adk
+    title: "Google ADK + Neo4j Integration"
+    tags: "google, adk, agents, neo4j, mcp"
+    product: "Google ADK"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Google ADK"
+    thin: false
+
+  - folder: google-gemini-enterprise
+    slug: google-gemini-enterprise
+    title: "Google Gemini Enterprise + Neo4j Integration"
+    tags: "google, gemini, enterprise, a2a, neo4j, mcp"
+    product: "Google Gemini Enterprise"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Google Gemini Enterprise"
+    thin: false
+    sub_pages:
+      - src: 1-a2a-mcp-wrapper/README.md
+        slug: google-gemini-a2a-mcp-wrapper
+        title: "Google Gemini Enterprise — A2A MCP Wrapper"
+        nav_label: "A2A MCP Wrapper"
+      - src: 2-a2a-direct-service/README.md
+        slug: google-gemini-a2a-direct
+        title: "Google Gemini Enterprise — A2A Direct Service"
+        nav_label: "A2A Direct Service"
+      - src: 2-a2a-ge-marketplace/README.md
+        slug: google-gemini-ge-marketplace
+        title: "Google Gemini Enterprise — GE Marketplace"
+        nav_label: "GE Marketplace"
+
+  - folder: salesforce-agentforce
+    slug: salesforce-agentforce
+    title: "Salesforce Agentforce + Neo4j Integration"
+    tags: "salesforce, agentforce, einstein, neo4j, mcp, apex"
+    product: "Salesforce Agentforce"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Salesforce Agentforce"
+    thin: false
+
+  - folder: ibm-watsonx
+    slug: ibm-watsonx
+    title: "IBM watsonx Orchestrate + Neo4j Integration"
+    tags: "ibm, watsonx, orchestrate, agents, neo4j, mcp"
+    product: "IBM watsonx Orchestrate"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "IBM watsonx Orchestrate"
+    thin: true
+
+  - folder: servicenow-ai-agents
+    slug: servicenow-ai-agents
+    title: "ServiceNow AI Agents + Neo4j Integration"
+    tags: "servicenow, ai-agents, now-assist, neo4j, mcp"
+    product: "ServiceNow AI Agents"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "ServiceNow AI Agents"
+    thin: true
+
+  - folder: snowflake-cortex
+    slug: snowflake-cortex
+    title: "Snowflake Cortex Agents + Neo4j Integration"
+    tags: "snowflake, cortex, agents, neo4j, mcp, sql"
+    product: "Snowflake Cortex"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Snowflake Cortex"
+    thin: true
+
+  - folder: n8n
+    slug: n8n
+    title: "n8n + Neo4j Integration"
+    tags: "n8n, workflow, automation, neo4j, mcp"
+    product: n8n
+    category: "Workflow & Orchestration"
+    nav_label: n8n
+    thin: true
+
+  - folder: haystack
+    slug: haystack-agents
+    title: "Haystack + Neo4j Integration"
+    tags: "haystack, deepset, rag, neo4j, vector, agents"
+    product: Haystack
+    category: "GenAI Libraries"
+    nav_label: Haystack
+    thin: true
+
+  - folder: llamaindex
+    slug: llamaindex-agents
+    title: "LlamaIndex + Neo4j Integration"
+    tags: "llamaindex, rag, agents, neo4j, mcp, tools"
+    product: LlamaIndex
+    category: "Agent Frameworks"
+    nav_label: LlamaIndex
+    thin: false
+
+  - folder: langchain
+    slug: langchain-agents
+    title: "LangChain + Neo4j Integration"
+    tags: "langchain, agents, neo4j, mcp, tools, graphrag"
+    product: LangChain
+    category: "Agent Frameworks"
+    nav_label: LangChain
+    thin: false

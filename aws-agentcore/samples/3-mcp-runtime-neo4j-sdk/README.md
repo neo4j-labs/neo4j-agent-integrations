@@ -34,7 +34,7 @@ Instead of using a pre-built Docker image, the MCP server is written as a Python
    - Python 3.13 runtime
    - Framework-agnostic orchestration
 
-2. **Custom MCP Server ([mcp_app/mcp_server.py](mcp_app/mcp_server.py))**
+2. **Custom MCP Server ([mcp_app/mcp_server.py](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/aws-agentcore/samples/3-mcp-runtime-neo4j-sdk/mcp_app/mcp_server.py))**
    - Built with FastMCP
    - Streamable HTTP transport (stateless)
    - Pydantic models for typed tool responses (`Organization`, `IndustryCategory`, `Article`)
@@ -65,7 +65,7 @@ Instead of using a pre-built Docker image, the MCP server is written as a Python
 
 ### Code-Based Deployment Mechanism
 
-The sample uses a Python MCP server in [mcp_app/mcp_server.py](mcp_app/mcp_server.py) that is bundled with its dependencies and deployed to S3 via CDK:
+The sample uses a Python MCP server in [mcp_app/mcp_server.py](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/aws-agentcore/samples/3-mcp-runtime-neo4j-sdk/mcp_app/mcp_server.py) that is bundled with its dependencies and deployed to S3 via CDK:
 
 **How It Works:**
 
@@ -113,11 +113,11 @@ The custom MCP server exposes the following tools:
 - **`get_industry_categories(limit: int)`** — Returns up to `limit` industry category names from the Neo4j database.
 - **`get_articles_by_organization(name: str)`** — Returns articles that mention the given organization. Each article includes properties such as `title`, `author`, `date`, `sentiment`, `siteName`, and `summary`.
 
-You can extend [mcp_app/mcp_server.py](mcp_app/mcp_server.py) with additional `@mcp.tool()` decorated functions to add more tools.
+You can extend [mcp_app/mcp_server.py](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/aws-agentcore/samples/3-mcp-runtime-neo4j-sdk/mcp_app/mcp_server.py) with additional `@mcp.tool()` decorated functions to add more tools.
 
 ### CDK Stack Components
 
-The CDK deployment ([neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py](neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py)) creates:
+The CDK deployment ([neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/aws-agentcore/samples/3-mcp-runtime-neo4j-sdk/neo4j_sdk_runtime/neo4j_sdk_runtime_stack.py)) creates:
 
 - **S3 Code Asset** — `mcp_app/` bundled with dependencies via `uv` and uploaded to S3
 - **Secrets Manager Secret** — Stores Neo4j connection credentials, values sourced from CDK context (`cdk.json` or `-c` overrides)
@@ -162,7 +162,7 @@ pip install -r requirements.txt
 
 ### Step 3: Configure Neo4j Credentials
 
-Neo4j connection credentials are supplied via CDK context. Default values are provided in [cdk.json](cdk.json):
+Neo4j connection credentials are supplied via CDK context. Default values are provided in [cdk.json](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/aws-agentcore/samples/3-mcp-runtime-neo4j-sdk/cdk.json):
 
 ```json
 {

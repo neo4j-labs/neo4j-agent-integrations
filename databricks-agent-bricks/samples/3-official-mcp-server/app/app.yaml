@@ -1,0 +1,12 @@
+env:
+  - name: NEO4J_URI
+    valueFrom: neo4j-uri
+
+  - name: NEO4J_USER
+    valueFrom: username
+
+  - name: NEO4J_PASS
+    valueFrom: password
+
+  - name: NEO4J_DATABASE
+    valueFrom: database

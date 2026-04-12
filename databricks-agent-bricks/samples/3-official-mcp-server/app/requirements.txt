@@ -1,0 +1,4 @@
+neo4j-mcp-server==1.5.0
+uvicorn==0.41.0
+fastapi==0.135.1
+httpx==0.28.1
