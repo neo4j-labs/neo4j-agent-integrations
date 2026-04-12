@@ -75,7 +75,7 @@ The MCP server configuration, provided in the [examples/configuration.json](exam
 ### Dataset Setup
 
 **Company News Knowledge Graph (Read-Only Access):**
-```python
+```bash
 NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
 NEO4J_USERNAME = "companies"
 NEO4J_PASSWORD = "companies"
