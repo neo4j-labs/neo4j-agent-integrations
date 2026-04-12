@@ -1,0 +1,99 @@
+[
+    {
+        "spec": {
+            "fileName": "Solution.agent.Agent.1.0.0.nupkg",
+            "fileReference": "13e0847f-a49a-2105-40d1-ed9eadfe3093",
+            "name": "Solution.agent.Agent",
+            "description": null,
+            "packageVersion": "1.0.0"
+        },
+        "resourceKey": "Solution.agent.Agent:1.0.0"
+    },
+    {
+        "spec": {
+            "name": "neo4j-companies-mcp",
+            "description": "Neo4j Companies Database MCP",
+            "slug": "neo4j-companies-mcp",
+            "version": "1.0.0",
+            "url": "https://mcp.demo.neo4jlabs.com/mcp",
+            "headers": "Authorization:Basic Y29tcGFuaWVzOmNvbXBhbmllcw==",
+            "referencedAssets": [],
+            "tools": [
+                {
+                    "key": null,
+                    "name": "get-schema",
+                    "title": "get-schema",
+                    "description": "\n\t\tRetrieve the schema information from the Neo4j database, including node labels, relationship types, and property keys.\n\t\tIf the database contains no data, no schema information is returned.",
+                    "inputSchema": "{\u0022type\u0022:\u0022object\u0022,\u0022properties\u0022:{\u0022properties\u0022:{\u0022type\u0022:\u0022object\u0022,\u0022additionalProperties\u0022:true}},\u0022required\u0022:[\u0022properties\u0022],\u0022additionalProperties\u0022:false}",
+                    "outputSchema": null
+                },
+                {
+                    "key": null,
+                    "name": "list-gds-procedures",
+                    "title": "list-gds-procedures",
+                    "description": "Use this tool to discover what graph science and analytics functions are available in the current Neo4j environment. It returns a structured list describing each function \u2014 what it does, how to use it, the inputs it needs, and what kind of results it produces. Do this before any reasoning, query generation, or analysis so you know what capabilities exist. Graph science and analytics functions help you with centrality, community detection, similarity, path finding, and identifying dependencies between nodes. The tool helps you understand the analytical capabilities of the system so that you can plan or compose the right graph science operations automatically. An empty response indicates that GDS is not installed and the user should be told to install it. Remember to use unique names for graph data science projections to avoid collisions and to drop them afterwards to save memory. You must always tell the user the function you will use.",
+                    "inputSchema": "{\u0022type\u0022:\u0022object\u0022,\u0022properties\u0022:{\u0022properties\u0022:{\u0022type\u0022:\u0022object\u0022,\u0022additionalProperties\u0022:true}},\u0022required\u0022:[\u0022properties\u0022],\u0022additionalProperties\u0022:false}",
+                    "outputSchema": null
+                },
+                {
+                    "key": null,
+                    "name": "read-cypher",
+                    "title": "read-cypher",
+                    "description": "read-cypher can run only read-only Cypher statements. For write operations (CREATE, MERGE, DELETE, SET, etc...), schema/admin commands, or PROFILE queries, use write-cypher instead.",
+                    "inputSchema": "{\u0022properties\u0022:{},\u0022required\u0022:[],\u0022type\u0022:\u0022object\u0022}",
+                    "outputSchema": null
+                }
+            ]
+        },
+        "resourceKey": "ef125e70-3a18-46d2-a5c6-3f824cb47b8e"
+    },
+    {
+        "spec": {
+            "targetRuntime": null,
+            "referencedAssets": null,
+            "entryPointUniqueId": "f81d3435-1e70-45d8-a5ac-1adc0ad73c37",
+            "inputArgumentsSchema": null,
+            "inputArgumentsSchemaV2": "{\n        \u0022type\u0022: \u0022object\u0022,\n        \u0022properties\u0022: {}\n      }",
+            "type": "Agent",
+            "name": "Agent",
+            "description": null,
+            "package": {
+                "key": "Solution.agent.Agent:1.0.0",
+                "name": "Solution.agent.Agent"
+            },
+            "packageName": "Solution.agent.Agent",
+            "packageVersion": "1.0.0",
+            "entryPointName": "content/agent.json",
+            "inputArguments": "{}",
+            "hiddenForAttendedUser": false,
+            "alwaysRunning": false,
+            "autoStartProcess": false,
+            "targetFrameworkValue": "Portable",
+            "agentMemory": false,
+            "environmentVariables": null,
+            "retentionAction": "Delete",
+            "retentionPeriod": 30,
+            "retentionBucketRef": null,
+            "staleRetentionAction": "Delete",
+            "staleRetentionPeriod": 180,
+            "staleRetentionBucketRef": null,
+            "entryPoints": "{\n  \u0022$schema\u0022: \u0022https://cloud.uipath.com/draft/2024-12/entry-point\u0022,\n  \u0022$id\u0022: \u0022entry-points.json\u0022,\n  \u0022entryPoints\u0022: [\n    {\n      \u0022filePath\u0022: \u0022content/agent.json\u0022,\n      \u0022uniqueId\u0022: \u0022f81d3435-1e70-45d8-a5ac-1adc0ad73c37\u0022,\n      \u0022type\u0022: \u0022agent\u0022,\n      \u0022input\u0022: {\n        \u0022type\u0022: \u0022object\u0022,\n        \u0022properties\u0022: {}\n      },\n      \u0022output\u0022: {\n        \u0022type\u0022: \u0022object\u0022,\n        \u0022properties\u0022: {\n          \u0022content\u0022: {\n            \u0022type\u0022: \u0022string\u0022,\n            \u0022description\u0022: \u0022Output content\u0022\n          }\n        }\n      }\n    }\n  ]\n}",
+            "connections": null,
+            "tags": [],
+            "outputArgumentsSchemaV2": "{\n        \u0022type\u0022: \u0022object\u0022,\n        \u0022properties\u0022: {\n          \u0022content\u0022: {\n            \u0022type\u0022: \u0022string\u0022,\n            \u0022description\u0022: \u0022Output content\u0022\n          }\n        }\n      }"
+        },
+        "resourceKey": "941a9655-a54e-49e0-9037-d701455ddead"
+    },
+    {
+        "spec": {
+            "connectorName": "UiPath GenAI Activities",
+            "name": "UiPath GenAI Activities",
+            "description": null,
+            "authenticationType": "AuthenticateAfterDeployment",
+            "connectorVersion": "1.79.5",
+            "connectorKey": "uipath-uipath-airdk",
+            "pollingInterval": 5
+        },
+        "resourceKey": "520df0a1-32fb-4453-8895-8ea9556fe70b"
+    }
+]
