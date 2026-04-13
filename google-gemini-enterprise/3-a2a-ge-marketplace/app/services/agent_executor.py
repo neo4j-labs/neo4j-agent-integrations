@@ -220,7 +220,7 @@ class Neo4jADKExecutor(AgentExecutor):
                     exact_tokens = math.ceil((len(user_query) + len(total_response_text)) / 4)
                     logging.info(f"[agent_executor] No token metadata available. Estimated tokens: {exact_tokens}")
 
-                token_manager.add_tokens(user_email, exact_tokens)
+                token_manager.add_tokens(user_email, exact_tokens, order_id)
                 logging.info(f"[agent_executor] User {user_email} used {exact_tokens} tokens.")
 
         except Exception as e:

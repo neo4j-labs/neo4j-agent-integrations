@@ -67,13 +67,12 @@ class TokenManager:
         
         query = """
         MATCH (o:Order {id: $order_id})
-        MERGE (u:User {email: $email})
+        MERGE (o)-[:HAS_USER]->(u:User {email: $email})
         ON CREATE SET
             u.tokens_used_today = 0,
             u.total_tokens_used = 0,
             u.daily_token_limit = $default_limit,
             u.created_at = datetime()
-        MERGE (u)-[:BELONGS_TO]->(o)
         WITH u, o, CASE WHEN u.last_reset_date <> $today THEN 0 ELSE u.tokens_used_today END AS used
         SET u.tokens_used_today = used,
             u.last_reset_date = $today,
@@ -98,16 +97,16 @@ class TokenManager:
             logging.error(f"[token_manager] Failed to check token limit for {email}: {e}")
             return False
 
-    def add_tokens(self, email: str, tokens: int):
+    def add_tokens(self, email: str, tokens: int, order_id: str) -> None:
         if tokens <= 0: return
         query = """
-        MATCH (u:User {email: $email})
+        MATCH (o:Order {id: $order_id})-[:HAS_USER]->(u:User {email: $email})
         SET u.tokens_used_today = u.tokens_used_today + $tokens,
             u.total_tokens_used = coalesce(u.total_tokens_used, 0) + $tokens,
             u.updated_at = datetime()
         """
         try:
-            self.driver.execute_query(query, email=email, tokens=tokens)
+            self.driver.execute_query(query, email=email, tokens=tokens, order_id=order_id)
         except Exception as e:
             logging.error(f"[token_manager] Failed to update token usage for {email}: {e}")
 
