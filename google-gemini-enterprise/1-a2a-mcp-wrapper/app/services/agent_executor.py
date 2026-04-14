@@ -177,6 +177,25 @@ class Neo4jADKExecutor(AgentExecutor):
                 NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_URI, NEO4J_DATABASE
             )
 
+            logging.info("[agent_executor] Configuring native Gemini safety settings")
+            enterprise_safety_settings = [
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+            ]
             # Instantiate ADK Agent
             adk_agent = LlmAgent(
                 model=GEMINI_MODEL,
@@ -186,6 +205,9 @@ class Neo4jADKExecutor(AgentExecutor):
                 Always run 'get-schema' first if you are unfamiliar with the graph structure.
                 If a user asks about investments, prioritize your specialized custom tool.""",
                 tools=[mcp_tools, custom_investment_tool],
+                model_settings=types.GenerateContentConfig(
+                    safety_settings=enterprise_safety_settings
+                ),
                 after_model_callback=[track_token_usage_callback]
             )
 
@@ -234,8 +256,17 @@ class Neo4jADKExecutor(AgentExecutor):
                 logging.info(f"User {user_id} used approximately {exact_tokens} tokens.")
 
         except Exception as e:
-            logging.error(f"ADK Execution Error for user {user_id}: {e}", exc_info=True)
-            await event_queue.enqueue_event(new_agent_text_message("An unexpected error occurred while processing your request."))
+            error_message = str(e).lower()
+            if "safety" in error_message or "blocked" in error_message:
+                logging.warning(f"[agent_executor] Request blocked by Vertex AI Safety filters: {e}")
+                await event_queue.enqueue_event(
+                    new_agent_text_message("I cannot fulfill this request as it violates enterprise safety and content guidelines.")
+                )
+            else:
+                logging.error(f"[agent_executor] ADK Execution Error: {e}", exc_info=True)
+                await event_queue.enqueue_event(
+                    new_agent_text_message("An unexpected error occurred while processing your request.")
+                )
         finally:
             if token_manager:
                 token_manager.close()

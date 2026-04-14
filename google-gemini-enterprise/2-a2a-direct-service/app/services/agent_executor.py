@@ -169,13 +169,33 @@ class Neo4jADKExecutor(AgentExecutor):
 
             tenant_tools = get_tenant_tools(dynamic_user, dynamic_pass, dynamic_uri, dynamic_db)
             logging.info("[agent_executor] Tools configured")
-
+            enterprise_safety_settings = [
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+            ]
             logging.info("[agent_executor] Instantiating ADK Agent")
             adk_agent = LlmAgent(
                 model=GEMINI_MODEL,
                 name="neo4j_explorer",
                 instruction=AGENT_PROMPT,
                 tools=tenant_tools,
+                model_settings=types.GenerateContentConfig(
+                    safety_settings=enterprise_safety_settings
+                ),
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=False, 
@@ -234,8 +254,17 @@ class Neo4jADKExecutor(AgentExecutor):
                 logging.info(f"[agent_executor] User {user_email} used approximately {exact_tokens} tokens.")
 
         except Exception as e:
-            logging.error(f"[agent_executor] ADK Execution Error for user {user_email}: {e}", exc_info=True)
-            await event_queue.enqueue_event(new_agent_text_message("An unexpected error occurred while processing your request."))
+            error_message = str(e).lower()
+            if "safety" in error_message or "blocked" in error_message:
+                logging.warning(f"[agent_executor] Request blocked by Vertex AI Safety filters: {e}")
+                await event_queue.enqueue_event(
+                    new_agent_text_message("I cannot fulfill this request as it violates enterprise safety and content guidelines.")
+                )
+            else:
+                logging.error(f"[agent_executor] ADK Execution Error: {e}", exc_info=True)
+                await event_queue.enqueue_event(
+                    new_agent_text_message("An unexpected error occurred while processing your request.")
+                )
         finally:
             logging.info(f"[agent_executor] Closing token manager for user {user_email}")
             token_manager.close()
