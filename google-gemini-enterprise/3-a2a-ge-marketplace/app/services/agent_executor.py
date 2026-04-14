@@ -21,12 +21,11 @@ from google.adk.planners import BuiltInPlanner
 from ..core.config import (
     GEMINI_MODEL,
     TRACK_TOKEN_USAGE,
-    current_request_tokens,
     AGENT_PROMPT
 )
+from app.core.context import current_order_id, current_user_email, current_request_tokens
 from .token_manager import TokenManager
 from .custom_tools import get_tenant_tools
-from app.core.context import current_order_id  
 
 MAX_QUERY_LENGTH = 2000
 
@@ -87,7 +86,7 @@ def guardrail_check(query: str) -> bool:
     if longest_word > 50: 
         logging.warning(f"[agent_executor] Guardrail triggered: Abnormally long single word detected ({longest_word} chars).")
         return False
-    
+
     logging.info("[agent_executor] Guardrail check passed")
     return True
 
@@ -103,23 +102,23 @@ class Neo4jADKExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Executes the agent task, handling user queries and tool integration."""
-        user_id = current_order_id.get()
+        order_id = current_order_id.get()
+        user_email = current_user_email.get()
 
-        logging.info(f"[agent_executor] Executing task for user/order: {user_id} (Context ID provided: {bool(context.context_id)})")
+        logging.info(f"[agent_executor] Executing task for user: {user_email} under order: {order_id}")
 
-        token_manager = None
-        if TRACK_TOKEN_USAGE:
-            logging.info("[agent_executor] Token usage tracking is enabled")
-            token_manager = TokenManager()
-            if not token_manager.check_limit(user_id):
-                logging.warning(f"[agent_executor] User {user_id} has reached their daily token limit.")
-                await event_queue.enqueue_event(
-                    new_agent_text_message("You have reached your daily token limit. Please try again tomorrow.")
-                )
-                token_manager.close()
-                return
+        token_manager = TokenManager()
 
         try:
+            if TRACK_TOKEN_USAGE:
+                logging.info("[agent_executor] Token usage tracking is enabled")
+                if not token_manager.check_limit(user_email, order_id):
+                    logging.warning(f"[agent_executor] User {user_email} reached daily token limit.")
+                    await event_queue.enqueue_event(
+                        new_agent_text_message("You have reached your daily token limit. Please try again tomorrow.")
+                    )
+                    return
+
             current_request_tokens.set(0)
             logging.info("[agent_executor] Reset token counter for new request")
 
@@ -135,25 +134,24 @@ class Neo4jADKExecutor(AgentExecutor):
                 return
 
             if len(user_query) > MAX_QUERY_LENGTH:
-                logging.warning(f"[agent_executor] User {user_id} exceeded query length limit ({len(user_query)} chars).")
+                logging.warning(f"[agent_executor] User {user_email} exceeded query length limit.")
                 await event_queue.enqueue_event(
                     new_agent_text_message(f"Your query is too long. Please keep it under {MAX_QUERY_LENGTH} characters.")
                 )
                 return
 
             if not guardrail_check(user_query):
-                logging.warning(f"[agent_executor] Security guardrail triggered for user {user_id}.")
+                logging.warning(f"[agent_executor] Security guardrail triggered for user {user_email}.")
                 await event_queue.enqueue_event(
                     new_agent_text_message("I cannot process this request due to security policy restrictions.")
                 )
                 return
 
-            
-            logging.info(f"[agent_executor] Received query from user {user_id}: {user_query}")
+            logging.info(f"[agent_executor] Received safe query from {user_email}")
 
-            creds = token_manager.get_user_credentials(user_id)
+            creds = token_manager.get_user_credentials(order_id)
             if not creds:
-                logging.error(f"[agent_executor] Credentials not found or account inactive for {user_id}")
+                logging.error(f"[agent_executor] Credentials not found or account inactive for order {order_id}")
                 await event_queue.enqueue_event(
                     new_agent_text_message("Error: Database connection not configured or account inactive. Please complete setup.")
                 )
@@ -165,42 +163,55 @@ class Neo4jADKExecutor(AgentExecutor):
             dynamic_db = creds.get("database", "neo4j")
 
             logging.info("[agent_executor] Setting up tools with tenant credentials")
-
             tenant_tools = get_tenant_tools(dynamic_user, dynamic_pass, dynamic_uri, dynamic_db)
-            logging.info("[agent_executor] Tools configured")
-
+            enterprise_safety_settings = [
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                ),
+            ]
             logging.info("[agent_executor] Instantiating ADK Agent")
             adk_agent = LlmAgent(
                 model=GEMINI_MODEL,
                 name="neo4j_explorer",
                 instruction=AGENT_PROMPT,
                 tools=tenant_tools,
+                model_settings=types.GenerateContentConfig(
+                    safety_settings=enterprise_safety_settings
+                ),
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=False, 
                         thinking_budget=1024,
-                        )
-                    ),
+                    )
+                ),
                 after_model_callback=[track_token_usage_callback]
             )
-            logging.info("[agent_executor] ADK Agent instantiated")
 
             session_id = context.context_id
             if not session_id:
-                session_id = f"session_{user_id}_{uuid.uuid4().hex}"
-                logging.info(f"[agent_executor] No context ID provided. Generated secure session ID for user {user_id}: {session_id}")
+                session_id = f"session_{user_email}_{uuid.uuid4().hex}"
 
             session = await self.session_service.get_session(
-                app_name="neo4j_a2a_app", user_id=user_id, session_id=session_id
+                app_name="neo4j_a2a_app", user_id=user_email, session_id=session_id
             )
 
             if not session:
-                logging.info(f"[agent_executor] No existing session found for {session_id}. Creating new session.")
                 session = await self.session_service.create_session(
-                    session_id=session_id, state={}, app_name="neo4j_a2a_app", user_id=user_id
+                    session_id=session_id, state={}, app_name="neo4j_a2a_app", user_id=user_email
                 )
-            else:
-                logging.info(f"[agent_executor] Found existing session: {session_id}")
 
             logging.info(f"[agent_executor] Running agent for session {session.id}")
             runner = Runner(
@@ -212,7 +223,7 @@ class Neo4jADKExecutor(AgentExecutor):
 
             total_response_text = ""
             content = types.Content(role='user', parts=[types.Part(text=user_query)])
-            events_async = runner.run_async(session_id=session.id, user_id=user_id, new_message=content)
+            events_async = runner.run_async(session_id=session.id, user_id=user_email, new_message=content)
 
             async for event in events_async:
                 if hasattr(event, 'content') and event.content:
@@ -220,25 +231,33 @@ class Neo4jADKExecutor(AgentExecutor):
                         if part.text:
                             total_response_text += part.text
                             await event_queue.enqueue_event(new_agent_text_message(part.text))
-            
-            logging.info(f"[agent_executor] Agent execution finished for session {session.id}. Full response: {total_response_text}")
 
-            if TRACK_TOKEN_USAGE and token_manager:
+            logging.info(f"[agent_executor] Agent execution finished for session {session.id}.")
+
+            if TRACK_TOKEN_USAGE:
                 exact_tokens = current_request_tokens.get()
-                logging.info(f"[agent_executor] Total tokens used for this request: {exact_tokens}")
                 if exact_tokens == 0:
                     exact_tokens = math.ceil((len(user_query) + len(total_response_text)) / 4)
-                    logging.info(f"[agent_executor] No token metadata available. Estimated tokens based on text length: {exact_tokens}")
-                token_manager.add_tokens(user_id, exact_tokens)
-                logging.info(f"[agent_executor] User {user_id} used approximately {exact_tokens} tokens.")
+                    logging.info(f"[agent_executor] No token metadata available. Estimated tokens: {exact_tokens}")
+
+                token_manager.add_tokens(user_email, exact_tokens, order_id)
+                logging.info(f"[agent_executor] User {user_email} used {exact_tokens} tokens.")
 
         except Exception as e:
-            logging.error(f"[agent_executor] ADK Execution Error for user {user_id}: {e}", exc_info=True)
-            await event_queue.enqueue_event(new_agent_text_message("An unexpected error occurred while processing your request."))
+            error_message = str(e).lower()
+            if "safety" in error_message or "blocked" in error_message:
+                logging.warning(f"[agent_executor] Request blocked by Vertex AI Safety filters: {e}")
+                await event_queue.enqueue_event(
+                    new_agent_text_message("I cannot fulfill this request as it violates enterprise safety and content guidelines.")
+                )
+            else:
+                logging.error(f"[agent_executor] ADK Execution Error: {e}", exc_info=True)
+                await event_queue.enqueue_event(
+                    new_agent_text_message("An unexpected error occurred while processing your request.")
+                )
         finally:
-            if token_manager:
-                logging.info(f"[agent_executor] Closing token manager for user {user_id}")
-                token_manager.close()
+            logging.info(f"[agent_executor] Cleaning up and closing token manager.")
+            token_manager.close()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancels the agent task."""

@@ -13,18 +13,25 @@ It features a custom Starlette/FastAPI ASGI middleware layer to securely validat
 1. **Decoupled Architecture**: Separates the Neo4j MCP binary from the Python reasoning agent, allowing both Cloud Run services to scale independently.
 2. **Native Graph Querying**: Uses the remote Neo4j MCP server over HTTP to autonomously explore graph schemas and execute Cypher queries.
 3. **Custom Python Tools**: Extends MCP capabilities with specialized, hardcoded business logic (e.g., get_investments).
+refer [custom_tools.py](app/services/custom_tools.py)
 4. **Secure Token Validation**: A pure ASGI middleware intercepts and validates Gemini Enterprise OAuth 2.0 access tokens in real-time, extracting the user's email address.
 5. **Granular Token Management (Optional)**: Uses ADK callbacks to calculate exact billing tokens per request and tracks daily usage limits per user in a secondary Neo4j database.
 
 ## Architecture Flow
 
+
+![Google Gemini Enterprise + Neo4j MCP + ADK A2A Integration](architecture.png)
+
+
 1.  **Discovery**: Gemini Enterprise sends `/.well-known/agent.json` request. The service returns the AgentCard (manifest) detailing the agent's skills and confirming it requires authentication.
 2.  **Authentication**: Gemini prompts the user to log in via Google OAuth 2.0.
 3.  **Execution**: Gemini sends a `POST /` request containing the user's prompt and the `Authorization: Bearer <TOKEN>` header.
 4.  **Validation**: The custom Python middleware intercepts the request, verifies the token via Google's tokeninfo endpoint, extracts the user's email, and checks their daily token limit in the Tracking Database.
+Code can be found in [middleware.py](app/api/middleware.py)
 5.  **Reasoning**: The Google ADK `LlmAgent` determines whether to use the Neo4j MCP schema tools or the custom investment tools to formulate a response.
+Refer [agent_executor.py](app/services/agent_executor.py)
 6. **Tracking**: After the response is generated, an ADK callback captures the exact token usage and updates the user's record in the tracking database.
-
+Refer [token_manager.py](app/services/token_manager.py)
 ## Prerequisites
 
 Before deploying, ensure you have the following:
@@ -98,15 +105,16 @@ gcloud run deploy neo4j-a2a-service
 Register the deployed agent in the Gemini Enterprise portal.
 
 1.  Navigate to the add agent configuration in Gemini Enterprise.
-2.  Provide the agent card , can be retrieved from (e.g., `https://neo4j-a2a-service-xxxx-uc.a.run.app/.well-known/agent.card`).
-3.  Set the Authentication type to **OAuth 2.0**.
-4.  Fill in the OAuth details using your GCP Credentials (APIs & Services -> Credentials -> OAuth 2.0 Client IDs):
+2.  Provide the agent card , can be retrieved from (e.g., `https://neo4j-a2a-service-xxxx-uc.a.run.app/.well-known/agent.`).
+3.  You can find this configuration in [config.py](app/core/config.py)
+4.  Set the Authentication type to **OAuth 2.0**.
+5.  Fill in the OAuth details using your GCP Credentials (APIs & Services -> Credentials -> OAuth 2.0 Client IDs):
     -   **Client ID**: `your-client-id.apps.googleusercontent.com`
     -   **Client Secret**: `your-client-secret`
     -   **Authorization URL**: `https://accounts.google.com/o/oauth2/v2/auth`
     -   **Token URL**: `https://oauth2.googleapis.com/token`
     -   **Scope**: `openid email https://www.googleapis.com/auth/cloud-platform`
-5.  Ensure the following Redirect URIs are added to your Google Cloud OAuth Client ID configuration:
+6.  Ensure the following Redirect URIs are added to your Google Cloud OAuth Client ID configuration:
 • `https://vertexaisearch.cloud.google.com/oauth-redirect`
 • `https://vertexaisearch.cloud.google.com/static/oauth/oauth.html`
 

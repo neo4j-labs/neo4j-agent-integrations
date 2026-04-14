@@ -40,7 +40,7 @@ skill = AgentSkill(
 )
 
 public_agent_card = AgentCard(
-    name='Neo4j-Graph-Query-Agent',
+    name='Neo4j-Agent-Direct',
     description=f'Queries a Neo4j database using natural language.\n\n⚠️ IMPORTANT: Before chatting, you must link your database credentials at: {SERVICE_URL}/setup',
     url=SERVICE_URL,
     version='1.0.0',
