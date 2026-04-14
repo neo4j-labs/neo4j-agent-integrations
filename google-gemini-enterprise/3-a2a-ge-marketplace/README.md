@@ -68,6 +68,33 @@ To automate provisioning, the application processes real-time events via a [Pub/
 
 
 ---
+## :technologist: Customer Guide: How to Connect & Use the Agent
+
+If you are an IT Administrator or End-User looking to connect your organization's Neo4j database to Gemini via this service, follow these steps:
+
+**:link: Ready to connect?** Head directly to the secure setup portal: [https://graphrag-gcp.neo4j.agency/setup](https://graphrag-gcp.neo4j.agency/setup)  
+
+### Phase 1: Administrator Setup  
+
+**Subscribe via GCP Marketplace:** Purchase the Neo4j AaaS subscription through the Google Cloud Marketplace. This provisions your billing account and generates your unique Order ID.  
+**Link Your Database:** Navigate to our live setup portal at [https://graphrag-gcp.neo4j.agency/setup](https://graphrag-gcp.neo4j.agency/setup).  
+**Configure Credentials:** Enter your Marketplace Order ID alongside the URI, username, and password for your target Neo4j database. These credentials are encrypted and stored safely in Google Secret Manager, physically isolated from other tenants.  
+
+
+### Phase 2: Gemini Integration  
+
+**Add the Agent:** Open your Gemini Enterprise Console as a Workspace Administrator. Select the option to "Add custom agent via marketplace".  
+**Select DCR for authorization:**  Gemini will perform a secure handshake (DCR) to register your specific app instance. and your user will be "Active"  
+
+
+### Phase 3: Start Chatting
+Once registered, users within your organization can interact with the agent directly in the Gemini UI.   
+
+- On their first prompt, they will be securely redirected to authenticate via **Google Workspace**.   
+- This verifies their corporate identity and ensures token usage is correctly tracked against your organization's daily limits.   
+- Once authenticated, they can query the graph using natural language.
+
+---
 
 ## ⚙️ Prerequisites & Environment Setup
 
