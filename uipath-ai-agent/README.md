@@ -7,44 +7,50 @@
 These agents leverage powerful underlying LLMs (such as **Anthropic Claude**, seamlessly integrated natively via the UiPath Integration Service or AI experiences) to reason, synthesize answers, and orchestrate Model Context Protocol (MCP) tool calls natively within automations.
 
 **Key Features:**
+
 - Enterprise-grade Robotic Process Automation (RPA)
 - Integration Service with hundreds of pre-built connectors
 - Native Agentic Automation capabilities (UiPath Autopilot) backed by powerful LLMs for planning and reasoning
 - Native Model Context Protocol (MCP) server support through UiPath Orchestrator
 
 **Official Resources:**
+
 - Website: [uipath.com](https://www.uipath.com/)
 - Documentation: [UiPath Documentation](https://docs.uipath.com/)
 - MCP/Integration docs: [About MCP Servers in UiPath](https://docs.uipath.com/orchestrator/automation-cloud/latest/user-guide/about-mcp-servers)
 
-## Extension Points
-
-### 1. MCP Integration (Native Support)
+## MCP Integration Integration
 
 The UiPath Platform offers full native MCP support natively through UiPath Orchestrator, enabling you to bring external tools directly into your automation workflows and expose them to your AI Agents.
 
 UiPath supports several MCP Server connection types:
-- **Remote:** Connect to remote MCP Servers outside UiPath via secure tunneling. This is ideal for connecting to an externally hosted Neo4j MCP Server.
-- **Command (Preview):** Bring an MCP Server from an external package feed (e.g., NPM or PyPI) and start it as an external process.
-- **Coded (Preview):** Host a custom-coded MCP Server within UiPath's package management.
-- **UiPath:** Expose UiPath artifacts as tools via MCP.
 
-#### Connecting a Neo4j MCP Server (Remote Type)
+- **Remote:** Connect to remote MCP Servers outside UiPath via secure tunneling. This is ideal for connecting to an externally hosted Neo4j MCP Server. **This is the preferred approach for integration**
+- **Coded (Preview):** Host a custom-coded MCP Server within UiPath's package management. Given that UiPath's platform is built on.NET, all activities take the form of a Nuget package (this is the `.nupkg` file that feeds in UiPath Studio's package manager).
+- **Command (Preview):** Bring an MCP Server from an external package feed (e.g., NPM or PyPI) and start it as an external process. You can use npx commands for Node.js projects or uvx for Python projects. 
+Unfortunately, Neo4j MPC is build in golang
+- **UiPath:** Expose UiPath artifacts as tools via MCP - which is not relevant for the integration discussed here.
+
+### Connecting a Neo4j MCP Server (Remote Type)
 
 The recommended approach to integrate Neo4j is by connecting a remote Neo4j MCP Server using the **Remote** connection type.
 
 **Setup Instructions:**
+
 1. **Host the Neo4j MCP Server:** 
-   Deploy the official Neo4j MCP server (`neo4j-mcp`). Because UiPath connects over the network, you must run the server in **HTTP mode** instead of the default STDIO mode.
-   
+   Deploy the official Neo4j MCP server (`neo4j-mcp`). Because UiPath connects over the network, you must run the server in **HTTP mode** instead of the default STDIO mode.   
    Example starting the server via Docker:
+
    ```bash
    docker run -p 8080:8080 -e NEO4J_TRANSPORT_MODE=http neo4j/mcp
    ```
+
    Or via binary:
+
    ```bash
    neo4j-mcp --neo4j-transport-mode http --neo4j-http-port 8080
    ```
+
    *Note: Ensure your server is accessible from UiPath Cloud (e.g., via a public IP, secure tunnel, or API Gateway).*
 2. **Navigate to Orchestrator:** Go to your UiPath Automation Cloud and open the Orchestrator.
 3. **Add MCP Server:** Navigate to the **MCP Servers** page and choose to add a new server.
@@ -93,6 +99,7 @@ NEO4J_DATABASE = "companies"
 
 1. **Deploy Neo4j MCP Server:** 
    Deploy the official Neo4j MCP server in HTTP mode.
+   
    ```bash
    neo4j-mcp --neo4j-transport-mode http \
              --neo4j-http-port 8080
@@ -104,7 +111,8 @@ NEO4J_DATABASE = "companies"
    - **Type**: Remote
    - **Endpoint**: `https://your-neo4j-mcp-server.com/mcp` or `https://mcp.demo.neo4jlabs.com/mcp` to use the demo environment
    - **Authentication**: Add HTTP header `Authorization: Basic <base64(companies:companies)>` or pass the Bearer token.
-   
+   ![MCP Remote server configuration](examples/mcp_server_configuration.png)
+
 3. **Agent Workflow:**
    In UiPath Studio or Autopilot interface, create a new Agent.
    Add the newly created "Neo4j Research Tools" to the agent's available tools.
