@@ -67,8 +67,9 @@ async def proxy(request: Request, path: str):
             headers=response_headers
         )
     except httpx.RequestError as exc:
+        print(f"Error contacting target server: {exc}", file=sys.stderr)
         return Response(
-            content=f"Error contacting target server: {str(exc)}",
+            content="Unable to contact upstream service.",
             status_code=503
         )
 
