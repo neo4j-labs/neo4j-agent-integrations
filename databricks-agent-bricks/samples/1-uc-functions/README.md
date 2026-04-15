@@ -87,7 +87,7 @@ import requests
 import base64
 import json
 
-url = "https://demo.neo4jlabs.com:7473/db/companies/tx/commit"
+url = "https://demo.neo4jlabs.com:7473/db/companies/query/v2"
 # Databricks secrets (dbutils.secrets) are not available outside of the notebook, therefore, they cannot be used in a serverless UC Function
 auth = base64.b64encode(b"companies:companies").decode()
 
@@ -104,9 +104,7 @@ LIMIT {max_results}
 """
 
 payload = {
-    "statements": [
-        { "statement": cypher_query }
-    ]
+    "statement": cypher_query
 }
 
 r = requests.post(url, json=payload, headers=headers)

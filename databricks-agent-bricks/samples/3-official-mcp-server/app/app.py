@@ -9,21 +9,20 @@ import uvicorn
 from neo4j_mcp_server_process import neo4j_mcp_server
 
 try:
-    URI = os.getenv("NEO4J_URI")
-    NEO4J_USER = os.getenv("NEO4J_USER")
-    NEO4J_PASS = os.getenv("NEO4J_PASS")
+    URI = os.getenv("NEO4J_URI") 
+    NEO4J_USER = os.getenv("NEO4J_USER") 
+    NEO4J_PASS = os.getenv("NEO4J_PASS") 
+    NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")
 except Exception as e:
-    # Fallback for local tests
-    # In production on Databricks, this should fail if secrets are missing
     print(f"Warning: Secrets not found ({e}). Check that the application has been configured to access the necessary secrets, that the resource keys are correctly set and that the app.yaml is properly configured to map the resource keys into environment variables.")
-    URI = os.getenv("NEO4J_URI", "neo4j://localhost")
+    # Fallback for local tests
+    URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASS = os.getenv("NEO4J_PASS", "password")
+    NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
 TARGET_URL = "http://127.0.0.1:8001"  # neo4j-mcp-server local address
-CUSTOM_HEADER_NAME = "Authorization"
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASS = os.getenv("NEO4J_PASS", "password")
+AUTH_HEADER = "Authorization"
 basic_auth = httpx.BasicAuth(NEO4J_USER, NEO4J_PASS)  # Build auth header for the Neo4j server using credentials from environment variables
 
 app = FastAPI()
@@ -39,7 +38,7 @@ async def proxy(request: Request, path: str):
     # Copy the original headers and add your custom header for authentication to the Neo4j server
     headers = dict(request.headers)
     headers.pop("host", None)  # Remove the Host header to avoid conflicts with the target server
-    headers[CUSTOM_HEADER_NAME] = basic_auth._auth_header  # Add the Basic authentication header
+    headers[AUTH_HEADER] = basic_auth._auth_header  # Add the Basic authentication header
 
     # Read the request body (if any) to forward it to the target server
     body = await request.body()
@@ -77,8 +76,8 @@ def run_neo4j_server():
     print("Starting Neo4j MCP Server...", file=sys.stderr)
     try:
         neo4j_mcp_server(args=[
-            '--neo4j-uri', os.getenv("NEO4J_URI", URI),
-            '--neo4j-database', os.getenv("NEO4J_DATABASE", "neo4j"),
+            '--neo4j-uri', URI,
+            '--neo4j-database', NEO4J_DATABASE,
             '--neo4j-transport-mode', 'http',
             '--neo4j-read-only', 'true',
             '--neo4j-telemetry', 'false',

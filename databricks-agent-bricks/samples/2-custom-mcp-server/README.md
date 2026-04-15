@@ -67,6 +67,7 @@ The first thing to do is to define the Databricks secrets for the Neo4j credenti
 NEO4J_URI=bolt+ssc://<your-neo4j>:7687
 NEO4J_USERNAME=
 NEO4J_PASSWORD=
+NEO4J_DATABASE=
 ```
 
 setup_secrets.sh
@@ -115,6 +116,9 @@ databricks secrets put-secret $SCOPE username \
 databricks secrets put-secret $SCOPE password \
   --string-value "$NEO4J_PASSWORD"
 
+databricks secrets put-secret $SCOPE database \
+  --string-value "$NEO4J_DATABASE"
+
 echo "✅ Secrets uploaded successfully"
 ```
 
@@ -147,6 +151,9 @@ env:
 
   - name: NEO4J_PASS
     valueFrom: password
+
+  - name: NEO4J_DATABASE
+    valueFrom: database
 ```
 Second we define the Python requirements file.
 
@@ -174,12 +181,14 @@ try:
     URI = os.getenv("NEO4J_URI") 
     NEO4J_USER = os.getenv("NEO4J_USER") 
     NEO4J_PASS = os.getenv("NEO4J_PASS") 
+    NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")
 except Exception as e:
     print(f"Warning: Secrets not found ({e}). Check that the application has been configured to access the necessary secrets, that the resource keys are correctly set and that the app.yaml is properly configured to map the resource keys into environment variables.")
     # Fallback for local tests
     URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASS = os.getenv("NEO4J_PASS", "password")
+    NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
 mcp = FastMCP("Custom MCP Server on Databricks App using Neo4j against companies database")
 AUTH = (NEO4J_USER, NEO4J_PASS)
@@ -199,7 +208,7 @@ def find_competitors(company_name: str, limit: int) -> list[dict]:
         records, _, _ = driver.execute_query(
             cypher_query, 
             parameters_={"company_name": company_name, "limit": limit},
-            database_="companies", 
+            database_=NEO4J_DATABASE, 
             routing_=RoutingControl.READ,
         )
         return records
