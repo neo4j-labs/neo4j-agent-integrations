@@ -22,7 +22,7 @@ pip install langgraph langchain-neo4j langchain-mcp-adapters
 
 | Notebook | Description |
 |----------|-------------|
-| [langgraph.ipynb](./langgraph.ipynb) | Build a company research agent using LangGraph with Neo4j, featuring MCP integration, custom tools, vector search, and graph-based workflow orchestration |
+| [langgraph.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/langgraph/langgraph.ipynb) | Build a company research agent using LangGraph with Neo4j, featuring MCP integration, custom tools, vector search, and graph-based workflow orchestration |
 
 ## Extension Points
 

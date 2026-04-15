@@ -16,6 +16,7 @@ try:
 except Exception as e:
     print(f"Warning: Secrets not found ({e}). Check that the application has been configured to access the necessary secrets, that the resource keys are correctly set and that the app.yaml is properly configured to map the resource keys into environment variables.")
     # Fallback for local tests
+    # In production on Databricks, this should fail if secrets are missing
     URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASS = os.getenv("NEO4J_PASS", "password")
@@ -76,8 +77,8 @@ def run_neo4j_server():
     print("Starting Neo4j MCP Server...", file=sys.stderr)
     try:
         neo4j_mcp_server(args=[
-            '--neo4j-uri', URI,
-            '--neo4j-database', NEO4J_DATABASE,
+            '--neo4j-uri', os.getenv("NEO4J_URI", URI),
+            '--neo4j-database', os.getenv("NEO4J_DATABASE", NEO4J_DATABASE),
             '--neo4j-transport-mode', 'http',
             '--neo4j-read-only', 'true',
             '--neo4j-telemetry', 'false',

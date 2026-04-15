@@ -1,622 +1,150 @@
 # Microsoft Agent Framework + Neo4j Integration
 
-## Overview
+Microsoft Agent Framework is Microsoft's open-source SDK for building AI agents in .NET and Python. Agents can invoke external tools through a standardized interface, whether those tools are local functions, REST APIs, or MCP servers. They can form workflows where multiple specialized agents collaborate on complex tasks. The framework runs locally for development and integrates with Microsoft Foundry for production deployment with tracing and metrics.
 
-**Microsoft Agent Framework** is Microsoft's unified agent development framework that merges AutoGen and Semantic Kernel (2025). It provides enterprise-grade agent development with cross-cloud flexibility, comprehensive observability, and governance capabilities.
+The architecture stays flexible around data access. Custom tools can query databases directly. MCP servers expose data capabilities through a standard protocol. Context providers inject information automatically before each LLM call. Pick the pattern that fits your constraints.
 
-**Key Features:**
-- Unified framework combining AutoGen's multi-agent orchestration with Semantic Kernel's plugin architecture
-- MCP + A2A Protocol support (native)
-- Enterprise identity and governance
-- Memory management
-- Autoscaling for production deployments
-- Cross-platform (Python, C#, TypeScript)
-- Cross-cloud flexibility (not Azure-only)
+---
 
-**Official Resources:**
-- Website: https://azure.microsoft.com/en-us/products/ai-foundry
-- Documentation: https://learn.microsoft.com/en-us/azure/ai-foundry/
-- GitHub: https://github.com/microsoft/autogen (AutoGen) and https://github.com/microsoft/semantic-kernel (Semantic Kernel)
+## Neo4j Integration Patterns
 
-## Extension Points
+There are four patterns for connecting Microsoft Agent Framework agents to Neo4j. Each reflects a different philosophy about where database logic lives and how much the agent controls directly.
 
-### 1. MCP Integration (Native)
+![Neo4j and Microsoft Agent Framework Integration Patterns](https://dist.neo4j.com/wp-content/uploads/20251216060626/neo4j-integration-patterns.png)
 
-The Agent Framework has native MCP support inherited from the foundry platform:
+### Direct SDK Integration
 
-**Setup:**
-```python
-from microsoft.agentframework import AgentFramework
-from microsoft.agentframework.mcp import MCPClient
+Write custom tools using the official Neo4j drivers. The agent calls your function, your code executes Cypher, and you control exactly what comes back.
 
-# Configure MCP client
-mcp_client = MCPClient(
-    url="http://localhost:8000/mcp",
-    auth={
-        "type": "oauth",
-        "client_id": "your-client-id",
-        "client_secret": "your-client-secret"
-    }
-)
+This pattern gives you the most control over what the LLM sees. You can filter results, reshape data, handle errors with custom logic, and summarize large result sets before they consume tokens. The tradeoff is maintenance: your integration code is tightly coupled to both the Neo4j driver version and your agent's tool interface.
 
-# Register MCP tools with framework
-framework = AgentFramework()
-framework.register_mcp_server("neo4j", mcp_client)
-```
+#### Demo: GraphRAG Contract Review Agents
 
-### 2. Semantic Kernel Plugins
+Christian Glessner (Microsoft MVP) built a contract analysis system on this pattern. Contracts, organizations, clauses, and jurisdictions exist as nodes in a knowledge graph. The agent combines structured Cypher queries with vector search to answer compliance questions across document sets.
 
-Define Neo4j operations as Semantic Kernel plugins:
+A user asks: "Which contracts reference GDPR and involve suppliers in Germany?" The agent's custom tool executes a Cypher query that matches Contract nodes linked to Clause nodes containing GDPR references, then traverses to Organization nodes filtered by jurisdiction. The tool formats the results as a structured response before the LLM generates its answer. No raw JSON parsing in the prompt.
 
-```python
-from semantic_kernel.skill_definition import sk_function
+**Source:** [GraphRAG Contract Agents](https://iloveagents.ai/agent-framework-graphrag-neo4j)
 
-class Neo4jPlugin:
-    def __init__(self, driver):
-        self.driver = driver
+---
 
-    @sk_function(
-        description="Query company information from Neo4j",
-        name="QueryCompany"
-    )
-    def query_company(self, company_name: str) -> str:
-        """Query organization data from Neo4j."""
-        query = """
-            MATCH (o:Organization {name: $company})
-            RETURN o.name as name,
-                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-                   [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries
-            LIMIT 1
-        """
-        records, summary, keys = self.driver.execute_query(
-            query,
-            company=company_name,
-            database_="companies"
-        )
-        return records[0].data() if records else {}
-```
+### MCP Server Integration
 
-### 3. AutoGen Agents
+Run a Neo4j MCP server as a separate process. The agent connects to it like any other MCP tool provider. The server exposes capabilities like `read_cypher` and `get_schema` through the standard protocol.
 
-Use AutoGen's multi-agent pattern with Neo4j tools:
+This pattern separates data access from agent logic. The same MCP server configuration works whether your agent runs locally during development or in Azure for production. Swap the LLM, change the agent framework, the data layer stays constant. The cost is operational: you need to run and maintain the MCP server alongside your agent.
+
+#### Demo: Graph Database Detective
+
+Jose Luis Latorre (Microsoft AI MVP) built an investigative agent that connects to Neo4j Aura via MCP. The graph contains the POLE dataset: persons, objects, locations, and events from crime investigations.
+
+The agent adopts the persona of a Golden Age detective. When a user asks about connections between suspects and crime scenes, the agent calls the MCP server's Cypher tool to traverse the graph. The MCP server executes the query and returns results. The agent then narrates findings in character, turning graph traversals into detective monologues. The persona choice is deliberate — it demonstrates how agent personality and data access remain cleanly separated when using MCP.
+
+**Source:** [Graph Database Detective](https://github.com/joslat/neo4j-agent-framework-exploration)
+
+---
+
+### HTTP Query API
+
+Treat Neo4j as a REST endpoint. Send Cypher in POST request bodies, receive JSON responses. No driver installation required.
+
+This pattern works in constrained environments where you cannot install binary dependencies — serverless functions, restricted containers, browser-based agents. Latency is higher than the Bolt protocol and the JSON responses can be verbose, but the simplicity is hard to beat for lightweight use cases.
+
+#### Demo: Sovereign AI Knowledge Base
+
+Matthias Buchhorn Roth (Sopra Steria) built a RAG solution for regulated environments. The graph holds regulations, legal documents, and operational procedures. The system runs in both cloud and air-gapped deployments.
+
+In air-gapped scenarios, installing and maintaining driver dependencies becomes a logistics problem. HTTP calls to a local Neo4j instance sidestep that entirely. The agent queries the regulation graph through REST, combines results with BitNet-based local inference, and produces citation-rich answers. Auditors can trace every response back to specific regulatory nodes in the graph.
+
+---
+
+### Context Provider Integration
+
+Context providers inject information into the conversation before each LLM call. The agent does not explicitly request data — the provider searches Neo4j automatically, enriches results through graph traversal, and merges context into the prompt.
+
+The Neo4j Context Provider builds on the `neo4j-graphrag-python` library, which provides `VectorRetriever` for semantic similarity, `HybridRetriever` for combined vector and fulltext search, and `VectorCypherRetriever` for vector search followed by graph traversal. The context provider wraps these retrievers and hooks them into the Microsoft Agent Framework lifecycle.
+
+Configuration is minimal. You specify an index name, choose a search type, and optionally provide a Cypher retrieval query for graph enrichment:
 
 ```python
-from autogen import AssistantAgent, UserProxyAgent
+from neo4j_context_provider import Neo4jContextProvider
 
-database_agent = AssistantAgent(
-    name="database_agent",
-    system_message="You query Neo4j for company and news data.",
-    llm_config={"model": "gpt-4"}
-)
-
-# Register Neo4j functions
-database_agent.register_function(
-    function_map={
-        "query_company": query_company,
-        "search_news": search_news
-    }
-)
-```
-
-## MCP Authentication
-
-**Supported Mechanisms:**
-
-✅ **API Keys** - Via custom headers or query parameters
-
-✅ **Azure AD Client Credentials** (Primary for enterprise)
-- Full OAuth 2.0 client credentials flow
-- App registrations with client ID/secret
-- Entra ID integration
-
-✅ **M2M OIDC** - Azure AD/Entra ID
-- OAuth 2.0 Authorization Code Flow
-- Dynamic Client Registration (DCR)
-- Manual OAuth configuration
-
-**Other Mechanisms:**
-- **Managed Identity** - For Azure resources
-- **Service Principals** - For application authentication
-- **Multiple Identity Providers** - Cognito, Auth0, Okta, custom
-- **Cross-cloud IAM** - Works with AWS IAM, GCP Service Accounts when deployed outside Azure
-
-**Configuration Example:**
-
-```python
-# Azure AD OAuth
-auth_config = {
-    "type": "oauth2",
-    "authorization_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
-    "token_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-    "client_id": "your-app-id",
-    "client_secret": "your-app-secret",
-    "scope": ["https://graph.microsoft.com/.default"]
-}
-
-mcp_client = MCPClient(
-    url="https://your-neo4j-mcp-server.com/mcp",
-    auth=auth_config
-)
-```
-
-**Reference**: [mcp-auth-support.md](../mcp-auth-support.md#4-microsoft-foundry-copilot-studio-agent-framework)
-
-## Industry Research Agent Example
-
-### Scenario
-
-Build a multi-agent investment research system using Microsoft Agent Framework combining:
-1. Semantic Kernel plugins for Neo4j integration
-2. AutoGen multi-agent orchestration
-3. Azure AD for authentication
-4. Enterprise governance and observability
-
-### Dataset Setup
-
-**Company News Knowledge Graph:**
-```python
-from neo4j import GraphDatabase
-import os
-
-# Store in Azure Key Vault for production
-NEO4J_URI = "neo4j+s://demo.neo4jlabs.com:7687"
-NEO4J_USERNAME = "companies"
-NEO4J_PASSWORD = "companies"
-NEO4J_DATABASE = "companies"
-
-driver = GraphDatabase.driver(
-    NEO4J_URI,
-    auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
-)
-```
-
-### Implementation
-
-#### Approach 1: Semantic Kernel Plugins
-
-```python
-from semantic_kernel import Kernel
-from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
-from semantic_kernel.skill_definition import sk_function
-from neo4j import GraphDatabase
-import json
-
-# Initialize Semantic Kernel
-kernel = Kernel()
-
-# Add Azure OpenAI service
-kernel.add_chat_service(
-    "chat",
-    AzureChatCompletion(
-        deployment_name="gpt-4",
-        endpoint="your-azure-openai-endpoint",
-        api_key="your-api-key"
-    )
-)
-
-# Define Neo4j Plugin
-class Neo4jResearchPlugin:
-    def __init__(self):
-        self.driver = GraphDatabase.driver(
-            NEO4J_URI,
-            auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
-        )
-
-    @sk_function(
-        description="Query detailed company information from Neo4j",
-        name="query_company"
-    )
-    def query_company(self, company_name: str) -> str:
-        """Query organization data from Neo4j."""
-        query = """
-            MATCH (o:Organization {name: $company})
-            RETURN o.name as name,
-                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-                   [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
-                   [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
-            LIMIT 1
-        """
-        records, summary, keys = self.driver.execute_query(
-            query,
-            company=company_name,
-            database_="companies"
-        )
-        return json.dumps(records[0].data() if records else {})
-
-    @sk_function(
-        description="Search news articles about a company using vector similarity",
-        name="search_news"
-    )
-    def search_news(self, company_name: str, query: str) -> str:
-        """Vector search for news articles."""
-        # Note: Simplified - actual implementation needs embedding generation
-        query_str = """
-            MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-            RETURN a.title as title, a.date as date
-            ORDER BY a.date DESC
-            LIMIT 5
-        """
-        records, summary, keys = self.driver.execute_query(
-            query_str,
-            company=company_name,
-            database_="companies"
-        )
-        return json.dumps([r.data() for r in records])
-
-    @sk_function(
-        description="Analyze organizational relationships and partnerships",
-        name="analyze_relationships"
-    )
-    def analyze_relationships(self, company_name: str) -> str:
-        """Find related organizations through graph traversal."""
-        query = """
-            MATCH path = (o1:Organization {name: $company})
-                         -[*1..2]-(o2:Organization)
-            WHERE o1 <> o2
-            RETURN DISTINCT o2.name as organization,
-                   length(path) as distance
-            ORDER BY distance
-            LIMIT 10
-        """
-        records, summary, keys = self.driver.execute_query(
-            query,
-            company=company_name,
-            database_="companies"
-        )
-        return json.dumps([r.data() for r in records])
-
-# Register plugin
-neo4j_plugin = kernel.import_skill(Neo4jResearchPlugin(), "Neo4j")
-
-# Create research function
-research_function = kernel.create_semantic_function("""
-Research the company {{$company_name}}.
-
-1. First, get company information using {{Neo4j.query_company}}
-2. Then, search recent news using {{Neo4j.search_news}}
-3. Analyze relationships using {{Neo4j.analyze_relationships}}
-4. Synthesize all information into an investment research report
-
-Include: Executive Summary, Company Overview, Recent Developments, Network Analysis, Outlook
-""", max_tokens=4000)
-
-# Execute research
-result = research_function(company_name="Google")
-print(result)
-```
-
-#### Approach 2: AutoGen Multi-Agent System
-
-```python
-from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager
-from neo4j import GraphDatabase
-import os
-
-# Configure LLM
-config_list = [{
-    "model": "gpt-4",
-    "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-    "base_url": os.getenv("AZURE_OPENAI_ENDPOINT"),
-    "api_type": "azure",
-    "api_version": "2024-02-15-preview"
-}]
-
-llm_config = {"config_list": config_list, "temperature": 0}
-
-# Initialize Neo4j
-driver = GraphDatabase.driver(
-    NEO4J_URI,
-    auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
-)
-
-# Define Neo4j query functions
-def query_company(company_name: str) -> dict:
-    """Query company information from Neo4j."""
-    query = """
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
-               [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
-        LIMIT 1
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return records[0].data() if records else {}
-
-def search_news(company_name: str) -> list:
-    """Search news articles about a company."""
-    query = """
-        MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-        RETURN a.title as title, a.date as date
-        ORDER BY a.date DESC
-        LIMIT 5
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return [r.data() for r in records]
-
-# Create Database Agent
-database_agent = AssistantAgent(
-    name="database_agent",
-    system_message="""You are a database specialist.
-    You query Neo4j for company information and news articles.
-    Use the available functions to retrieve data.""",
-    llm_config=llm_config
-)
-
-# Register functions with database agent
-database_agent.register_function(
-    function_map={
-        "query_company": query_company,
-        "search_news": search_news
-    }
-)
-
-# Create Research Analyst Agent
-analyst_agent = AssistantAgent(
-    name="research_analyst",
-    system_message="""You are an investment research analyst.
-    You synthesize company data and news into investment reports.
-    Focus on: executive summary, key developments, risks, outlook.""",
-    llm_config=llm_config
-)
-
-# Create User Proxy
-user_proxy = UserProxyAgent(
-    name="user",
-    human_input_mode="NEVER",
-    max_consecutive_auto_reply=0,
-    code_execution_config=False
-)
-
-# Create Group Chat
-groupchat = GroupChat(
-    agents=[user_proxy, database_agent, analyst_agent],
-    messages=[],
-    max_round=10
-)
-
-manager = GroupChatManager(groupchat=groupchat, llm_config=llm_config)
-
-# Execute research workflow
-user_proxy.initiate_chat(
-    manager,
-    message="""Research Google:
-    1. Database agent: Query company information and recent news
-    2. Research analyst: Synthesize into an investment research report
+provider = Neo4jContextProvider(
+    uri="neo4j+s://your-instance.databases.neo4j.io",
+    username="neo4j",
+    password="your-password",
+    index_name="maintenance_events",
+    index_type="fulltext",  # or "vector"
+    top_k=5,
+    retrieval_query="""
+        MATCH (node)<-[:HAS_EVENT]-(comp:Component)
+              <-[:HAS_COMPONENT]-(sys:System)
+              <-[:HAS_SYSTEM]-(aircraft:Aircraft)
+        RETURN node.fault AS fault,
+               node.corrective_action AS corrective_action,
+               aircraft.model AS aircraft_model,
+               sys.name AS system_name
     """
 )
 ```
 
-#### Approach 3: Hybrid with MCP Server
+The `index_type` parameter determines which retriever the provider uses internally. Set it to `"fulltext"` for keyword-based BM25 matching or `"vector"` for semantic similarity search. The `retrieval_query` runs after the initial search, traversing from matched nodes through the graph to pull in related context.
 
-```python
-from microsoft.agentframework import AgentFramework
-from microsoft.agentframework.mcp import MCPClient
-from semantic_kernel import Kernel
+[Context Provider Architecture Details](https://github.com/neo4j-labs/neo4j-maf-provider)
 
-# Setup MCP client for Neo4j
-mcp_client = MCPClient(
-    url="http://localhost:8000/mcp",
-    auth={"type": "bearer", "token": "your-token"}
-)
+#### Demo: Aircraft Maintenance and Flight Operations
 
-# Initialize framework
-framework = AgentFramework()
-framework.register_mcp_server("neo4j", mcp_client)
+The Neo4j Context Provider demo models maintenance events and flight delays as a knowledge graph. When a user asks about recurring faults on a specific aircraft type, the provider's `invoking()` method fires before the LLM processes the message.
 
-# Get MCP tools
-neo4j_tools = framework.get_tools("neo4j")
+The provider runs a fulltext search against the maintenance index using the user's question. Results come back as maintenance event nodes. The configured retrieval query then traverses from those events through component and system relationships to aircraft nodes, pulling in fault codes, corrective actions, and affected systems. This enriched context merges into the prompt automatically.
 
-# Create agent with MCP tools
-kernel = Kernel()
-kernel.import_skill(neo4j_tools, "Neo4j")
+The flight delays agent works similarly. Questions about delay patterns trigger searches against flight data, with graph traversal expanding from delay nodes through flights to airports and routes. The LLM receives a connected view of the data without the agent ever making an explicit tool call.
 
-# Use in Semantic Kernel workflows
-research_function = kernel.create_semantic_function("""
-Use {{Neo4j.query_company}} and {{Neo4j.search_news}} to research {{$company}}.
-Generate an investment research report.
-""")
+**Source:** [Neo4j Context Provider with Flight Demo](https://github.com/neo4j-labs/neo4j-maf-provider)
 
-result = research_function(company="Microsoft")
-```
+---
 
-## Challenges and Gaps
+## Choosing Your Integration Pattern
 
-### Current Limitations
+**Start with the context provider** if you want graph-aware agents running quickly. Configure an index, point at your Neo4j instance, and the framework handles the rest. Add a retrieval query later when you need graph traversal beyond the initial search results.
 
-1. **Framework Consolidation**
-   - AutoGen and Semantic Kernel merger is ongoing (2025)
-   - Some features may have different APIs across components
-   - Documentation is transitioning
+**Move to direct SDK integration** when you need precise control over what the LLM sees. Complex business logic, token budget constraints, or custom result formatting all push toward this pattern. The tool can filter, summarize, and structure graph results before they ever reach the prompt.
 
-2. **Cross-Cloud Complexity**
-   - While cross-cloud capable, Azure integration is most mature
-   - Non-Azure deployments may require additional configuration
-   - Authentication patterns vary by cloud provider
+**MCP makes sense** when you want to reuse the same data layer across multiple agents or frameworks. If you expect to swap LLMs or run agents in different environments, the separation MCP provides pays off. Keep the tool count reasonable to avoid bloating the system prompt.
 
-3. **MCP Integration Maturity**
-   - Native MCP support is new
-   - Some MCP features may not be fully integrated with AutoGen patterns
-   - Documentation for MCP + AutoGen + Semantic Kernel is evolving
+**The HTTP API** fits constrained environments where installing drivers is not an option — serverless functions, sandboxed containers, browser-based agents.
 
-4. **Memory Management**
-   - Built-in memory stores are primarily Azure-based
-   - Using Neo4j as custom memory backend requires additional implementation
-   - Memory API may differ between AutoGen and Semantic Kernel components
+Each pattern assumes you already have a graph worth querying. The agent integration is the last mile. Before that comes data modeling, relationship design, and index configuration.
 
-### Workarounds
+---
 
-**For Cross-Framework Compatibility:**
-```python
-# Wrapper to use Semantic Kernel plugin in AutoGen
-class SKPluginWrapper:
-    def __init__(self, sk_plugin):
-        self.plugin = sk_plugin
-
-    def __call__(self, **kwargs):
-        return self.plugin.invoke(**kwargs)
-
-# Register SK plugin with AutoGen agent
-autogen_agent.register_function(
-    function_map={
-        "query_company": SKPluginWrapper(neo4j_plugin.query_company)
-    }
-)
-```
-
-**For Neo4j Memory Backend:**
-```python
-# Custom memory store using Neo4j
-class Neo4jMemoryStore:
-    def __init__(self, driver):
-        self.driver = driver
-
-    async def save_memory(self, agent_id: str, memory: dict):
-        query = """
-            MERGE (a:Agent {id: $agent_id})
-            CREATE (a)-[:HAS_MEMORY]->(m:Memory {
-                timestamp: datetime(),
-                content: $content
-            })
-        """
-        await self.driver.execute_query(
-            query,
-            agent_id=agent_id,
-            content=memory,
-            database_="neo4j"
-        )
-
-    async def retrieve_memory(self, agent_id: str, limit: int = 10):
-        query = """
-            MATCH (a:Agent {id: $agent_id})-[:HAS_MEMORY]->(m:Memory)
-            RETURN m.content as content, m.timestamp as timestamp
-            ORDER BY m.timestamp DESC
-            LIMIT $limit
-        """
-        records, summary, keys = await self.driver.execute_query(
-            query,
-            agent_id=agent_id,
-            limit=limit,
-            database_="neo4j"
-        )
-        return [r.data() for r in records]
-```
-
-## Additional Integration Opportunities
-
-### 1. Enterprise Memory Graph
-
-Use Neo4j as the memory layer for agents:
-- Store conversation history as graph structures
-- Track entity relationships across conversations
-- Enable semantic memory retrieval across agent team
-- Implement organizational memory policies
-
-### 2. Agent Governance with Neo4j
-
-Track agent actions and decisions:
-```python
-def log_agent_action(agent_id: str, action: str, result: dict):
-    query = """
-        MERGE (a:Agent {id: $agent_id})
-        CREATE (a)-[:PERFORMED]->(action:Action {
-            type: $action,
-            timestamp: datetime(),
-            result: $result
-        })
-    """
-    driver.execute_query(
-        query,
-        agent_id=agent_id,
-        action=action,
-        result=result,
-        database_="neo4j"
-    )
-```
-
-### 3. Multi-Agent Collaboration Graph
-
-Model agent relationships and information flow:
-- Track which agents collaborate
-- Analyze communication patterns
-- Optimize agent orchestration based on graph analysis
-
-### 4. Integration with Azure Services
-
-Combine Neo4j with Azure ecosystem:
-- Azure Key Vault for credentials
-- Azure Monitor for observability
-- Azure Functions for serverless Neo4j queries
-- Azure Container Apps for MCP server deployment
-
-## Deployment Guide
-
-### Development Setup
-
-```bash
-# Install dependencies
-pip install semantic-kernel pyautogen neo4j azure-identity
-
-# Configure environment
-export AZURE_OPENAI_ENDPOINT="your-endpoint"
-export AZURE_OPENAI_API_KEY="your-key"
-export NEO4J_URI="neo4j+s://demo.neo4jlabs.com:7687"
-export NEO4J_USER="companies"
-export NEO4J_PASSWORD="companies"
-```
-
-### Production Deployment
-
-```python
-# Using Azure Key Vault
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
-
-credential = DefaultAzureCredential()
-client = SecretClient(
-    vault_url="https://your-vault.vault.azure.net/",
-    credential=credential
-)
-
-neo4j_uri = client.get_secret("neo4j-uri").value
-neo4j_password = client.get_secret("neo4j-password").value
-
-# Use in agent framework
-driver = GraphDatabase.driver(
-    neo4j_uri,
-    auth=("neo4j", neo4j_password)
-)
-```
 
 ## Resources
 
-- **Agent Framework Docs**: https://learn.microsoft.com/en-us/azure/ai-foundry/
-- **AutoGen GitHub**: https://github.com/microsoft/autogen
-- **Semantic Kernel GitHub**: https://github.com/microsoft/semantic-kernel
-- **Neo4j MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
+### Authors
+- [Christian Glessner](https://www.linkedin.com/in/christian-glessner/)
+- [Jose Luis Latorre](https://www.linkedin.com/in/joslat/)
+- [Matthias Buchhorn-Roth](https://www.linkedin.com/in/mbuchhorn/)
+- [Ryan Knight](https://www.linkedin.com/in/ryanknight/)
+- [Zaid Zaim](https://www.linkedin.com/in/zaidzaim/)
 
-## Status
+### Open Source Integrations
+- [Neo4j + Microsoft Agent Framework (ma3u)](https://github.com/ma3u/neo4j-agentframework)
+- [Neo4j Context Provider](https://github.com/neo4j-labs/neo4j-maf-provider)
 
-- ✅ Framework merger announced (2025)
-- ✅ Native MCP + A2A support
-- ✅ Enterprise identity and governance
-- ✅ Cross-cloud flexibility
-- ⚠️ Documentation transitioning between AutoGen/SK merger
-- ⚠️ MCP integration with AutoGen patterns maturing
-- 🔄 Active Microsoft investment
+### Community Demos
+- [Graph Database Detective](https://github.com/joslat/neo4j-agent-framework-exploration) — crime investigation with POLE dataset
+- [GraphRAG Contract Agents](https://iloveagents.ai/agent-framework-graphrag-neo4j) — contract compliance analysis
+- [Aircraft Maintenance & Flight Delays](https://github.com/neo4j-labs/neo4j-maf-provider) — context provider demo
 
-**Effort Score**: 5.9/10
-**Impact Score**: 5.9/10
+### Documentation
+- [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
+- [Neo4j Community](https://community.neo4j.com/)
 
-## Notes
+---
 
-The Microsoft Agent Framework represents a strategic consolidation of Microsoft's agent development tools. The merger of AutoGen (multi-agent orchestration) and Semantic Kernel (plugin architecture) creates a powerful unified framework, though documentation and patterns are still evolving. Neo4j integration can leverage both components for maximum flexibility.
+## Videos & Tutorials
+
+NODES 2025 — Christian Glessner: Live-Coding Graph-Native Agents: Neo4j AuraDB + Microsoft Agent Framework in Action
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/aJY7Sm5vtko" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>

@@ -21,7 +21,7 @@ pip install claude-agent-sdk neo4j
 
 | Notebook | Description |
 |----------|-------------|
-| [claude_agent_sdk.ipynb](./claude_agent_sdk.ipynb) | Walkthrough of Claude Agent SDK with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
+| [claude_agent_sdk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/claude-agent/claude_agent_sdk.ipynb) | Walkthrough of Claude Agent SDK with Neo4j integration, including MCP server setup, custom tool creation, and query execution |
 
 ## Extension Points
 
