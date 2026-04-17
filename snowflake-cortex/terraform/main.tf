@@ -272,7 +272,7 @@ resource "snowflake_function_sql" "get_organization_investors" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "company"
+    arg_name      = "COMPANY"
     arg_data_type = "VARCHAR"
   }
   return_type = "VARIANT"
@@ -284,7 +284,7 @@ resource "snowflake_function_sql" "get_organization_investors" {
         RETURN o.name as name,
         [(o)-[:HAS_INVESTOR]->(p:Person) | p.name] as investor
         LIMIT 1',
-        {'company': company}
+        {'company': COMPANY}
     )
   SQL
   depends_on          = [snowflake_function_python.query_neo4j]
@@ -298,18 +298,18 @@ resource "snowflake_function_sql" "analyze_relationships" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "company"
+    arg_name      = "COMPANY"
     arg_data_type = "VARCHAR"
   }
 
   arguments {
-    arg_name          = "limit"
+    arg_name          = "LIMIT"
     arg_data_type     = "NUMBER"
     arg_default_value = "20"
   }
 
   arguments {
-    arg_name          = "max_depth"
+    arg_name          = "MAX_DEPTH"
     arg_data_type     = "INT"
     arg_default_value = "2"
   }
@@ -319,14 +319,14 @@ resource "snowflake_function_sql" "analyze_relationships" {
   function_definition = <<-SQL
     "${snowflake_function_python.query_neo4j.database}"."${snowflake_function_python.query_neo4j.schema}"."${snowflake_function_python.query_neo4j.name}"(
         CONCAT('MATCH path = (o1:Organization {name: $company})
-                     -[*1..', 2, ']-(o2:Organization)
+                     -[*1..', MAX_DEPTH, ']-(o2:Organization)
         WHERE o1 <> o2
         RETURN DISTINCT o2.name as organization,
                [r in relationships(path) | type(r)] as relationships,
                length(path) as distance
         ORDER BY distance
         LIMIT $limit'),
-        {'company': company, 'limit': limit}
+        {'company': COMPANY, 'limit': LIMIT}
     )
   SQL
 
@@ -342,17 +342,17 @@ resource "snowflake_function_sql" "search_news_articles" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "company"
+    arg_name      = "COMPANY"
     arg_data_type = "VARCHAR"
   }
 
   arguments {
-    arg_name      = "query"
+    arg_name      = "QUERY"
     arg_data_type = "VARCHAR"
   }
 
   arguments {
-    arg_name          = "limit"
+    arg_name          = "LIMIT"
     arg_data_type     = "NUMBER"
     arg_default_value = "20"
   }
@@ -372,9 +372,9 @@ resource "snowflake_function_sql" "search_news_articles" {
                score
         ORDER BY score DESC',
         {
-          'company': company,
-          'limit': limit,
-          'embedding': "${snowflake_function_python.generate_embeddings.database}"."${snowflake_function_python.generate_embeddings.schema}"."${snowflake_function_python.generate_embeddings.name}"(query)
+          'company': COMPANY,
+          'limit': LIMIT,
+          'embedding': "${snowflake_function_python.generate_embeddings.database}"."${snowflake_function_python.generate_embeddings.schema}"."${snowflake_function_python.generate_embeddings.name}"(QUERY)
         })
   SQL
 
@@ -416,22 +416,11 @@ models:
   orchestration: auto
 tools:
   - tool_spec:
-      type: generic
       name: get_organization_investors
-      description:  |-
-        PROCEDURE/FUNCTION DETAILS:
-        - Type: User-Defined Function
-        - Language: SQL
-        - Signature: (COMPANY VARCHAR)
-        - Returns: VARIANT
-        - Execution: User context with null input handling
-        - Volatility: Stable
-        - Primary Function: Neo4j Graph Database Query
-        - Target: Organization and Investor relationships
-        - Error Handling: Standard SQL error propagation
-
-        DESCRIPTION:
-        This user-defined function interfaces with a Neo4j graph database to retrieve investor information for a specified company. The function accepts a company name as input and returns a structured VARIANT object containing both the company name and an array of associated investor names. It leverages Neo4j's Cypher query language to traverse the graph database, specifically looking for Organization nodes with matching company names and following HAS_INVESTOR relationships to connected Person nodes. The function is designed to return data for a single company (LIMIT 1) and provides a clean interface for accessing graph-based relationship data from within a SQL environment. Users should ensure they have appropriate read permissions on both the SQL function and the underlying Neo4j database connection.
+      type: generic
+      description: |
+        Returns the investors for a given company name from the Neo4j database. Accepts a company name and returns the
+        company and its investors as an array.
 
         USAGE SCENARIOS:
         - Retrieving investor information for company profile pages or reports
@@ -445,13 +434,79 @@ tools:
             type: string
         required:
           - company
+  - tool_spec:
+      name: analyze_relationships
+      type: generic
+      description: |
+        Analyzes relationship paths between organizations in the Neo4j database.
+        Accepts a company name, limit, and max_depth, and returns related organizations, relationship types, and path distances.
+
+        USAGE SCENARIOS:
+        - Mapping organizational networks
+        - Exploring indirect connections between companies
+        - Supporting due diligence and risk analysis
+      input_schema:
+        type: object
+        properties:
+          company:
+            description: The name of the company
+            type: string
+          limit:
+            description: Maximum number of results to return
+            type: integer
+            default: 20
+          max_depth:
+            description: Maximum path length to search
+            type: integer
+            default: 2
+        required:
+          - company
+  - tool_spec:
+      name: search_news_articles
+      type: generic
+      description: |
+        Finds news articles about a given company that are relevant to a provided query, using semantic search over article content.
+
+        USAGE SCENARIOS:
+        - Retrieving news coverage for a company filtered by topic
+        - Supporting research and media monitoring workflows
+      input_schema:
+        type: object
+        properties:
+          company:
+            description: The name of the company
+            type: string
+          query:
+            description: The search query or topic
+            type: string
+          limit:
+            description: Maximum number of articles to return
+            type: integer
+            default: 20
+        required:
+          - company
+          - query
 tool_resources:
   get_organization_investors:
     execution_environment:
       query_timeout: 60
       type: warehouse
-    identifier: '"TEST2"."TEST_SCHEMA"."GET_ORGANIZATION_INVESTORS"'
-    name: GET_ORGANIZATION_INVESTORS(VARCHAR)
+    identifier: ${snowflake_database.database.name}.${snowflake_schema.schema.name}.${snowflake_function_sql.get_organization_investors.name}
+    name: ${snowflake_function_sql.get_organization_investors.name}
+    type: function
+  analyze_relationships:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${snowflake_database.database.name}.${snowflake_schema.schema.name}.${snowflake_function_sql.analyze_relationships.name}
+    name: ${snowflake_function_sql.analyze_relationships.name}
+    type: function
+  search_news_articles:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${snowflake_database.database.name}.${snowflake_schema.schema.name}.${snowflake_function_sql.search_news_articles.name}
+    name: ${snowflake_function_sql.search_news_articles.name}
     type: function
 
 $$
@@ -459,5 +514,7 @@ EOT
   revert  = "DROP AGENT IF EXISTS ${snowflake_schema.schema.fully_qualified_name}.\"${local.agent_name}\";"
   depends_on = [
     snowflake_function_sql.get_organization_investors,
+    snowflake_function_sql.analyze_relationships,
+    snowflake_function_sql.search_news_articles,
   ]
 }
