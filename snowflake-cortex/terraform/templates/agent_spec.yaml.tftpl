@@ -1,0 +1,96 @@
+models:
+  orchestration: auto
+tools:
+  - tool_spec:
+      name: get_organization_investors
+      type: generic
+      description: |
+        Returns the investors for a given company name from the Neo4j database. Accepts a company name and returns the
+        company and its investors as an array.
+
+        USAGE SCENARIOS:
+        - Retrieving investor information for company profile pages or reports
+        - Performing due diligence research on company ownership and investment relationships
+        - Supporting automated investor relationship mapping and analysis workflows
+      input_schema:
+        type: object
+        properties:
+          company:
+            description: The name of the company
+            type: string
+        required:
+          - company
+  - tool_spec:
+      name: analyze_relationships
+      type: generic
+      description: |
+        Analyzes relationship paths between organizations in the Neo4j database.
+        Accepts a company name, limit, and max_depth, and returns related organizations, relationship types, and path distances.
+
+        USAGE SCENARIOS:
+        - Mapping organizational networks
+        - Exploring indirect connections between companies
+        - Supporting due diligence and risk analysis
+      input_schema:
+        type: object
+        properties:
+          company:
+            description: The name of the company
+            type: string
+          limit:
+            description: Maximum number of results to return
+            type: integer
+            default: 20
+          max_depth:
+            description: Maximum path length to search
+            type: integer
+            default: 2
+        required:
+          - company
+  - tool_spec:
+      name: search_news_articles
+      type: generic
+      description: |
+        Finds news articles about a given company that are relevant to a provided query, using semantic search over article content.
+
+        USAGE SCENARIOS:
+        - Retrieving news coverage for a company filtered by topic
+        - Supporting research and media monitoring workflows
+      input_schema:
+        type: object
+        properties:
+          company:
+            description: The name of the company
+            type: string
+          query:
+            description: The search query or topic
+            type: string
+          limit:
+            description: Maximum number of articles to return
+            type: integer
+            default: 20
+        required:
+          - company
+          - query
+tool_resources:
+  get_organization_investors:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${database}.${schema}.${get_organization_investors}
+    name: ${get_organization_investors}
+    type: function
+  analyze_relationships:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${database}.${schema}.${analyze_relationships}
+    name: ${analyze_relationships}
+    type: function
+  search_news_articles:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${database}.${schema}.${search_news_articles}
+    name: ${search_news_articles}
+    type: function

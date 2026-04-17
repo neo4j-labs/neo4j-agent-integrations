@@ -1,13 +1,4 @@
-variable "database_name" {
-  description = "Name of the Snowflake database"
-  type        = string
-  default     = "TEST"
-}
-
-variable "snowflake_user" {
-  description = "Snowflake user to grant roles to"
-  type        = string
-}
+# --- Snowflake connection ---
 
 variable "snowflake_organization_name" {
   description = "Snowflake organization name"
@@ -19,15 +10,37 @@ variable "snowflake_account_name" {
   type        = string
 }
 
+variable "snowflake_service_user" {
+  description = "Service user that runs Terraform (must have the TERRAFORM_SVC role)"
+  type        = string
+  default     = "TERRAFORM_SVC"
+}
+
 variable "snowflake_private_key_path" {
-  description = "Path to the Snowflake private key file"
+  description = "Path to the PEM-encoded private key for the service user"
   type        = string
 }
 
-variable "snowflake_service_user" {
-  description = "Snowflake service user"
+variable "warehouse" {
+  description = "Snowflake warehouse used for Python UDF creation"
+  type        = string
+  default     = "COMPUTE_WH"
+}
+
+# --- Snowflake resources ---
+
+variable "database_name" {
+  description = "Name of the Snowflake database to create"
+  type        = string
+  default     = "NEO4J_AGENT"
+}
+
+variable "snowflake_user" {
+  description = "End-user to grant the USER role to"
   type        = string
 }
+
+# --- Neo4j connection ---
 
 variable "neo4j_host" {
   description = "Neo4j host and port (e.g., demo.neo4jlabs.com:7687)"
@@ -47,10 +60,3 @@ variable "neo4j_password" {
   type        = string
   sensitive   = true
 }
-
-variable "warehouse" {
-  description = "Snowflake warehouse for Python UDF creation"
-  type        = string
-  default     = "COMPUTE_WH"
-}
-
