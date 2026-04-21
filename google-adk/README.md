@@ -5,17 +5,17 @@
 **Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using two distinct patterns:
 
 
-**Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).
-**Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.
+**1. Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).  
+**2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.  
 
 
 ## Key Features
 
 
-**Standardized Tooling:** Connect Google ADK agents to Neo4j securely via the Model Context Protocol (MCP).
-**Graph Introspection:** Allow agents to autonomously discover graph schemas and execute Cypher queries.
-**Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."
-**Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.
+**Standardized Tooling:** Connect Google ADK agents to Neo4j securely via the Model Context Protocol (MCP).  
+**Graph Introspection:** Allow agents to autonomously discover graph schemas and execute Cypher queries.  
+**Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."  
+**Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.  
 
 
 ---
@@ -28,14 +28,16 @@ To run the full architecture (MCP + Memory), install the following dependencies:
 pip install google-adk neo4j-mcp-server neo4j-agent-memory[google-adk] spacy
 python -m spacy download en_core_web_sm
 ```
-Note: Ensure your Neo4j instance has the APOC plugin installed as per the https://neo4j.com/docs/mcp/current/.  
 
 ## Configuration & Authentication  
-This architecture typically utilizes two Neo4j databases: your target data graph and your agent memory graph.  
+This architecture typically utilizes two Neo4j databases: your target data graph and your agent memory graph. 
+  
 **1. Target Database (MCP Server)**  
-Neo4j MCP supports two authentication modes:  
-• **Environment Variables (STDIO mode):** Set NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, and NEO4J_DATABASE in the environment before launching the MCP server.  
+Here we have used "http" authentication modes:  
 • **HTTP Headers (HTTP mode):** Pass credentials via HTTP headers (e.g., Authorization: Basic <base64_encoded_credentials>).  
+
+for other authentication methods refer [here](https://neo4j.com/docs/mcp/current/authentication/)
+  
 **2. Memory Database**  
 Set your memory graph credentials in your environment variables for the ADK MemoryService to pick up:  
 ```bash
