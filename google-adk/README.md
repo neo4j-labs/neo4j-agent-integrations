@@ -2,41 +2,148 @@
 
 ## Overview
 
-**Google ADK** (Agent Development Kit) is a framework for building AI agents that can leverage external tools and data sources. This integration enables Google ADK agents to connect to Neo4j via the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/), providing access to Cypher query execution, schema introspection, and more.
+**Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using two distinct patterns:
 
-## Installation
 
-Follow the [Neo4j MCP documentation](https://neo4j.com/docs/mcp/current/) for server setup and prerequisites (Neo4j instance, APOC plugin, etc.).
+**Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).
+**Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.
 
-**Google ADK:**
-
-- [Google ADK Documentation](https://google.github.io/adk-docs)
-
-## Example
-
-| Notebook | Description |
-|----------|-------------|
-| [google_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/google_adk.ipynb) | Walkthrough of using Google ADK with Neo4j MCP: agent setup, Cypher query execution, and schema access |
 
 ## Key Features
 
-- Connect Google ADK agents to Neo4j via MCP
-- Execute Cypher queries (read/write) from agents
-- Introspect graph schema and available tools
-- Leverage Neo4j as a knowledge graph for agent reasoning
 
-## Authentication
+**Standardized Tooling:** Connect Google ADK agents to Neo4j securely via the Model Context Protocol (MCP).
+**Graph Introspection:** Allow agents to autonomously discover graph schemas and execute Cypher queries.
+**Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."
+**Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.
 
-Neo4j MCP supports two authentication modes:
 
-- **Environment Variables (STDIO mode):**
-    - Set `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, and `NEO4J_DATABASE` in the environment before launching the MCP server.
-- **HTTP Headers (HTTP mode):**
-    - Pass credentials via HTTP headers (e.g., `Authorization: Basic ...` or `Bearer ...`).
+---
 
-See [Neo4j MCP documentation](https://neo4j.com/docs/mcp/current/) for details and configuration examples.
+## Installation
 
-## Resources
+To run the full architecture (MCP + Memory), install the following dependencies:
 
-- [Neo4j MCP Documentation](https://neo4j.com/docs/mcp/current/)
-- [Google ADK Documentation](https://google.github.io/adk-docs)
+```bash
+pip install google-adk neo4j-mcp-server neo4j-agent-memory[google-adk] spacy
+python -m spacy download en_core_web_sm
+```
+Note: Ensure your Neo4j instance has the APOC plugin installed as per the https://neo4j.com/docs/mcp/current/.  
+
+## Configuration & Authentication  
+This architecture typically utilizes two Neo4j databases: your target data graph and your agent memory graph.  
+**1. Target Database (MCP Server)**  
+Neo4j MCP supports two authentication modes:  
+• **Environment Variables (STDIO mode):** Set NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, and NEO4J_DATABASE in the environment before launching the MCP server.  
+• **HTTP Headers (HTTP mode):** Pass credentials via HTTP headers (e.g., Authorization: Basic <base64_encoded_credentials>).  
+**2. Memory Database**  
+Set your memory graph credentials in your environment variables for the ADK MemoryService to pick up:  
+```bash
+MEMORY_NEO4J_URI=neo4j+s://your-memory-instance.databases.neo4j.io
+MEMORY_NEO4J_USERNAME=neo4j
+MEMORY_NEO4J_PASSWORD=your-password
+```
+
+## Quick Start & Core Snippets
+The following snippets illustrate the core concepts of connecting an ADK agent to Neo4j. For a complete, runnable example, see the Example Notebook below.  
+**1. Connecting the MCP Toolset**  
+To allow your ADK agent to query Neo4j, initialize the MCP server and bind it to an ADK McpToolset. Here, we use HTTP mode for persistent background execution.  
+```python
+import base64
+from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
+
+# Create HTTP Basic Auth header
+credentials = base64.b64encode(b"username:password").decode()
+
+# Bind the running MCP Server to Google ADK
+mcp_tools = McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://localhost:8443/mcp",
+        headers={"Authorization": f"Basic {credentials}"}
+    )
+)
+```
+
+**2. Initializing the Agent with Persistent Memory**  
+To give the agent long-term context, initialize the Neo4j MemoryClient and provide the agent with the PreloadMemoryTool.  
+
+```python
+from google.adk.agents.llm_agent import LlmAgent
+from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+from neo4j_agent_memory import MemoryClient, MemorySettings
+from neo4j_agent_memory.config.settings import Neo4jConfig, ExtractionConfig, ExtractorType
+
+# 1. Configure the Memory Graph Connection
+settings = MemorySettings(
+    neo4j=Neo4jConfig(
+        uri="neo4j+s://memory-instance...",
+        username="neo4j",
+        password="password"
+    ),
+    extraction=ExtractionConfig(extractor_type=ExtractorType.SPACY)
+)
+memory_client = MemoryClient(settings)
+await memory_client.connect()
+
+# 2. Construct the Agent
+agent = LlmAgent(
+    model="gemini-flash-latest",
+    name="neo4j_explorer",
+    instruction="You are a helpful graph database assistant.",
+    tools=[mcp_tools, PreloadMemoryTool()] # Combine MCP capabilities with Memory recall
+)
+```
+
+**3. Executing with Stateful Memory Tracking**
+Inject the Neo4jMemoryService into the Google ADK Runner. This ensures that every conversation is automatically synced to your Neo4j memory graph in the background.  
+
+```python
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
+from google.genai import types
+from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
+
+session_service = InMemorySessionService()
+session = await session_service.create_session(state={}, app_name="app", user_id="user_1")
+
+# Initialize the ADK-compliant Memory Service
+neo4j_memory_service = Neo4jMemoryService(
+    memory_client=memory_client,
+    user_id="user_1",
+)
+
+# Attach the memory service to the Runner
+runner = Runner(
+    app_name="app",
+    agent=agent,
+    artifact_service=InMemoryArtifactService(),
+    session_service=session_service,
+    memory_service=neo4j_memory_service
+)
+
+# Run the prompt
+content = types.Content(role='user', parts=[types.Part(text="Who did Google invest in?")])
+events = runner.run_async(session_id=session.id, user_id="user_1", new_message=content)
+
+async for event in events:
+    if hasattr(event, 'content') and event.content:
+        for part in event.content.parts:
+            if part.text:
+                print(part.text)
+
+# Save the conversational state and extracted entities back to Neo4j
+fresh_session = await session_service.get_session(session_id=session.id, app_name="app", user_id="user_1")
+await neo4j_memory_service.add_session_to_memory(fresh_session)
+```
+  
+## Example  
+
+| Notebook | Description |
+|----------|-------------|
+| [google_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/google_adk.ipynb) | Walkthrough of using Google ADK with Neo4j MCP: agent setup, Cypher query execution, and utilising persistent graph memory for agent |
+  
+## Resources  
+• [Neo4j MCP Server Documentation](https://neo4j.com/docs/mcp/current/)
+• [Google ADK Official Documentation](https://docs.cloud.google.com/agent-builder/agent-development-kit/overview)
+• [Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/)

@@ -205,7 +205,7 @@ class Neo4jADKExecutor(AgentExecutor):
                 Always run 'get-schema' first if you are unfamiliar with the graph structure.
                 If a user asks about investments, prioritize your specialized custom tool.""",
                 tools=[mcp_tools, custom_investment_tool],
-                model_settings=types.GenerateContentConfig(
+                generate_content_config=types.GenerateContentConfig(
                     safety_settings=enterprise_safety_settings
                 ),
                 after_model_callback=[track_token_usage_callback]
