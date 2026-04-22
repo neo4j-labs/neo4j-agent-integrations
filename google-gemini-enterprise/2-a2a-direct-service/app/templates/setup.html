@@ -4,18 +4,23 @@
     <title>Configure Neo4j Agent</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f8f9fa; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
         h2 { color: #202124; margin-top: 0; }
         label { font-weight: 500; color: #5f6368; font-size: 14px; display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
-        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
+        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
+        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
         .btn:hover { background-color: #1557b0; }
+        .memory-section { display: none; padding: 15px; background-color: #f1f3f4; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e8eaed; }
+        .toggle-container { display: flex; align-items: center; margin-bottom: 20px; cursor: pointer; }
+        .toggle-container input { margin-right: 10px; cursor: pointer; width: auto; margin-bottom: 0; }
+        .toggle-container span { font-weight: 500; color: #202124; font-size: 15px; }
     </style>
 </head>
 <body>
     <div class="card">
         <h2>Welcome to Neo4j Agent!</h2>
         <p style="color: #5f6368; font-size: 14px; margin-bottom: 25px;">Please connect your organization's specific Graph Database.</p>
+
         <form action="/setup/save" method="POST">
             <label>Work Email</label>
             <input type="email" name="work_email" placeholder="user@yourcompany.com" required>
@@ -26,14 +31,60 @@
             <label>Database Username</label>
             <input type="text" name="neo4j_user" placeholder="neo4j" required>
 
-            <label>Neo4j Database Name (Optional)</label>
+            <label>Neo4j Database Name</label>
             <input type="text" name="neo4j_database" value="neo4j" required>
 
             <label>Database Password</label>
             <input type="password" name="neo4j_password" required>
 
+            <label class="toggle-container">
+                <input type="checkbox" id="enable_memory" name="enable_memory" onchange="toggleMemoryFields()">
+                <span>Enable Persistent Memory</span>
+            </label>
+
+            <div id="memory_fields" class="memory-section">
+                <p style="color: #5f6368; font-size: 13px; margin-top: 0; margin-bottom: 15px;">Provide the credentials for your dedicated Memory Graph Database.</p>
+
+                <label>Memory Connection URI</label>
+                <input type="text" id="memory_uri" name="memory_uri" placeholder="neo4j+s://memory-db.databases.neo4j.io">
+
+                <label>Memory Username</label>
+                <input type="text" id="memory_user" name="memory_user" placeholder="neo4j">
+
+                <label>Memory Database Name</label>
+                <input type="text" id="memory_database" name="memory_database" value="neo4j">
+
+                <label>Memory Password</label>
+                <input type="password" id="memory_password" name="memory_password">
+            </div>
+
             <button type="submit" class="btn">Save & Activate</button>
         </form>
     </div>
+
+    <script>
+        function toggleMemoryFields() {
+            const checkBox = document.getElementById("enable_memory");
+            const memorySection = document.getElementById("memory_fields");
+            const memoryInputs = memorySection.querySelectorAll("input");
+
+            if (checkBox.checked) {
+                // Show section and mandate the fields
+                memorySection.style.display = "block";
+                memoryInputs.forEach(input => input.setAttribute("required", "true"));
+            } else {
+                // Hide section, remove mandate, and wipe the data so it doesn't submit accidentally
+                memorySection.style.display = "none";
+                memoryInputs.forEach(input => {
+                    input.removeAttribute("required");
+                    if (input.name !== "memory_database") {
+                        input.value = ""; 
+                    } else {
+                        input.value = "neo4j"; // reset default db name
+                    }
+                });
+            }
+        }
+    </script>
 </body>
 </html>

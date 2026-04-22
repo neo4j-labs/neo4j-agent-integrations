@@ -21,15 +21,29 @@ class TokenManager:
     # ==========================================
     # 1. TENANT CONFIGURATION
     # ==========================================
-
-    def save_tenant_config(self, email: str, uri: str, db_user: str, db_pass: str, db_name: str) -> None:
-        """Saves the user's specific Neo4j DB credentials based on their Google email."""
+    def save_tenant_config(
+        self, 
+        email: str, 
+        uri: str, 
+        db_user: str, 
+        db_pass: str, 
+        db_name: str,
+        memory_uri: str = None,
+        memory_user: str = None,
+        memory_pass: str = None,
+        memory_db: str = None
+    ) -> None:
+        """Saves the user's specific Neo4j DB credentials and optional memory DB credentials."""
         query = """
         MERGE (u:User {email: $email})
         SET u.target_uri = $uri,
             u.target_user = $db_user,
             u.target_password = $db_pass,
             u.target_database = $db_name,
+            u.memory_uri = $memory_uri,
+            u.memory_user = $memory_user,
+            u.memory_password = $memory_pass,
+            u.memory_database = $memory_db,
             u.is_active = true,
             u.created_at = coalesce(u.created_at, datetime()),
             u.updated_at = datetime(),
@@ -38,33 +52,54 @@ class TokenManager:
         """
         try:
             self.driver.execute_query(
-                query, email=email, uri=uri, 
-                db_user=db_user, db_pass=db_pass, db_name=db_name, 
+                query, 
+                email=email, 
+                uri=uri, 
+                db_user=db_user, 
+                db_pass=db_pass, 
+                db_name=db_name,
+                memory_uri=memory_uri,
+                memory_user=memory_user,
+                memory_pass=memory_pass,
+                memory_db=memory_db,
                 default_limit=self.default_daily_limit
             )
-            logging.info(f"[token_manager] Successfully registered tenant config for: {email}")
+            logging.info(f"[token_manager] Successfully registered tenant config for: {email} (Memory configured: {bool(memory_uri)})")
         except Exception as e:
             logging.error(f"[token_manager] Failed to save tenant config for {email}: {e}")
             raise
 
     def get_user_credentials(self, email: str) -> dict:
-        """Retrieves the target Neo4j credentials for a specific active user."""
+        """Retrieves the target Neo4j credentials and optional memory credentials for a specific active user."""
         query = """
         MATCH (u:User {email: $email, is_active: true})
-        RETURN u.target_uri AS uri, u.target_user AS user, u.target_password AS password, u.target_database AS database
+        RETURN u.target_uri AS uri, 
+               u.target_user AS user, 
+               u.target_password AS password, 
+               u.target_database AS database,
+               u.memory_uri AS memory_uri,
+               u.memory_user AS memory_user,
+               u.memory_password AS memory_password,
+               u.memory_database AS memory_database
         """
         try:
             records, _, _ = self.driver.execute_query(query, email=email)
             if not records:
                 return None
+
+            record = records[0]
             return {
-                "uri": records[0]["uri"],
-                "user": records[0]["user"],
-                "password": records[0]["password"],
-                "database": records[0]["database"]
+                "uri": record["uri"],
+                "user": record["user"],
+                "password": record["password"],
+                "database": record["database"],
+                "memory_uri": record["memory_uri"],
+                "memory_user": record["memory_user"],
+                "memory_password": record["memory_password"],
+                "memory_database": record["memory_database"]
             }
         except Exception as e:
-            logging.error(f"Failed to retrieve target DB credentials for {email}: {e}")
+            logging.error(f"Failed to retrieve DB credentials for {email}: {e}")
             return None
 
     # ==========================================

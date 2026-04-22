@@ -15,6 +15,7 @@ COPY requirements.txt .
 
 # Install the dependencies without storing cache to keep the image small
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m spacy download en_core_web_sm
 
 # Copy the application code into the container
 COPY app/ ./app
