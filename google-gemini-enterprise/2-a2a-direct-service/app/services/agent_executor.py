@@ -27,6 +27,7 @@ from neo4j_agent_memory.config.settings import (
 )
 from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
 from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+from google.adk.tools.load_memory_tool import LoadMemoryTool
 
 from ..core.config import (
     GEMINI_MODEL,
@@ -218,8 +219,16 @@ class Neo4jADKExecutor(AgentExecutor):
                 )
                 
                 tenant_tools.append(PreloadMemoryTool())
+                tenant_tools.append(LoadMemoryTool())
+                active_instruction = (
+                    AGENT_PROMPT + 
+                    "\n\n[SYSTEM NOTE]: You have access to a persistent, long-term memory database containing the user's facts and preferences. "
+                    "If the user asks about past conversations, their preferences, or facts they previously told you, "
+                    "you MUST actively use the LoadMemoryTool to search the database for the answer before responding."
+                )
             else:
                 logging.info(f"[agent_executor] Memory feature not configured for {user_email}. Proceeding stateless.")
+                active_instruction = AGENT_PROMPT
 
             enterprise_safety_settings = [
                 types.SafetySetting(
@@ -243,8 +252,8 @@ class Neo4jADKExecutor(AgentExecutor):
             logging.info("[agent_executor] Instantiating ADK Agent")
             adk_agent = LlmAgent(
                 model=GEMINI_MODEL,
-                name="neo4j_explorer",
-                instruction=AGENT_PROMPT,
+                name="assistant",
+                instruction=active_instruction,
                 tools=tenant_tools,
                 generate_content_config=types.GenerateContentConfig(
                     safety_settings=enterprise_safety_settings
