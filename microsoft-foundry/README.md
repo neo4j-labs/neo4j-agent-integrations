@@ -1,229 +1,111 @@
-# Microsoft Foundry (Azure AI Foundry) + Neo4j Integration
+# Microsoft Foundry + Neo4j
 
-## Overview
+Microsoft Foundry is a unified platform for building, deploying, and operating enterprise AI agents and applications.
+Neo4j makes those agents smarter by grounding them in a knowledge graph of relationships, paths, and hierarchies that flat retrieval misses.
 
-**Microsoft Foundry** (formerly Azure AI Foundry, rebranded November 2025) is Microsoft's enterprise AI platform. It's the only cloud platform offering both Claude and GPT models with enterprise-grade governance, native MCP + A2A Protocol support, and comprehensive identity management.
+## Why Graph
 
-**Key Features:**
-- Native MCP + A2A Protocol support
-- Both Claude and GPT models available
-- Enterprise identity (Azure AD/Entra ID)
-- Memory, observability, evaluations
-- Policy controls and governance
-- Cross-cloud flexibility
+Most enterprise questions are relationship questions: which customers does this account own, which suppliers feed this product, which incidents share a root cause, which permissions does this user inherit. Vector search and document retrieval flatten those connections; a graph keeps them. Neo4j gives Foundry agents a tool that follows relationships, traverses hierarchies, and returns shaped results — bounded by Cypher, not by token budget.
 
-**Official Resources:**
-- Documentation: https://learn.microsoft.com/en-us/azure/ai-foundry/
-- MCP Guide: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent
-- Copilot Studio: https://learn.microsoft.com/en-us/microsoft-copilot-studio/
+## Integration Paths
 
-## Extension Points
+Choose the integration pattern that matches where you want the agent and query control to live. This README stays at the summary level; each example folder has the full path-specific walkthrough.
 
-### 1. MCP Integration (Native)
+### MCP — shared server
 
-Microsoft Foundry has first-class MCP support with three OAuth setup types:
+Recommended default. Deploy the official Neo4j MCP server once to Azure Container Apps, then attach it as a reusable tool to one or many Foundry agents.
 
-1. **Dynamic Discovery** - Automatic endpoint discovery via DCR
-2. **Dynamic without discovery** - Manual endpoint configuration with DCR
-3. **Manual** - Full manual OAuth 2.0 setup
+Read the full guide in [examples/mcp](./examples/mcp/README.md).
 
-**Configuration:**
-```json
-{
-  "mcp_servers": {
-    "neo4j": {
-      "url": "https://your-neo4j-mcp-server.com/mcp",
-      "auth": {
-        "type": "oauth2",
-        "authorization_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
-        "token_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-        "client_id": "your-client-id",
-        "client_secret": "your-client-secret",
-        "scope": "api://your-app-id/.default"
-      }
-    }
-  }
-}
+#### MCP Architecture
+
+```mermaid
+flowchart LR
+    user["User"] --> agent["Foundry agent<br/>(model + tools)"]
+    agent -->|MCP| mcp["Neo4j MCP server<br/>Azure Container Apps"]
+    mcp --> neo4j[("Neo4j Aura<br/>or self-managed")]
 ```
 
-### 2. Copilot Studio Integration
+The MCP path is shared infrastructure: deploy once, attach from Foundry, Copilot Studio, Microsoft Agent Framework, or any MCP client.
 
-Build agents in Copilot Studio with Neo4j MCP server as a data source.
+#### Quick Start
 
-### 3. Direct Integration
+You need the [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd), the [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/install-azure-cli), and an Azure subscription. Sign in once:
 
-Use Azure Functions or Azure Container Apps with Neo4j driver for custom tools.
-
-## MCP Authentication
-
-✅ **API Keys** - Supported as header or query parameter
-
-✅ **Azure AD Client Credentials** (Primary)
-- Full OAuth 2.0 client credentials flow
-- App registrations with client ID/secret
-
-✅ **M2M OIDC** - Azure AD/Entra ID
-- Dynamic Client Registration (DCR)
-- Manual OAuth configuration
-- Multiple identity providers supported
-
-**Other Mechanisms:**
-- Managed Identity for Azure resources
-- Service Principals
-- APIM for additional auth layers
-- CORS configuration for cloud deployments
-
-
-## Industry Research Agent Example
-
-### Implementation
-
-```python
-from azure.identity import DefaultAzureCredential
-from azure.ai.projects import AIProjectClient
-from neo4j import GraphDatabase
-import os
-
-# Azure AI Foundry setup
-credential = DefaultAzureCredential()
-project_client = AIProjectClient(
-    endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
-    credential=credential
-)
-
-# Neo4j setup
-driver = GraphDatabase.driver(
-    "neo4j+s://demo.neo4jlabs.com:7687",
-    auth=("companies", "companies")
-)
-
-# Define Neo4j tools
-def query_company(company_name: str) -> dict:
-    """Query company information from Neo4j."""
-    query = """
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations,
-               [(o)-[:IN_INDUSTRY]->(ind:Industry) | ind.name] as industries,
-               [(o)<-[:WORKS_FOR]-(p:Person) | {name: p.name, title: p.title}][..5] as leadership
-        LIMIT 1
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return records[0].data() if records else {}
-
-def search_news(company_name: str, query: str) -> list:
-    """Search news articles about a company."""
-    query_str = """
-        MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
-        RETURN a.title as title, a.date as date
-        ORDER BY a.date DESC
-        LIMIT 5
-    """
-    records, summary, keys = driver.execute_query(
-        query_str,
-        company=company_name,
-        database_="companies"
-    )
-    return [r.data() for r in records]
-
-# Create agent with tools
-agent = project_client.agents.create_agent(
-    model="gpt-4",
-    name="investment_researcher",
-    instructions="""You are an investment research analyst.
-    Use the available tools to research companies and generate reports.""",
-    tools=[
-        {"type": "function", "function": query_company},
-        {"type": "function", "function": search_news}
-    ]
-)
-
-# Or use MCP server
-mcp_tools = project_client.mcp.get_tools("neo4j")
-agent = project_client.agents.create_agent(
-    model="claude-3-5-sonnet-20241022",  # Foundry supports both Claude and GPT
-    name="investment_researcher",
-    tools=mcp_tools
-)
-
-# Execute research
-thread = project_client.agents.create_thread()
-message = project_client.agents.create_message(
-    thread_id=thread.id,
-    role="user",
-    content="Research Google's recent activities and generate a report"
-)
-
-run = project_client.agents.create_run(
-    thread_id=thread.id,
-    agent_id=agent.id
-)
-
-# Wait for completion and get results
-result = project_client.agents.get_run(thread.id, run.id)
-messages = project_client.agents.list_messages(thread.id)
+```bash
+az login
 ```
 
-## Challenges and Gaps
+`az login` covers most setups. If your `azd` is configured in standalone auth mode (`azd auth login` doesn't print a warning about `az cli`), run that instead. If unsure, run both.
 
-### Current Limitations
+Then deploy the official Neo4j MCP server to Azure Container Apps and get a public HTTPS endpoint you can attach to any Foundry agent:
 
-1. **Authentication Complexity**
-   - OAuth 2.0 setup requires Azure AD app registration
-   - Multiple configuration options can be confusing
-   - Token management needs understanding of Azure identity
-
-2. **Cost Structure**
-   - Enterprise pricing model
-   - Both Azure infrastructure and model costs
-
-3. **Vendor Lock-in Concerns**
-   - While cross-cloud capable, Azure-native features are most mature
-   - Some features tied to Azure services
-
-### Workarounds
-
-**Simplified Auth for Development:**
-```python
-# Use Azure CLI credentials for local dev
-from azure.identity import AzureCliCredential
-credential = AzureCliCredential()
+```bash
+cd microsoft-foundry/infra/neo4j-mcp-server
+./deploy.sh
+./test-mcp.sh "$(azd env get-value mcpEndpoint)"
 ```
 
-## Additional Integration Opportunities
+`deploy.sh` runs `azd up` (which prompts for environment name, subscription, and region on first run, plus an opt-in for Foundry provisioning), then writes a shared `microsoft-foundry/.env` so every example script in this section can pick up the deployed `NEO4J_MCP_ENDPOINT`, the Neo4j connection settings, and — when you opt in — the provisioned Foundry account, project, model deployment, and an Azure AI Developer role assignment for you. See [`.env.example`](./.env.example) for the full schema.
 
-### 1. Azure Services Integration
-- Azure Key Vault for secrets
-- Azure Monitor for observability
-- Azure Container Apps for MCP server hosting
-- Azure API Management for governance
+No Foundry auth secrets live in the `.env`. Examples authenticate to Foundry with [`DefaultAzureCredential`](https://learn.microsoft.com/azure/developer/python/sdk/authentication/credential-chains#defaultazurecredential-overview), so `azd auth login` (or `az login`) is enough.
 
-### 2. Copilot Studio Low-Code
-- Build agents visually
-- Neo4j MCP server as connector
-- Enterprise governance built-in
+If you already have your own Foundry project and Neo4j and just want to point the examples at them, copy `.env.example` to `.env` instead and edit it directly. You can also edit `.env` after `./deploy.sh` has written it — re-running `./deploy.sh` preserves any non-empty values you've set.
 
-### 3. Multi-Model Support
-- Use Claude for complex reasoning
-- Use GPT for cost-effective queries
-- Model routing based on task
+Defaults connect to the public `companies` Neo4j demo graph. The smoke test should list two tools: `get-schema` and `read-cypher`. Attach the endpoint in Foundry as an [MCP tool](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol) with an `Authorization: Basic <base64(user:pass)>` header.
 
-## Resources
+To tear everything down:
 
-- **Microsoft Foundry**: https://learn.microsoft.com/en-us/azure/ai-foundry/
-- **MCP Guide**: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent
-- **Neo4j MCP Server**: https://github.com/neo4j/mcp
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
+```bash
+cd microsoft-foundry/infra/neo4j-mcp-server
+azd down --force --purge
+```
 
-## Status
+`--force` skips the confirmation prompt; `--purge` empties soft-delete buckets (Log Analytics workspace) so the same environment name can be redeployed cleanly.
 
-- ✅ Native MCP + A2A support
-- ✅ Both Claude and GPT models
-- ✅ Enterprise OAuth 2.0 with DCR
-- ✅ Comprehensive governance
-- **Effort Score**: 6.5/10
-- **Impact Score**: 7.3/10
+#### MCP Authentication
+
+The official Neo4j MCP server runs **stateless** in HTTP mode. It does not hold credentials at startup; every request must carry one of:
+
+```text
+Authorization: Basic <base64(username:password)>
+Authorization: Bearer <token>
+```
+
+Use Basic for username/password databases (the demo graph, most Aura instances). Use Bearer when the target Neo4j is configured for SSO/OIDC — the MCP server forwards the token to Neo4j and does not run an OAuth flow itself.
+
+In Foundry, store the header in a [project connection](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol) and attach the MCP server as a custom MCP tool. For OAuth client-credentials, user delegation, policy, or token exchange in front of Neo4j, put Azure API Management or another gateway between Foundry and the MCP server.
+
+### Foundry SDK — direct tools
+
+Use this when your application drives the loop and should keep tight control over which graph queries exist, how they are parameterized, and what results go back to the model.
+
+Read the full guide in [examples/foundry-sdk](./examples/foundry-sdk/README.md).
+
+### Hosted Foundry agent + function tools
+
+Use this when you want the same tight control over graph queries and function execution as direct tools, but with Foundry hosting the agent while managing the runtime, scaling, and infrastructure.
+
+Read the full guide in [examples/hosted-agent](./examples/hosted-agent/README.md).
+
+### Foundry IQ + Aura Agent
+
+Use this when one agent needs a reusable Foundry IQ multi-source knowledge base for permission-aware, citation-backed answers plus graph reasoning through a Neo4j Aura Agent published as MCP.
+
+Read the full guide in [examples/foundry-iq](./examples/foundry-iq/README.md).
+
+## References
+
+**Microsoft Foundry**
+- [What is Microsoft Foundry?](https://learn.microsoft.com/azure/foundry/what-is-foundry)
+- [What are hosted agents?](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents)
+- [Model Context Protocol tools](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol)
+- [Function calling](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/function-calling)
+- [Foundry IQ overview](https://learn.microsoft.com/azure/foundry/agents/concepts/what-is-foundry-iq)
+- [Connect a Foundry IQ knowledge base to an agent](https://learn.microsoft.com/azure/foundry/agents/how-to/foundry-iq-connect)
+- [Create a knowledge base in Azure AI Search](https://learn.microsoft.com/azure/search/agentic-retrieval-how-to-create-knowledge-base)
+
+**Neo4j**
+- [Neo4j MCP server](https://github.com/neo4j/mcp)
+- [Neo4j MCP configuration](https://neo4j.com/docs/mcp/current/configuration/)
+- [Neo4j Aura Agent](https://neo4j.com/docs/aura/aura-agent/)

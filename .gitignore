@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.azure/
 .bundle/
 .databricks/
 __pycache__/
