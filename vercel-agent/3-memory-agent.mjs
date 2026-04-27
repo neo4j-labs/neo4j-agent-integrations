@@ -109,13 +109,56 @@ async function injectMemoryContext(userQuery) {
 // ── AFTER hook: save interaction to memory graph ──────────────────────────────
 async function saveInteraction(userQuery, agentResponse) {
   try {
-    // Use the memory tools (store_skill / store_concept) or memory.upsertMemory()
-    // directly to persist structured facts from this interaction.
     console.log(' [Hook] Saving interaction to Neo4j memory graph...');
-    console.log('   ↳ Saved.');
+
+    // 1. Save full interaction as a concept memory
+    const learnings = [
+      {
+        kind:       'concept',
+        polarity:   'positive',
+        title:      userQuery.slice(0, 120),
+        content:    `User asked: "${userQuery}"\n\nAgent responded: "${agentResponse.slice(0, 500)}"`,
+        tags:       extractTags(userQuery),
+        confidence: 0.8,
+        utility:    0.7,
+      },
+    ];
+
+    // 2. If the query mentions a company being tracked, also store a compact
+    //    "tracking context" fact with keywords that will fire on follow-up
+    //    queries like "the company I am currently tracking"
+    const trackMatch = userQuery.match(/(?:analysis of|tracking|following)\s+['"]?([A-Z][A-Za-z0-9 &.'-]{1,40}?)['"]?[.,\s]/);
+    if (trackMatch) {
+      const trackedCompany = trackMatch[1].trim();
+      learnings.push({
+        kind:       'concept',
+        polarity:   'positive',
+        title:      `Currently tracking: ${trackedCompany}`,
+        content:    `The user is currently tracking "${trackedCompany}" for competitive analysis, including subsidiaries and AI competitors.`,
+        tags:       ['tracking', 'currently', 'company', ...trackedCompany.toLowerCase().split(/\s+/)],
+        confidence: 0.9,
+        utility:    0.9,
+      });
+    }
+
+    const result = await memory.saveLearnings({ agentId, learnings });
+    const saved   = result.saved?.length ?? 0;
+    const deduped = result.saved?.filter(s => s.deduped).length ?? 0;
+    console.log(`   ↳ Saved ${saved} memory node(s)${deduped ? ` (${deduped} deduped)` : ''}.`);
   } catch (e) {
     console.warn(' [Hook] Save failed:', e.message);
   }
+}
+
+/** Extract simple keyword tags from the query for memory retrieval. */
+function extractTags(text) {
+  const stopWords = new Set(['i', 'am', 'a', 'the', 'is', 'are', 'in', 'of', 'for',
+    'and', 'or', 'to', 'their', 'who', 'what', 'me', 'my', 'be', 'about', 'as', 'that']);
+  return [...new Set(
+    text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
+      .filter(w => w.length > 3 && !stopWords.has(w))
+      .slice(0, 6)
+  )];
 }
 
 // ── Run agent with memory hooks ───────────────────────────────────────────────
