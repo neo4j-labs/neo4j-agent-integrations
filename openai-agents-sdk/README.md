@@ -1,293 +1,221 @@
-# Neo4j MCP
+# OpenAI Agents SDK + Neo4j Integration
 
-Official Model Context Protocol (MCP) server for Neo4j.
+This folder demonstrates three approaches for integrating **Neo4j** with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/). Each approach builds on the previous one, adding more capability.
 
-## Links
+| Notebook | Description |
+|----------|-------------|
+| [openai_agents.ipynb](openai_agents.ipynb) | End-to-end walkthrough of all three approaches with working examples |
 
-- [Documentation](https://neo4j.com/docs/mcp/current/)
-- [Discord](https://discord.gg/neo4j)
+## Overview
+
+The demo uses the publicly accessible **Neo4j companies knowledge graph** — `Organization` nodes linked to `Article` nodes via `[:MENTIONS]` relationships.
 
 ## Prerequisites
 
-- A running Neo4j database instance; options include [Aura](https://neo4j.com/product/auradb/), [neo4j–desktop](https://neo4j.com/download/) or [self-managed](https://neo4j.com/deployment-center/#gdb-tab).
-- APOC plugin installed in the Neo4j instance.
-- Any MCP-compatible client (e.g. [VSCode](https://code.visualstudio.com/) with [MCP support](https://code.visualstudio.com/docs/copilot/customization/mcp-servers))
+- Python 3.10+
+- An OpenAI API key
+- A running Neo4j instance (the notebook uses the public read-only `companies` demo database)
 
-> **⚠️ Known Issue**: Neo4j version **5.26.18** has a bug in APOC that causes the `get-schema` tool to fail. This issue is fixed in version **5.26.19** and above. If you're using 5.26.18, please upgrade to 5.26.19 or later. See [#136](https://github.com/neo4j/mcp/issues/136) for details.
-
-## Startup Checks & Adaptive Operation
-
-The server performs several pre-flight checks at startup to ensure your environment is correctly configured.
-
-**STDIO Mode - Mandatory Requirements**
-In STDIO mode, the server verifies the following core requirements. If any of these checks fail (e.g., due to an invalid configuration, incorrect credentials, or a missing APOC installation), the server will not start:
-
-- A valid connection to your Neo4j instance.
-- The ability to execute queries.
-- The presence of the APOC plugin.
-
-**HTTP Mode - Verification Skipped**
-In HTTP mode, startup verification checks are skipped because credentials come from per-request Basic Auth headers. The server starts immediately without connecting to Neo4j at startup.
-
-**Optional Requirements**
-If an optional dependency is missing, the server will start in an adaptive mode. For instance, if the Graph Data Science (GDS) library is not detected in your Neo4j installation, the server will still launch but will automatically disable all GDS-related tools, such as `list-gds-procedures`. All other tools will remain available.
-
-## Installation (Binary)
-
-Releases: https://github.com/neo4j/mcp/releases
-
-1. Download the archive for your OS/arch.
-2. Extract and place `neo4j-mcp` in a directory present in your PATH variables (see examples below).
-
-Mac / Linux:
+## Installation
 
 ```bash
-chmod +x neo4j-mcp
-sudo mv neo4j-mcp /usr/local/bin/
+pip install --upgrade openai-agents "neo4j-agent-memory[openai-agents]"
+pip install --ignore-requires-python neo4j-mcp-server
 ```
 
-Windows (PowerShell / cmd):
+## Configuration
 
-```powershell
-move neo4j-mcp.exe C:\Windows\System32
-```
-
-Verify the neo4j-mcp installation:
+Set the following environment variables before running the notebook:
 
 ```bash
-neo4j-mcp -v
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+
+# Neo4j Knowledge Graph (public read-only demo — no changes needed)
+export NEO4J_URI="neo4j+s://demo.neo4jlabs.com:7687"
+export NEO4J_USERNAME="companies"
+export NEO4J_PASSWORD="companies"
+export NEO4J_DATABASE="companies"
+
+# MCP server port
+export MCP_PORT="8443"
+
+# Neo4j Memory DB — only required for Approach 3 (must be writable)
+export MEMORY_NEO4J_URI="neo4j+s://your-instance.databases.neo4j.io"
+export MEMORY_NEO4J_USERNAME="neo4j"
+export MEMORY_NEO4J_PASSWORD="your-password"
+export MEMORY_NEO4J_DATABASE="neo4j"
 ```
 
-Should print the installed version.
+> **Security:** Never hardcode credentials in notebook cells or commit them to source control. Use environment variables or a secrets manager.
 
-## Transport Modes
+---
 
-The Neo4j MCP server supports two transport modes:
+## Approach 1 — MCP Agent
 
-- **STDIO** (default): Standard MCP communication via stdin/stdout for desktop clients (Claude Desktop, VSCode)
-- **HTTP**: RESTful HTTP server with per-request Bearer token or Basic Authentication for web-based clients and multi-tenant scenario.
-In case where the standard HTTP header "Authorization" can't be used, it's possible to configure a custom HTTP header for this scope.
+Connect an OpenAI agent to Neo4j via the [Model Context Protocol](https://openai.github.io/openai-agents-python/mcp/). The agent automatically decides which MCP tools to call (`get-schema`, `read-cypher`, etc.) to answer natural-language questions.
 
-### Key Differences
+**Key APIs:** `MCPServerStreamableHttp`, `Agent`, `Runner`
 
-| Aspect               | STDIO                                                      | HTTP                                                                       |
-| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Startup Verification | Required - server verifies APOC, connectivity, queries     | Skipped - server starts immediately                                        |
-| Credentials          | Set via environment variables                              | Per-request via Bearer token or Basic Auth headers                         |
-| Telemetry            | Collects Neo4j version, edition, Cypher version at startup | Reports "unknown-http-mode" - actual version info not available at startup |
+```python
+from agents import Agent, Runner
+from agents.mcp import MCPServerStreamableHttp
 
-See the [Client Setup Guide](docs/CLIENT_SETUP.md) for configuration instructions for both modes.
+mcp_server = MCPServerStreamableHttp(
+    params={
+        "url":     f"http://localhost:{MCP_PORT}/mcp",
+        "headers": {"Authorization": f"Basic {creds}"},
+    },
+    name="neo4j",
+)
+await mcp_server.connect()
 
-## Unauthenticated MCP Ping
+agent = Agent(
+    name="neo4j_explorer",
+    instructions="You are a graph database assistant ...",
+    mcp_servers=[mcp_server],
+    model="gpt-4.1",
+)
 
-By default, the ping method is protected by standard authentication flows. However, because the MCP specification allows pings prior to initialization, some integrations (such as AWS AgentCore) rely on this optional method as an initial health check mechanism.
-
-To improve integration compatibility with these platforms, you can exclude the ping method from authentication requirements via:
-
-- Environment Variable: `NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING=true`
-- or Command Line Flag: `--neo4j-http-allow-unauthenticated-ping true`
-
-## TLS/HTTPS Configuration
-
-When using HTTP transport mode, you can enable TLS/HTTPS for secure communication:
-
-### Environment Variables
-
-- `NEO4J_MCP_HTTP_TLS_ENABLED` - Enable TLS/HTTPS: `true` or `false` (default: `false`)
-- `NEO4J_MCP_HTTP_TLS_CERT_FILE` - Path to TLS certificate file (required when TLS is enabled)
-- `NEO4J_MCP_HTTP_TLS_KEY_FILE` - Path to TLS private key file (required when TLS is enabled)
-- `NEO4J_MCP_HTTP_PORT` - HTTP server port (default: `443` when TLS enabled, `80` when TLS disabled)
-- `NEO4J_HTTP_AUTH_HEADER_NAME` - Name of the HTTP header to read auth credentials from (default: `Authorization`)
-- `NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING` - Allow unauthenticated ping health checks (default: `false`)
-
-### Security Configuration
-
-- **Minimum TLS Version**: Hardcoded to TLS 1.2 (allows TLS 1.3 negotiation)
-- **Cipher Suites**: Uses Go's secure default cipher suites
-- **Default Port**: Automatically uses port 443 when TLS is enabled (standard HTTPS port)
-
-### Example Configuration
-
-```bash
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_TRANSPORT_MODE="http"
-export NEO4J_MCP_HTTP_TLS_ENABLED="true"
-export NEO4J_MCP_HTTP_TLS_CERT_FILE="/path/to/cert.pem"
-export NEO4J_MCP_HTTP_TLS_KEY_FILE="/path/to/key.pem"
-
-neo4j-mcp
-# Server will listen on https://127.0.0.1:443 by default
+result = await Runner.run(agent, "How many organizations are in the database?")
+print(result.final_output)
 ```
 
-**Production Usage**: Use certificates from a trusted Certificate Authority (e.g., Let's Encrypt, or your organisation) for production deployments.
+**Example output:**
 
-For detailed instructions on certificate generation, testing TLS, and production deployment, see [CONTRIBUTING.md](CONTRIBUTING.md#tlshttps-configuration).
+```
+Query: How many organizations are in the database?
 
-## Configuration Options
-
-The `neo4j-mcp` server can be configured using environment variables or CLI flags. CLI flags take precedence over environment variables.
-
-### Environment Variables
-
-See the [Client Setup Guide](docs/CLIENT_SETUP.md) for configuration examples.
-
-### CLI Flags
-
-You can override any environment variable using CLI flags:
-
-```bash
-neo4j-mcp --neo4j-uri "bolt://localhost:7687" \
-          --neo4j-username "neo4j" \
-          --neo4j-password "password" \
-          --neo4j-database "neo4j" \
-          --neo4j-read-only false \
-          --neo4j-telemetry true
+Result: There are 46,088 organizations in the database.
 ```
 
-Available flags:
+**When to use:** You want a fully autonomous agent that can explore and query any Neo4j graph without writing Cypher yourself.
 
-- `--neo4j-uri` - Neo4j connection URI (overrides NEO4J_URI)
-- `--neo4j-username` - Database username (overrides NEO4J_USERNAME)
-- `--neo4j-password` - Database password (overrides NEO4J_PASSWORD)
-- `--neo4j-database` - Database name (overrides NEO4J_DATABASE)
-- `--neo4j-read-only` - Enable read-only mode: `true` or `false` (overrides NEO4J_READ_ONLY)
-- `--neo4j-telemetry` - Enable telemetry: `true` or `false` (overrides NEO4J_TELEMETRY)
-- `--neo4j-schema-sample-size` - Modify the sample size used to infer the Neo4j schema
-- `--neo4j-transport-mode` - Transport mode: `stdio` or `http` (overrides NEO4J_TRANSPORT_MODE)
-- `--neo4j-http-host` - HTTP server host (overrides NEO4J_MCP_HTTP_HOST)
-- `--neo4j-http-port` - HTTP server port (overrides NEO4J_MCP_HTTP_PORT)
-- `--neo4j-http-tls-enabled` - Enable TLS/HTTPS: `true` or `false` (overrides NEO4J_MCP_HTTP_TLS_ENABLED)
-- `--neo4j-http-tls-cert-file` - Path to TLS certificate file (overrides NEO4J_MCP_HTTP_TLS_CERT_FILE)
-- `--neo4j-http-tls-key-file` - Path to TLS private key file (overrides NEO4J_MCP_HTTP_TLS_KEY_FILE)
-- `--neo4j-http-auth-header-name` - Name of the HTTP header to read auth credentials from (overrides NEO4J_AUTH_HEADER_NAME)
-- `--neo4j-http-allow-unauthenticated-ping` - Allow unauthenticated ping health checks: `true` or `false` (overrides NEO4J_HTTP_ALLOW_UNAUTHENTICATED_PING)
+---
 
-Use `neo4j-mcp --help` to see all available options.
+## Approach 2 — Custom Tools Agent
 
-## Authentication Methods (HTTP Mode)
+Extend the MCP agent with hand-written Cypher-backed tools using the `@function_tool` decorator. Custom tools and MCP tools are passed to the same agent — the framework routes each call to the correct handler.
 
-When using HTTP transport mode, the Neo4j MCP server supports two authentication methods to accommodate different deployment scenarios:
+**Key APIs:** `@function_tool`, `Agent(tools=[...], mcp_servers=[...])`
 
-### Bearer Token Authentication
+```python
+from agents import Agent, Runner, function_tool
+import neo4j as _neo4j
 
-Bearer token authentication enables seamless integration with **Neo4j Enterprise Edition** and **Neo4j Aura** environments that use SSO/OAuth/OIDC for identity management. This method is ideal for:
+driver = _neo4j.AsyncGraphDatabase.driver(
+    os.environ["NEO4J_URI"],
+    auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
+)
 
-- **Enterprise deployments** with centralized identity providers (Okta, Azure AD, etc.)
-- **Neo4j Aura** databases configured with SSO
-- **Organizations** requiring OAuth 2.0 compliance
-- **Multi-factor authentication** scenarios
+@function_tool
+async def get_investments(company: str) -> list:
+    """Returns investments made by a company — ids, names, and types."""
+    async with driver.session(database=os.environ["NEO4J_DATABASE"]) as session:
+        result = await session.run(
+            """MATCH (o:Organization)-[:HAS_INVESTOR]->(i)
+               WHERE o.name = $company
+               RETURN i.id AS id, i.name AS name, head(labels(i)) AS type""",
+            company=company,
+        )
+        return [dict(r) async for r in result]
 
-**Example:**
+agent = Agent(
+    name="neo4j_custom",
+    instructions="You are a helpful assistant with access to a Neo4j graph database ...",
+    tools=[get_investments],
+    mcp_servers=[mcp_server],
+    model="gpt-4.1",
+)
 
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+result = await Runner.run(agent, "Which companies did Google invest in?")
+print(result.final_output)
 ```
 
-The bearer token is obtained from your identity provider and passed to Neo4j for authentication. The MCP server acts as a pass-through, forwarding the token to Neo4j's authentication system.
+**Example output:**
 
-### Basic Authentication
+```
+Query: Which companies did Google invest in?
 
-Traditional username/password authentication suitable for:
+Result: Google has invested in the following companies:
 
-- **Neo4j Community Edition**
-- **Development and testing** environments
-- **Direct database credentials** without SSO
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -u neo4j:password \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+1. Ionic Security
+2. Avere Systems
+3. FlexiDAO
+4. Cloudflare
+5. Trifacta
 ```
 
-## Client Configuration
+**When to use:** You need precise control over specific queries (e.g., complex multi-hop Cypher) while still leveraging the MCP server for general graph exploration.
 
-To configure MCP clients (VSCode, Claude Desktop, etc.) to use the Neo4j MCP server, see:
+---
 
-📘 **[Client Setup Guide](docs/CLIENT_SETUP.md)** – Complete configuration for STDIO and HTTP modes
+## Approach 3 — Memory Agent
 
-## Tools & Usage
+Add cross-session persistent memory to the agent using [`neo4j-agent-memory`](https://pypi.org/project/neo4j-agent-memory/). The agent stores conversation history and entity knowledge in a Neo4j graph and retrieves relevant context automatically on each turn.
 
-Provided tools:
+**Key APIs:** `Neo4jOpenAIMemory`, `create_memory_tools()`, `execute_memory_tool()`, `record_agent_trace()`
 
-| Tool                  | ReadOnly | Purpose                                              | Notes                                                                                                                          |
-| --------------------- | -------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `get-schema`          | `true`   | Introspect labels, relationship types, property keys | Provide valuable context to the client LLMs.                                                                                   |
-| `read-cypher`         | `true`   | Execute arbitrary Cypher (read mode)                 | Rejects writes, schema/admin operations, and PROFILE queries. Use `write-cypher` instead.                                      |
-| `write-cypher`        | `false`  | Execute arbitrary Cypher (write mode)                | **Caution:** LLM-generated queries could cause harm. Use only in development environments. Disabled if `NEO4J_READ_ONLY=true`. |
-| `list-gds-procedures` | `true`   | List GDS procedures available in the Neo4j instance  | Help the client LLM to have a better visibility on the GDS procedures available                                                |
+> **Prerequisite:** This approach requires a **writable** Neo4j instance. Set the `MEMORY_NEO4J_*` environment variables described in the Configuration section.
 
-### Readonly mode flag
+```python
+from neo4j_agent_memory import MemoryClient, MemorySettings, Neo4jConfig
+from neo4j_agent_memory.integrations.openai_agents import (
+    Neo4jOpenAIMemory, create_memory_tools, record_agent_trace,
+)
+from neo4j_agent_memory.integrations.openai_agents.memory import execute_memory_tool
 
-Enable readonly mode by setting the `NEO4J_READ_ONLY` environment variable to `true` (for example, `"NEO4J_READ_ONLY": "true"`). Accepted values are `true` or `false` (default: `false`).
+# Initialise memory
+mem_client = MemoryClient(settings)
+memory = Neo4jOpenAIMemory(memory_client=mem_client, session_id="demo-session")
 
-You can also override this setting using the `--neo4j-read-only` CLI flag:
+# Turn 1 — establish research context
+await run_turn(memory, "I am conducting a competitive analysis of 'Google'. ...")
 
-```bash
-neo4j-mcp --neo4j-uri "bolt://localhost:7687" --neo4j-username "neo4j" --neo4j-password "password" --neo4j-read-only true
+# Turn 2 — memory context from Turn 1 is surfaced automatically via get_context()
+await run_turn(memory, "What are the main risks in the supply chain for the company I am currently tracking?")
+
+# Persist the reasoning trace for future learning
+await record_agent_trace(memory=memory, messages=conversation, task="...", success=True)
 ```
 
-When enabled, write tools (for example, `write-cypher`) are not exposed to clients.
+**Example output:**
 
-### Query Classification
+```
+[USER]: I am conducting a competitive analysis of 'Google'. I am specifically
+        worried about their subsidiaries and who their top-tier competitors are in the AI space.
 
-The `read-cypher` tool performs an extra round-trip to the Neo4j database to guarantee read-only operations.
+[AGENT]: Google's key subsidiaries include DeepMind, Waymo, and Verily.
+         Top AI competitors include Microsoft (OpenAI partnership), Meta AI, Amazon (AWS AI), and Apple.
 
-Important notes:
+--- Indexing memory (5s)... ---
 
-- **Write operations**: `CREATE`, `MERGE`, `DELETE`, `SET`, etc., are treated as non-read queries.
-- **Admin queries**: Commands like `SHOW USERS`, `SHOW DATABASES`, etc., are treated as non-read queries and must use `write-cypher` instead.
-- **Profile queries**: `EXPLAIN PROFILE` queries are treated as non-read queries, even if the underlying statement is read-only.
-- **Schema operations**: `CREATE INDEX`, `DROP CONSTRAINT`, etc., are treated as non-read queries.
+[USER]: What are the main risks in the supply chain for the company I am currently tracking?
 
-## Example Natural Language Prompts
+[AGENT]: For Google, key supply chain risks include dependency on TSMC/Samsung for custom TPU chips,
+         rare earth material sourcing for hardware, and hyperscale data centre power constraints.
 
-Below are some example prompts you can try in Copilot or any other MCP client:
+  [Trace] Agent reasoning trace recorded to Neo4j.
+```
 
-- "What does my Neo4j instance contain? List all node labels, relationship types, and property keys."
-- "Find all Person nodes and their relationships in my Neo4j instance."
-- "Create a new User node with a name 'John' in my Neo4j instance."
+**When to use:** You need agents that remember context across multiple sessions or conversations — ideal for research assistants, customer-facing agents, or any long-running workflow.
 
-## Security tips:
+---
 
-- Use a restricted Neo4j user for exploration.
-- Review generated Cypher before executing in production databases.
+## Implementation Notes
 
-## Logging
+| Topic | Detail |
+|-------|--------|
+| **MCP server credentials** | In HTTP mode, credentials are sent per-request via `Authorization: Basic ...` — not as server environment variables. |
+| **`PatchedMCPServerStreamableHttp`** | Works around a v1.5.x `neo4j-mcp-server` bug where `get-schema` incorrectly declares `required: ["properties"]`. Can be removed once fixed upstream. |
+| **`create_memory_tools()`** | Produces four OpenAI function-calling tools: `search_memory`, `save_preference`, `recall_preferences`, `search_entities`. |
+| **`record_agent_trace()`** | Persists the full reasoning trace to Neo4j so the agent can learn from past interactions via `get_similar_traces()`. |
 
-The server uses structured logging with support for multiple log levels and output formats.
+## Resources
 
-### Configuration
-
-**Log Level** (`NEO4J_LOG_LEVEL`, default: `info`)
-
-Controls the verbosity of log output. Supports all [MCP log levels](https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging#log-levels): `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
-
-**Log Format** (`NEO4J_LOG_FORMAT`, default: `text`)
-
-Controls the output format:
-
-- `text` - Human-readable text format (default)
-- `json` - Structured JSON format (useful for log aggregation)
-
-## Telemetry
-
-By default, `neo4j-mcp` collects anonymous usage data to help us improve the product.
-This includes information like the tools being used, the operating system, and CPU architecture.
-We do not collect any personal or sensitive information.
-
-To disable telemetry, set the `NEO4J_TELEMETRY` environment variable to `"false"`. Accepted values are `true` or `false` (default: `true`).
-
-You can also use the `--neo4j-telemetry` CLI flag to override this setting.
-
-## Documentation
-
-📘 **[Client Setup Guide](docs/CLIENT_SETUP.md)** – Configure VSCode, Claude Desktop, and other MCP clients (STDIO and HTTP modes)
-📚 **[Contributing Guide](CONTRIBUTING.md)** – Contribution workflow, development environment, mocks & testing
-
-Issues / feedback: open a GitHub issue with reproduction details (omit sensitive data).
+- [OpenAI Agents SDK Documentation](https://openai.github.io/openai-agents-python/)
+- [OpenAI Agents SDK — MCP Support](https://openai.github.io/openai-agents-python/mcp/)
+- [Neo4j Agent Memory — OpenAI Integration](https://neo4j.com/labs/agent-memory/how-to/integrations/openai-agents/)
+- [neo4j-mcp-server on PyPI](https://pypi.org/project/neo4j-mcp-server/)
+- [neo4j-agent-memory on PyPI](https://pypi.org/project/neo4j-agent-memory/)
+- [Neo4j Python Driver Documentation](https://neo4j.com/docs/python-manual/current/)
