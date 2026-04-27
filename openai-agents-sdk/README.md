@@ -10,6 +10,12 @@ This folder demonstrates three approaches for integrating **Neo4j** with the [Op
 
 The demo uses the publicly accessible **Neo4j companies knowledge graph** — `Organization` nodes linked to `Article` nodes via `[:MENTIONS]` relationships.
 
+## Architecture
+
+![OpenAI Agents SDK + Neo4j Solution Architecture](images/architecture.jpeg)
+
+The diagram shows three progressive approaches that build on each other: MCP Agent → Custom Tools Agent → Memory Agent. Each approach adds more capability while sharing the same Neo4j knowledge graph backend.
+
 ## Prerequisites
 
 - Python 3.10+
