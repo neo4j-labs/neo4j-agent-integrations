@@ -55,20 +55,14 @@ const getInvestments = tool({
     required: ['company'],
   }),
   execute: async ({ company }) => {
-    const session = driver.session({ database: process.env.NEO4J_DATABASE });
-    try {
-      const result = await session.run(
-        `MATCH (o:Organization)-[:HAS_INVESTOR]->(i)
-         WHERE o.name = $company
-         RETURN i.id AS id, i.name AS name, head(labels(i)) AS type`,
-        { company }
-      );
-      return result.records.map(r => r.toObject());
-    } catch (e) {
-      return `Error fetching investments: ${e.message}`;
-    } finally {
-      await session.close();
-    }
+    const { records } = await driver.executeQuery(
+      `MATCH (o:Organization)-[:HAS_INVESTOR]->(i)
+       WHERE o.name = $company
+       RETURN i.id AS id, i.name AS name, head(labels(i)) AS type`,
+      { company },
+      { database: process.env.NEO4J_DATABASE }
+    );
+    return records.map(r => r.toObject());
   },
 });
 
