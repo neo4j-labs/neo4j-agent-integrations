@@ -82,12 +82,6 @@ Use this when your application drives the loop and should keep tight control ove
 
 Read the full guide in [examples/foundry-sdk](./examples/foundry-sdk/README.md).
 
-### Hosted Foundry agent + function tools
-
-Use this when you want the same tight control over graph queries and function execution as direct tools, but with Foundry hosting the agent while managing the runtime, scaling, and infrastructure.
-
-Read the full guide in [examples/hosted-agent](./examples/hosted-agent/README.md).
-
 ### Foundry IQ + Aura Agent
 
 Use this when one agent needs a reusable Foundry IQ multi-source knowledge base for permission-aware, citation-backed answers plus graph reasoning through a Neo4j Aura Agent published as MCP.
@@ -98,7 +92,6 @@ Read the full guide in [examples/foundry-iq](./examples/foundry-iq/README.md).
 
 **Microsoft Foundry**
 - [What is Microsoft Foundry?](https://learn.microsoft.com/azure/foundry/what-is-foundry)
-- [What are hosted agents?](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents)
 - [Model Context Protocol tools](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol)
 - [Function calling](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/function-calling)
 - [Foundry IQ overview](https://learn.microsoft.com/azure/foundry/agents/concepts/what-is-foundry-iq)
