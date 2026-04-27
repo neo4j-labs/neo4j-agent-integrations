@@ -71,7 +71,7 @@ If the data is not found, state that clearly.`,
 });
 
 console.log(`Agent:  ${mcpAgent.name}`);
-console.log(`Model:  ${process.env.AI_PROVIDER || 'openai'} / ${process.env.AI_MODEL || 'gpt-4.1'}`);
+console.log(`Model:  ${process.env.AI_PROVIDER || 'openai'} / ${process.env.AI_MODEL || 'gpt-5.4'}`);
 console.log(`Tools:  ${Object.keys(mcpAgent.tools).join(', ')}\n`);
 
 // ── Run example query ─────────────────────────────────────────────────────────
