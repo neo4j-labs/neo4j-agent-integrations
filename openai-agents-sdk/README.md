@@ -74,7 +74,7 @@ agent = Agent(
     name="neo4j_explorer",
     instructions="You are a graph database assistant ...",
     mcp_servers=[mcp_server],
-    model="gpt-4.1",
+    model="gpt-5.4",
 )
 
 result = await Runner.run(agent, "How many organizations are in the database?")
@@ -111,21 +111,21 @@ driver = _neo4j.AsyncGraphDatabase.driver(
 @function_tool
 async def get_investments(company: str) -> list:
     """Returns investments made by a company — ids, names, and types."""
-    async with driver.session(database=os.environ["NEO4J_DATABASE"]) as session:
-        result = await session.run(
-            """MATCH (o:Organization)-[:HAS_INVESTOR]->(i)
-               WHERE o.name = $company
-               RETURN i.id AS id, i.name AS name, head(labels(i)) AS type""",
-            company=company,
-        )
-        return [dict(r) async for r in result]
+    result = await driver.execute_query(
+        """MATCH (o:Organization)-[:HAS_INVESTOR]->(i)
+           WHERE o.name = $company
+           RETURN i.id AS id, i.name AS name, head(labels(i)) AS type""",
+        company=company,
+        database_=os.environ["NEO4J_DATABASE"],
+    )
+    return [record.data() for record in result.records]
 
 agent = Agent(
     name="neo4j_custom",
     instructions="You are a helpful assistant with access to a Neo4j graph database ...",
     tools=[get_investments],
     mcp_servers=[mcp_server],
-    model="gpt-4.1",
+    model="gpt-5.4",
 )
 
 result = await Runner.run(agent, "Which companies did Google invest in?")
