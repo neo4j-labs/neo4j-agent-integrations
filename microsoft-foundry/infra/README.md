@@ -29,7 +29,7 @@ If `azd` is configured in its standalone auth mode (no warning when you run `azd
 - `NEO4J_URI` / `NEO4J_DATABASE` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` — Neo4j connection (Basic auth header for the MCP server).
 - `FOUNDRY_RESOURCE_GROUP` / `FOUNDRY_ACCOUNT_NAME` / `FOUNDRY_PROJECT_NAME` / `FOUNDRY_PROJECT_ENDPOINT` / `FOUNDRY_MODEL_DEPLOYMENT_NAME` — auto-filled when you opt in to Foundry provisioning at the deploy.sh prompt. Empty if you opted out; edit `microsoft-foundry/.env` directly in that case to point at your existing Foundry project. Either way, re-running `./deploy.sh` preserves any non-empty values you've set.
 
-No Foundry auth secrets live in the `.env`. Examples authenticate to Foundry with `DefaultAzureCredential` (so `azd auth login` / `az login` is enough). See [`microsoft-foundry/.env.example`](../../.env.example) for the full schema.
+No Foundry auth secrets live in the `.env`. Examples authenticate to Foundry with `DefaultAzureCredential` (so `azd auth login` / `az login` is enough). See [`microsoft-foundry/.env.example`](../.env.example) for the full schema.
 
 `azd up` prompts for three things on first run:
 

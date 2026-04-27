@@ -7,7 +7,7 @@ Add the deployed Neo4j MCP server as a tool on a Foundry agent, then chat with i
 If you haven't already:
 
 ```bash
-cd microsoft-foundry/infra/neo4j-mcp-server
+cd microsoft-foundry/infra
 ./deploy.sh                    
 # answer "Y" at the Foundry prompt
 ```
@@ -117,4 +117,4 @@ Each of these would be expensive or impossible with vector search alone — the 
 
 ## 6. Tear down
 
-When done, run `azd down --force --purge` from `microsoft-foundry/infra/neo4j-mcp-server/` to delete the MCP server, Foundry account, and everything else this deployment created.
+When done, run `azd down --force --purge` from `microsoft-foundry/infra/` to delete the MCP server, Foundry account, and everything else this deployment created.

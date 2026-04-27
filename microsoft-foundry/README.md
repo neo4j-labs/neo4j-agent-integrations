@@ -41,7 +41,7 @@ az login
 Then deploy the official Neo4j MCP server to Azure Container Apps and get a public HTTPS endpoint you can attach to any Foundry agent:
 
 ```bash
-cd microsoft-foundry/infra/neo4j-mcp-server
+cd microsoft-foundry/infra
 ./deploy.sh
 ./test-mcp.sh "$(azd env get-value mcpEndpoint)"
 ```
@@ -57,7 +57,7 @@ Defaults connect to the public `companies` Neo4j demo graph. The smoke test shou
 To tear everything down:
 
 ```bash
-cd microsoft-foundry/infra/neo4j-mcp-server
+cd microsoft-foundry/infra
 azd down --force --purge
 ```
 
