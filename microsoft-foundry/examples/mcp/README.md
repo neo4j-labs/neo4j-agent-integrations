@@ -1,57 +1,120 @@
-# Foundry Portal: Neo4j as an MCP Tool
+# Neo4j MCP as a Foundry Tool — Portal Walkthrough
 
-Use this when you want the fastest Foundry experience: add Neo4j as an MCP tool. You can deploy the shared Neo4j MCP server for database-level graph tools, or use a Neo4j Aura Agent published as an MCP endpoint for a domain-specific graph agent.
+Add the deployed Neo4j MCP server as a tool on a Foundry agent, then chat with it in the portal Playground. **No code.** Five minutes start to finish.
 
-## 1. Deploy the Shared MCP Server
+## 1. Deploy the infra
+
+If you haven't already:
 
 ```bash
 cd microsoft-foundry/infra/neo4j-mcp-server
-azd up
-export NEO4J_MCP_ENDPOINT="$(azd env get-value mcpEndpoint)"
-./test-mcp.sh "$NEO4J_MCP_ENDPOINT"
+./deploy.sh                    
+# answer "Y" at the Foundry prompt
 ```
 
-## 2. Add It in Foundry
+That gives you:
 
-In the Foundry portal:
+- A public Neo4j MCP endpoint on Azure Container Apps.
+- A Foundry account, project, and `gpt-4o-mini` model deployment.
+- An Azure AI Developer role assignment for your user.
+- A populated `microsoft-foundry/.env` — you'll need one value from it: `NEO4J_MCP_ENDPOINT`.
 
-1. Open your Foundry project.
-2. Create or open an agent.
-3. Add a tool of type **Model Context Protocol (MCP)**.
-4. Set the server URL to `https://<container-app-fqdn>/mcp`.
-5. Use key/header authentication.
-6. Header name: `Authorization`.
-7. Header value: `Basic <base64(username:password)>`.
-8. Allow only `get-schema` and `read-cypher` for demos.
+## 2. Open the project in Foundry portal
 
-For the demo database:
+Open [https://ai.azure.com](https://ai.azure.com) and pick the Foundry project that `deploy.sh` created. It's `proj-foundry-neo4j-<env>` under `aif-foundry-neo4j-<env>-<hash>`.
+
+## 3. Create the investment research agent
+
+In the left nav: **Agents → Create agent**.
+
+![Empty Agents page with the Create agent button](images/foundry-mcp-01.png)
+
+Name it `neo4j-research-agent` and click **Create**.
+
+![Create an agent modal with the name field](images/foundry-mcp-02.png)
+
+You land on the agent's Playground page. Fill in the **Instructions**.
+
+Instructions:
+
+```text
+Role: investment research analyst working over a Neo4j graph.
+Tools: get-schema, read-cypher (read-only).
+
+Protocol (every turn):
+  1. Call get-schema once per conversation if you don't already have it.
+  2. Call read-cypher with one query that fetches what the user asked for.
+  3. Answer only from the returned rows. No prior-knowledge fallback.
+
+You MUST call read-cypher before stating any fact about a company,
+person, industry, location, or article. The schema alone is not data.
+```
+
+![Playground with model, instructions filled in, and Tools panel](images/foundry-mcp-03.png)
+
+## 4. Add the Neo4j MCP server as a tool
+
+Tools panel → **Add → Browse all tools → Custom tab → Model Context Protocol (MCP) → Create**.
+
+![Tool catalog with MCP selected under the Custom tab](images/foundry-mcp-04.png)
+
+Fill the form:
+
+| Field | Value |
+| --- | --- |
+| **Name** | `neo4j-mcp` |
+| **Remote MCP Server endpoint** | `NEO4J_MCP_ENDPOINT` from `microsoft-foundry/.env` |
+| **Authentication** | **Custom** |
+| **Credential — Name** | `Authorization` |
+| **Credential — Value** | `Basic <base64(user:pass)>` — for the demo graph: `Basic Y29tcGFuaWVzOmNvbXBhbmllcw==` |
+
+Generate the demo header value yourself:
 
 ```bash
 printf '%s:%s' companies companies | base64
 ```
 
-## Smoke Test by Script
+For real Aura/Neo4j Enterprise databases swap the demo creds for yours. Use `Bearer <token>` for SSO/OIDC databases — the MCP server forwards whatever you set.
 
-The script creates the same project connection and a temporary agent through the Foundry APIs. It is useful for CI or validating the portal setup.
+Click **Connect**. After the connection succeeds, restrict the **Allowed tools** to `get-schema` and `read-cypher` and set **Approval** to **Never** for both, then **Save** the agent.
 
-```bash
-export NEO4J_MCP_ENDPOINT="https://<container-app-fqdn>/mcp"
-export FOUNDRY_LOCATION="northcentralus"
-export FOUNDRY_RESOURCE_GROUP="<foundry-resource-group>"
-export FOUNDRY_ACCOUNT_NAME="<foundry-ai-services-account>"
-export FOUNDRY_PROJECT_NAME="<foundry-project>"
-export FOUNDRY_MODEL_DEPLOYMENT_NAME="gpt-4o-mini"
+![Add Model Context Protocol tool form](images/foundry-mcp-05.png)
 
-cd microsoft-foundry/examples/mcp
-./foundry-mcp-smoke-test.sh
+## 5. Chat with the agent in Playground
+
+On the agent's page: **Playground**. Try a multi-hop research question:
+
+```text
+Tell me about Microsoft — what industry it competes in,
+who runs it, and where it's headquartered.
 ```
 
-You can also copy `.env.sample` to `.env` in this folder and run the script without exporting each value.
+You should see the agent:
 
-Expected result: Foundry calls `read-cypher` and returns five organization names from the Neo4j `companies` demo graph.
+1. Call `get-schema` (once) so it knows the labels and relationships.
+2. Call `read-cypher` with a single traversal that joins `Organization → IN_INDUSTRY → Industry`, `Organization ← WORKS_FOR ← Person`, and `Organization → LOCATED_IN → Location`.
+3. Summarise the result: industry, a few key people with titles, location.
 
-## Coming Soon
+Follow up with a peer-discovery question to show the graph paying off again:
 
-- Portal screenshots for the Foundry tool setup.
-- Bearer token and APIM/OAuth gateway variants for enterprise auth.
-- Aura Agent MCP variant for domain-specific graph agents.
+```text
+Find three companies that compete in the same industry as Microsoft.
+```
+
+The agent should reuse the schema knowledge and call `read-cypher` with a `(:Organization)-[:IN_INDUSTRY]->()<-[:IN_INDUSTRY]-(:Organization)` traversal.
+
+Finally, a news angle:
+
+```text
+What recent articles mention Microsoft, and what topics do they cover?
+```
+
+This pulls `(:Article)-[:MENTIONS]->(:Organization {name: 'Microsoft'})`.
+
+Each of these would be expensive or impossible with vector search alone — the relationships are the answer.
+
+![Playground answer with two tool calls and a graph-grounded response](images/foundry-mcp-06.png)
+
+## 6. Tear down
+
+When done, run `azd down --force --purge` from `microsoft-foundry/infra/neo4j-mcp-server/` to delete the MCP server, Foundry account, and everything else this deployment created.
