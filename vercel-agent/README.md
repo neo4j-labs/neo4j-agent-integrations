@@ -16,6 +16,12 @@
 - Documentation: [sdk.vercel.ai/docs](https://sdk.vercel.ai/docs)
 - MCP client docs: [sdk.vercel.ai/docs/ai-sdk-core/mcp-clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
 
+## Architecture
+
+![Vercel AI SDK + Neo4j Solution Architecture](images/architecture.jpeg)
+
+The diagram shows three progressive integration patterns: MCP Agent → Custom Tools Agent → Memory Agent. Each builds on the previous, adding capability while sharing the same Neo4j knowledge graph backend.
+
 ## Examples
 
 | File | Description |
