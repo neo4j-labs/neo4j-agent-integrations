@@ -22,6 +22,7 @@ foundry_account_name=""
 foundry_project_name=""
 foundry_project_endpoint=""
 foundry_model_deployment_name="gpt-4o-mini"
+neo4j_mcp_connection_name=""
 
 read_kv_file() {
   local file="$1"
@@ -41,6 +42,7 @@ read_kv_file() {
       FOUNDRY_PROJECT_NAME)          [ -n "$value" ] && foundry_project_name="$value" ;;
       FOUNDRY_PROJECT_ENDPOINT)      [ -n "$value" ] && foundry_project_endpoint="$value" ;;
       FOUNDRY_MODEL_DEPLOYMENT_NAME) [ -n "$value" ] && foundry_model_deployment_name="$value" ;;
+      NEO4J_MCP_CONNECTION_NAME)     [ -n "$value" ] && neo4j_mcp_connection_name="$value" ;;
     esac
   done < "$file"
 }
@@ -80,6 +82,10 @@ foundry_account_out="$(azd_get foundryAccountName)"
 foundry_project_out="$(azd_get foundryProjectName)"
 foundry_project_endpoint_out="$(azd_get foundryProjectEndpoint)"
 foundry_model_out="$(azd_get foundryModelDeploymentName)"
+azure_subscription_id="$(azd_get AZURE_SUBSCRIPTION_ID)"
+if [ -z "$azure_subscription_id" ] && command -v az >/dev/null; then
+  azure_subscription_id="$(az account show --query id -o tsv 2>/dev/null || true)"
+fi
 
 [ -n "$foundry_rg_out" ]               && foundry_resource_group="$foundry_rg_out"
 [ -n "$foundry_account_out" ]          && foundry_account_name="$foundry_account_out"
@@ -109,11 +115,16 @@ NEO4J_MCP_ENDPOINT=${endpoint}
 # Microsoft Foundry project. Auto-filled when deploy.sh provisions Foundry;
 # blank if you opted out — set them yourself in that case to point examples
 # at your existing Foundry project.
+AZURE_SUBSCRIPTION_ID=${azure_subscription_id}
 FOUNDRY_RESOURCE_GROUP=${foundry_resource_group}
 FOUNDRY_ACCOUNT_NAME=${foundry_account_name}
 FOUNDRY_PROJECT_NAME=${foundry_project_name}
 FOUNDRY_PROJECT_ENDPOINT=${foundry_project_endpoint}
 FOUNDRY_MODEL_DEPLOYMENT_NAME=${foundry_model_deployment_name}
+
+# Neo4j MCP project connection name. Set this manually after creating the
+# connection in the Foundry portal — see microsoft-foundry/examples/mcp/README.md.
+NEO4J_MCP_CONNECTION_NAME=${neo4j_mcp_connection_name}
 EOF
 
 cat <<EOF
