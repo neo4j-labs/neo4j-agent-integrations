@@ -17,7 +17,7 @@
  */
 
 const PROVIDER_DEFAULTS = {
-  openai:    'gpt-4o',
+  openai:    'gpt-5.4',
   google:    'gemini-2.0-flash',
   anthropic: 'claude-3-5-sonnet-20241022',
   mistral:   'mistral-large-latest',
