@@ -6,10 +6,10 @@
 
 
 **1. Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).  
-**2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.  
+**2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.   
+**3. Managed Agent Memory (via NAMS):** Offloads memory infrastructure entirely using the cloud-managed [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs), accessible via REST API or directly as an MCP tool.  
 
-
-## Key Features
+## Key Features  
 
 
 **Standardized Tooling:** Connect Google ADK agents to Neo4j securely via the Model Context Protocol (MCP).  
@@ -25,7 +25,7 @@
 To run the full architecture (MCP + Memory), install the following dependencies:
 
 ```bash
-pip install google-adk neo4j-mcp-server neo4j-agent-memory[google-adk] spacy
+pip install google-adk neo4j-mcp-server neo4j-agent-memory[google-adk,vertex-ai] spacy  
 python -m spacy download en_core_web_sm
 ```
 
@@ -39,11 +39,17 @@ Here we have used "http" authentication modes:
 for other authentication methods refer [here](https://neo4j.com/docs/mcp/current/authentication/)
   
 **2. Memory Database**  
-Set your memory graph credentials in your environment variables for the ADK MemoryService to pick up:  
+Set your memory graph credentials and Google Cloud project details for the Vertex AI embedder:
 ```bash
+# Memory Graph
 MEMORY_NEO4J_URI=neo4j+s://your-memory-instance.databases.neo4j.io
 MEMORY_NEO4J_USERNAME=neo4j
 MEMORY_NEO4J_PASSWORD=your-password
+MEMORY_NEO4J_DATABASE=neo4j
+
+# Google Cloud Settings (Required for Vector Embeddings)
+GCP_PROJECT_ID=your-gcp-project-id
+GCP_LOCATION=us-central1
 ```
 
 ## Quick Start & Core Snippets
