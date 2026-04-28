@@ -35,19 +35,18 @@ Full deploy guide and configuration knobs: [`infra/README.md`](./infra/README.md
 
 ## Integration Paths
 
-| Path | When to use | Status | Folder |
-| --- | --- | --- | --- |
-| **MCP — shared server** | Reusable Neo4j tool for one or many Foundry agents. Recommended default. | Ready | [`examples/mcp`](./examples/mcp/) |
-| **Foundry SDK — direct tools** | Your app drives the loop with narrow Python function tools, app-owned secrets and audit. | Ready | [`examples/foundry-sdk`](./examples/foundry-sdk/) |
+| Path | When to use | Folder |
+| --- | --- | --- |
+| **MCP** | Reusable Neo4j MCP for one or many Foundry agents. | [`examples/mcp`](./examples/mcp/) |
+| **Foundry SDK** | Your app runs with more control over tools and Cypher queries | [`examples/foundry-sdk`](./examples/foundry-sdk/) |
 
 ## References
 
-**Microsoft Foundry**
+### Microsoft Foundry
 - [What is Microsoft Foundry?](https://learn.microsoft.com/azure/foundry/what-is-foundry)
 - [Model Context Protocol tools](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol)
 - [Function calling](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/function-calling)
 
-**Neo4j**
+### Neo4j
 - [Neo4j MCP server](https://github.com/neo4j/mcp)
 - [Neo4j MCP configuration](https://neo4j.com/docs/mcp/current/configuration/)
-- [Neo4j Aura Agent](https://neo4j.com/docs/aura/aura-agent/)

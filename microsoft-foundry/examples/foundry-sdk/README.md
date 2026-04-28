@@ -1,6 +1,6 @@
 # Foundry SDK + Neo4j Function Tools — Python
 
-Same investment research agent as the [portal walkthrough](../mcp/), driven from code with the **Foundry SDK Responses API**. Tools are narrow Python functions that run pre-baked Cypher against Neo4j directly — your app owns every query. No MCP server, no generic `read-cypher` exposed to the model.
+Investment research agent driven from code with the **Foundry SDK Responses API**. Tools are narrow Python functions that run pre-baked Cypher against Neo4j directly — your app owns every query. No MCP server, no generic `read-cypher` exposed to the model.
 
 Tool names and return shapes follow the [`EXAMPLE_AGENT.md`](../../../EXAMPLE_AGENT.md) spec ("Industry Research Agent"). Cypher uses the actual `companies` demo schema underneath.
 
@@ -26,28 +26,57 @@ uv run foundry_sdk_neo4j.py
 
 ## Function tools
 
-Three narrow read-only functions over the public `companies` demo graph:
+Ten read-only functions over the public `companies` demo graph, organised the way the agent picks them:
 
-| Tool | Returns | Cypher behind it |
-| --- | --- | --- |
-| `query_company(company_name)` | `{name, industries, locations, leadership}` | `(:Organization)` joined to `IndustryCategory` (`HAS_CATEGORY`), `City`/`Country` (`IN_CITY`/`IN_COUNTRY`), `Person` (`HAS_CEO`/`HAS_BOARD_MEMBER`) |
-| `companies_in_industry(industry)` | `[{name}]` | `(:IndustryCategory)<-[:HAS_CATEGORY]-(:Organization)` |
-| `search_news(company_name)` | `[{title, date, sentiment}]` | `(:Article)-[:MENTIONS]->(:Organization)` |
+**Discovery**
 
-To add a tool: write a Python function with one string parameter and a docstring, then add it to `TOOL_IMPLS`. The `function_tool()` helper auto-generates the strict JSON schema from the function's signature and docstring.
+| Tool | Returns |
+| --- | --- |
+| `search_companies(search)` | up to 20 fuzzy name matches via the `entity` full-text index, ranked by score |
+| `list_industries()` | every `IndustryCategory` name, alphabetical |
+| `companies_in_industry(industry)` | up to 10 companies in a category, with `company_id` |
+
+**Profile**
+
+| Tool | Returns |
+| --- | --- |
+| `query_company(company_name)` | primary lookup: `company_id`, `name`, `industries`, `locations`, `leadership` (CEO + board) |
+
+**Network**
+
+| Tool | Returns |
+| --- | --- |
+| `analyze_relationships(company_name)` | 1–2 hop org-to-org connections (`HAS_SUBSIDIARY`, `HAS_SUPPLIER`, `HAS_COMPETITOR`, `HAS_INVESTOR`, …) with relationship types and distance |
+| `people_at_company(company_id)` | people associated with the company and their roles |
+
+**News**
+
+| Tool | Returns |
+| --- | --- |
+| `search_news(company_name)` | up to 5 articles mentioning the company, with `article_id` |
+| `articles_in_month(date)` | up to 25 articles in the calendar month starting at `yyyy-mm-dd` |
+| `get_article(article_id)` | full article body (joined from chunks), summary, sentiment, source |
+| `companies_in_article(article_id)` | companies mentioned in an article, with `company_id` |
+
+To add a tool: write a Python function with typed parameters and a docstring, then add it to `TOOL_IMPLS`. The `function_tool()` helper auto-generates the strict JSON schema from the function's signature and docstring.
 
 ## Expected output
 
-```
+```text
 > Tell me about Microsoft — its industry, who runs it, and where it's
   based. Then suggest three peers in the same industry.
   → query_company(company_name='Microsoft')
   → companies_in_industry(industry='Software Companies')
 
-Microsoft operates in: Manufacturing, Enterprise Software, Business
-Software, Software Companies. CEO: Satya Nadella. Locations include
-Mississauga, Halifax, Calgary. Peers in Software Companies: Sutter Mills,
-Ivalua, Catchpoint Systems.
+### Microsoft Overview
+- **Industry**: Software Companies
+- **Leadership**: CEO is **Satya Nadella**
+- **Headquarters Locations**: Mississauga, Halifax, Calgary
+
+### Suggested Peers in the Software Industry:
+1. **Sutter Mills**
+2. **Ivalua**
+3. **Catchpoint Systems**
 ```
 
 ## How it authenticates
@@ -70,4 +99,7 @@ Set these in `microsoft-foundry/.env`:
 
 ## Coming later
 
-Additional tools to layer in: `search_companies` (full-text), `analyze_relationships` (multi-hop graph traversal), `find_influential_companies` (PageRank), `articles_in_month`, `get_article`, `people_at_company`. Plus a C# version, a streaming variant, and conversation persistence.
+The spec also defines a vector-search variant of `search_news` and `find_influential_companies` (PageRank). Both are intentionally out of scope here:
+
+- **Vector `search_news`** needs an embedding-model deployment in the Foundry account; the default `azd up` provisions only `gpt-4o-mini`. The MENTIONS-based version above already covers the news-discovery use case for the demo data.
+- **`find_influential_companies`** uses Neo4j Graph Data Science with write access to project an in-memory graph; the public demo database is read-only.
