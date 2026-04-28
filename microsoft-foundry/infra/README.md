@@ -29,7 +29,7 @@ If `azd` is configured in its standalone auth mode (no warning when you run `azd
 - `NEO4J_URI` / `NEO4J_DATABASE` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` — Neo4j connection (Basic auth header for the MCP server).
 - `FOUNDRY_RESOURCE_GROUP` / `FOUNDRY_ACCOUNT_NAME` / `FOUNDRY_PROJECT_NAME` / `FOUNDRY_PROJECT_ENDPOINT` / `FOUNDRY_MODEL_DEPLOYMENT_NAME` — auto-filled when you opt in to Foundry provisioning at the deploy.sh prompt. Empty if you opted out; edit `microsoft-foundry/.env` directly in that case to point at your existing Foundry project. Either way, re-running `./deploy.sh` preserves any non-empty values you've set.
 
-No Foundry auth secrets live in the `.env`. Examples authenticate to Foundry with `DefaultAzureCredential` (so `azd auth login` / `az login` is enough). See [`microsoft-foundry/.env.example`](../.env.example) for the full schema.
+No Foundry auth secrets live in the `.env`. The Python example authenticates via `az login` (`AzureCliCredential` pinned to the `AZURE_TENANT_ID` written above, so it works when your `az` is signed into multiple tenants). See [`microsoft-foundry/.env.example`](../.env.example) for the full schema.
 
 `azd up` prompts for three things on first run:
 
@@ -56,25 +56,27 @@ An azd `preprovision` hook ([`hooks/preprovision.sh`](./hooks/preprovision.sh)) 
 - Microsoft Foundry account: `aif-foundry-neo4j-dev-<4-char-hash>` (`Microsoft.CognitiveServices/accounts`, kind `AIServices`, with `allowProjectManagement: true`). The hash is derived from the resource group ID + workload, deterministic per deploy, and protects the globally-unique custom subdomain from collisions when multiple people run this template.
 - Foundry project: `proj-foundry-neo4j-dev`
 - Model deployment: `gpt-4o-mini` (version `2024-07-18`, `GlobalStandard`, capacity 30)
-- Azure AI Developer role assignment for the signed-in user on the Foundry account, so `DefaultAzureCredential` works in examples
+- Azure AI Developer role assignment for the signed-in user on the Foundry account, so `az login` is all the auth the examples need
 
-Foundry agent APIs are only available in a small set of regions (eastus, eastus2, swedencentral, westus, westus3). If `azd up` succeeds but agents fail, redeploy in one of those regions or set `MODEL_LOCATION` to override the model's region (coming soon — for now use a supported region for the whole deployment).
+Foundry agent APIs are only available in a small set of regions (`eastus`, `eastus2`, `swedencentral`, `westus`, `westus3`). Pick one of those at the location prompt — otherwise `azd up` may succeed but agent runs will fail.
 
 ## Configuration
 
-Defaults connect to the public Neo4j `companies` demo graph. To override knobs (different Neo4j database, private ingress, custom container image, etc.), copy `.env.sample` to `.env` *before* running `./deploy.sh`:
+Defaults connect to the public Neo4j `companies` demo graph. To override deployment knobs (different Neo4j database, private ingress, custom container image, etc.), copy this folder's `.env.sample` to a sibling `.env` *before* running `./deploy.sh`:
 
 ```bash
-cp .env.sample .env
+cp .env.sample .env            # both files live in microsoft-foundry/infra/
 # edit .env
 ./deploy.sh
 ```
 
-`deploy.sh` forwards every key in `.env` into the azd environment, then provisions. Re-running `./deploy.sh` after editing `.env` updates the deployment in place.
+> Note: this `infra/.env` is the **deployment-time override** for `azd up`. It's distinct from the `microsoft-foundry/.env` that `deploy.sh` writes for the examples after deployment.
+
+`deploy.sh` forwards every key in `infra/.env` into the azd environment, then provisions. Re-running `./deploy.sh` after editing it updates the deployment in place.
 
 If you'd rather skip the wrapper, run `azd up` directly and call `azd env set <KEY> <VALUE>` yourself for any overrides — but the shared `microsoft-foundry/.env` won't be written, so example scripts won't pick up the deployed endpoint automatically.
 
-Important knobs (full list in `.env.sample`):
+Important knobs (full list in `infra/.env.sample`):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

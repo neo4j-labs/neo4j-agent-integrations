@@ -34,16 +34,15 @@ Three narrow read-only functions over the public `companies` demo graph:
 | `companies_in_industry(industry)` | `[{name}]` | `(:IndustryCategory)<-[:HAS_CATEGORY]-(:Organization)` |
 | `search_news(company_name)` | `[{title, date, sentiment}]` | `(:Article)-[:MENTIONS]->(:Organization)` |
 
-To add a tool: write a Python function with one string parameter, add it to `TOOLS` and `PARAM_LABEL`. The `schema_for()` helper auto-generates the strict JSON schema.
+To add a tool: write a Python function with one string parameter and a docstring, then add it to `TOOL_IMPLS`. The `function_tool()` helper auto-generates the strict JSON schema from the function's signature and docstring.
 
 ## Expected output
 
 ```
-→ Creating agent…
-→ Tell me about Microsoft — its industry, who runs it, and where it's
+> Tell me about Microsoft — its industry, who runs it, and where it's
   based. Then suggest three peers in the same industry.
-  ↳ query_company({"company_name": "Microsoft"})
-  ↳ companies_in_industry({"industry": "Software Companies"})
+  → query_company(company_name='Microsoft')
+  → companies_in_industry(industry='Software Companies')
 
 Microsoft operates in: Manufacturing, Enterprise Software, Business
 Software, Software Companies. CEO: Satya Nadella. Locations include
@@ -71,4 +70,4 @@ Set these in `microsoft-foundry/.env`:
 
 ## Coming later
 
-Following the [`EXAMPLE_AGENT.md`](../../../EXAMPLE_AGENT.md) spec, additional tools to layer in: `search_companies` (full-text), `analyze_relationships` (multi-hop graph traversal), `find_influential_companies` (PageRank), `articles_in_month`, `get_article`, `people_at_company`. Plus a C# version, a streaming variant, and conversation persistence.
+Additional tools to layer in: `search_companies` (full-text), `analyze_relationships` (multi-hop graph traversal), `find_influential_companies` (PageRank), `articles_in_month`, `get_article`, `people_at_company`. Plus a C# version, a streaming variant, and conversation persistence.

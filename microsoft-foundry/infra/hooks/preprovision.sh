@@ -15,7 +15,7 @@ cat <<'INFO'
 Microsoft Foundry provisioning
   Provisions a Foundry account, project, and a gpt-4o-mini model
   deployment in the same resource group, plus an Azure AI Developer
-  role assignment for you so DefaultAzureCredential works in examples.
+  role assignment for you so `az login` is all the auth examples need.
   Skip this if you already have a Foundry project to use instead.
 
 INFO

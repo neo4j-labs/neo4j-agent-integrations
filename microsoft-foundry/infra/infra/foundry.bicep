@@ -21,7 +21,7 @@ param modelSkuName string
 @description('Foundry model deployment capacity, in thousands of tokens per minute.')
 param modelCapacity int
 
-@description('Principal ID (Entra object ID) granted Azure AI Developer on the Foundry account so DefaultAzureCredential works in examples. Empty disables the role assignment.')
+@description('Principal ID (Entra object ID) granted Azure AI Developer on the Foundry account so the signed-in user can call the Foundry data plane after az login. Empty disables the role assignment.')
 param principalId string
 
 @description('Type of the principal granted Azure AI Developer. Use "User" for an interactive azd auth login, "ServicePrincipal" in CI.')

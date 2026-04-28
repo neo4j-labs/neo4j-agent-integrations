@@ -91,9 +91,9 @@ who runs it, and where it's headquartered.
 
 You should see the agent:
 
-1. Call `get-schema` (once) so it knows the labels and relationships.
-2. Call `read-cypher` with a single traversal that joins `Organization → IN_INDUSTRY → Industry`, `Organization ← WORKS_FOR ← Person`, and `Organization → LOCATED_IN → Location`.
-3. Summarise the result: industry, a few key people with titles, location.
+1. Call `get-schema` (once) so it knows the labels and relationships in the `companies` graph.
+2. Call `read-cypher` with a single traversal that joins `(:Organization)-[:HAS_CATEGORY]->(:IndustryCategory)`, `(:Organization)-[:IN_CITY]->(:City)` / `[:IN_COUNTRY]->(:Country)`, and `(:Organization)-[:HAS_CEO]->(:Person)` / `[:HAS_BOARD_MEMBER]->(:Person)`.
+3. Summarise the result: industry categories, key people with titles, locations.
 
 Follow up with a peer-discovery question to show the graph paying off again:
 
@@ -101,7 +101,7 @@ Follow up with a peer-discovery question to show the graph paying off again:
 Find three companies that compete in the same industry as Microsoft.
 ```
 
-The agent should reuse the schema knowledge and call `read-cypher` with a `(:Organization)-[:IN_INDUSTRY]->()<-[:IN_INDUSTRY]-(:Organization)` traversal.
+The agent should reuse the schema knowledge and call `read-cypher` with a `(:Organization)-[:HAS_CATEGORY]->(:IndustryCategory)<-[:HAS_CATEGORY]-(:Organization)` traversal.
 
 Finally, a news angle:
 

@@ -104,8 +104,8 @@ cat > "$shared_env" <<EOF
 # Re-run deploy.sh to refresh the deployed values; non-empty values you set
 # here are preserved across runs.
 #
-# Examples authenticate to Foundry with DefaultAzureCredential, so
-# 'azd auth login' (or 'az login') is enough — no Foundry tokens here.
+# Examples authenticate to Foundry via 'az login' — AzureCliCredential
+# pinned to AZURE_TENANT_ID below. No Foundry tokens or keys live here.
 
 # Neo4j connection.
 NEO4J_URI=${neo4j_uri}
