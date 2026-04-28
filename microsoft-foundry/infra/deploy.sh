@@ -30,7 +30,9 @@ read_kv_file() {
   while IFS='=' read -r key value; do
     key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     value="$(echo "${value:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [ -z "$key" ] || [[ "$key" == \#* ]] && continue
+    if [ -z "$key" ] || [[ "$key" == \#* ]]; then
+      continue
+    fi
 
     case "$key" in
       NEO4J_URI)                     [ -n "$value" ] && neo4j_uri="$value" ;;
@@ -58,7 +60,9 @@ if [ -f ".env" ]; then
   while IFS='=' read -r key value; do
     key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     value="$(echo "${value:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [ -z "$key" ] || [[ "$key" == \#* ]] || [ -z "$value" ] && continue
+    if [ -z "$key" ] || [[ "$key" == \#* ]] || [ -z "$value" ]; then
+      continue
+    fi
     azd env set "$key" "$value" >/dev/null
   done < ".env"
 fi

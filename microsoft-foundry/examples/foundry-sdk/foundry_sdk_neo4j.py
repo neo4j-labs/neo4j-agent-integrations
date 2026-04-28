@@ -28,11 +28,7 @@ from openai.types.responses.response_input_param import FunctionCallOutput
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 DB = os.environ.get("NEO4J_DATABASE", "companies")
-driver = GraphDatabase.driver(
-    os.environ["NEO4J_URI"],
-    auth=(os.environ.get("NEO4J_USERNAME", "companies"),
-          os.environ.get("NEO4J_PASSWORD", "companies")),
-)
+driver = None  # initialised in main() after env validation; tools reference it via module lookup
 
 
 # Discovery ---------------------------------------------------------------
@@ -259,50 +255,62 @@ answer's evidence.
 def main() -> None:
     project_endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
     tenant_id = os.environ.get("AZURE_TENANT_ID")
-    if not (project_endpoint and tenant_id):
-        sys.exit("Missing FOUNDRY_PROJECT_ENDPOINT or AZURE_TENANT_ID. Run microsoft-foundry/infra/deploy.sh first.")
+    neo4j_uri = os.environ.get("NEO4J_URI")
+    if not (project_endpoint and tenant_id and neo4j_uri):
+        sys.exit(
+            "Missing FOUNDRY_PROJECT_ENDPOINT, AZURE_TENANT_ID, or NEO4J_URI. "
+            "Run microsoft-foundry/infra/deploy.sh first."
+        )
 
-    project = AIProjectClient(endpoint=project_endpoint, credential=AzureCliCredential(tenant_id=tenant_id))
-    openai = project.get_openai_client()
-
-    agent = project.agents.create_version(
-        agent_name=os.environ.get("FOUNDRY_TEST_AGENT_NAME", "neo4j-research-agent-sdk"),
-        definition=PromptAgentDefinition(
-            model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"),
-            instructions=INSTRUCTIONS,
-            tools=[function_tool(fn) for fn in TOOL_IMPLS.values()],
-        ),
+    global driver
+    driver = GraphDatabase.driver(
+        neo4j_uri,
+        auth=(os.environ.get("NEO4J_USERNAME", "companies"),
+              os.environ.get("NEO4J_PASSWORD", "companies")),
     )
-    agent_ref = {"agent_reference": {"name": agent.name, "type": "agent_reference"}}
-
-    question = os.environ.get(
-        "FOUNDRY_QUESTION",
-        "Tell me about Microsoft — its industry, who runs it, and where it's "
-        "based. Then suggest three peers in the same industry.",
-    )
-    print(f"> {question}")
-
     try:
-        response = openai.responses.create(input=question, extra_body=agent_ref)
-        while True:
-            outputs = []
-            for item in response.output:
-                if item.type == "function_call":
-                    args = json.loads(item.arguments) if item.arguments else {}
-                    print(f"  → {item.name}({', '.join(f'{k}={v!r}' for k, v in args.items())})")
-                    outputs.append(FunctionCallOutput(
-                        type="function_call_output",
-                        call_id=item.call_id,
-                        output=json.dumps(TOOL_IMPLS[item.name](**args), default=str),
-                    ))
-            if not outputs:
-                break
-            response = openai.responses.create(
-                input=outputs, previous_response_id=response.id, extra_body=agent_ref,
+        project = AIProjectClient(endpoint=project_endpoint, credential=AzureCliCredential(tenant_id=tenant_id))
+        openai = project.get_openai_client()
+
+        agent = project.agents.create_version(
+            agent_name=os.environ.get("FOUNDRY_TEST_AGENT_NAME", "neo4j-research-agent-sdk"),
+            definition=PromptAgentDefinition(
+                model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"),
+                instructions=INSTRUCTIONS,
+                tools=[function_tool(fn) for fn in TOOL_IMPLS.values()],
+            ),
+        )
+        try:
+            agent_ref = {"agent_reference": {"name": agent.name, "type": "agent_reference"}}
+
+            question = os.environ.get(
+                "FOUNDRY_QUESTION",
+                "Tell me about Microsoft — its industry, who runs it, and where it's "
+                "based. Then suggest three peers in the same industry.",
             )
-        print(f"\n{response.output_text}")
+            print(f"> {question}")
+
+            response = openai.responses.create(input=question, extra_body=agent_ref)
+            while True:
+                outputs = []
+                for item in response.output:
+                    if item.type == "function_call":
+                        args = json.loads(item.arguments) if item.arguments else {}
+                        print(f"  → {item.name}({', '.join(f'{k}={v!r}' for k, v in args.items())})")
+                        outputs.append(FunctionCallOutput(
+                            type="function_call_output",
+                            call_id=item.call_id,
+                            output=json.dumps(TOOL_IMPLS[item.name](**args), default=str),
+                        ))
+                if not outputs:
+                    break
+                response = openai.responses.create(
+                    input=outputs, previous_response_id=response.id, extra_body=agent_ref,
+                )
+            print(f"\n{response.output_text}")
+        finally:
+            project.agents.delete_version(agent_name=agent.name, agent_version=agent.version)
     finally:
-        project.agents.delete_version(agent_name=agent.name, agent_version=agent.version)
         driver.close()
 
 

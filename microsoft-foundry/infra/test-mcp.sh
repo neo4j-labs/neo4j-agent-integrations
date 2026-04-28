@@ -22,7 +22,7 @@ fi
 
 auth_header="Authorization: Basic $(printf '%s:%s' "$NEO4J_USERNAME" "$NEO4J_PASSWORD" | base64 | tr -d '\n')"
 
-curl -sS "$endpoint" \
+curl --fail-with-body -sS "$endpoint" \
   -H "$auth_header" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
