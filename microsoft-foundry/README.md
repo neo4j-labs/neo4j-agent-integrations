@@ -82,21 +82,12 @@ Use this when your application drives the loop and should keep tight control ove
 
 Read the full guide in [examples/foundry-sdk](./examples/foundry-sdk/README.md).
 
-### Foundry IQ + Aura Agent
-
-Use this when one agent needs a reusable Foundry IQ multi-source knowledge base for permission-aware, citation-backed answers plus graph reasoning through a Neo4j Aura Agent published as MCP.
-
-Read the full guide in [examples/foundry-iq](./examples/foundry-iq/README.md).
-
 ## References
 
 **Microsoft Foundry**
 - [What is Microsoft Foundry?](https://learn.microsoft.com/azure/foundry/what-is-foundry)
 - [Model Context Protocol tools](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol)
 - [Function calling](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/function-calling)
-- [Foundry IQ overview](https://learn.microsoft.com/azure/foundry/agents/concepts/what-is-foundry-iq)
-- [Connect a Foundry IQ knowledge base to an agent](https://learn.microsoft.com/azure/foundry/agents/how-to/foundry-iq-connect)
-- [Create a knowledge base in Azure AI Search](https://learn.microsoft.com/azure/search/agentic-retrieval-how-to-create-knowledge-base)
 
 **Neo4j**
 - [Neo4j MCP server](https://github.com/neo4j/mcp)
