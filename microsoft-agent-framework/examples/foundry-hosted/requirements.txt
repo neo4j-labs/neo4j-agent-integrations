@@ -1,0 +1,12 @@
+# The PyPI meta-package "agent-framework" ships an empty __init__.py that
+# shadows the real exports from "agent-framework-core" — pin the split
+# packages directly.
+agent-framework-core>=1.2.1
+agent-framework-foundry>=1.2.1
+agent-framework-foundry-hosting
+agent-framework-openai>=1.2.1
+aiohttp
+azure-identity
+neo4j>=5
+pydantic
+python-dotenv

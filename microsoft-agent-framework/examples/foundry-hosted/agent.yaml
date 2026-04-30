@@ -1,0 +1,19 @@
+kind: hosted
+name: neo4j-research-agent-framework
+protocols:
+  - protocol: responses
+    version: 1.0.0
+resources:
+  cpu: "0.5"
+  memory: 1Gi
+environment_variables:
+  - name: NEO4J_URI
+    value: ${NEO4J_URI}
+  - name: NEO4J_DATABASE
+    value: ${NEO4J_DATABASE}
+  - name: NEO4J_USERNAME
+    value: ${NEO4J_USERNAME}
+  - name: NEO4J_PASSWORD
+    value: ${NEO4J_PASSWORD}
+  - name: FOUNDRY_EMBEDDING_DEPLOYMENT_NAME
+    value: ${FOUNDRY_EMBEDDING_DEPLOYMENT_NAME}
