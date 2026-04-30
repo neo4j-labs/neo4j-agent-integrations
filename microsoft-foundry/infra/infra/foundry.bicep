@@ -21,6 +21,18 @@ param modelSkuName string
 @description('Foundry model deployment capacity, in thousands of tokens per minute.')
 param modelCapacity int
 
+@description('Foundry embedding model name (e.g. text-embedding-3-small).')
+param embeddingModelName string
+
+@description('Foundry embedding model version.')
+param embeddingModelVersion string
+
+@description('Foundry embedding model deployment SKU.')
+param embeddingModelSkuName string
+
+@description('Foundry embedding model deployment capacity, in thousands of tokens per minute.')
+param embeddingModelCapacity int
+
 @description('Principal ID (Entra object ID) granted Azure AI Developer on the Foundry account so the signed-in user can call the Foundry data plane after az login. Empty disables the role assignment.')
 param principalId string
 
@@ -44,7 +56,7 @@ var projectName = 'proj-${baseName}'
 // https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning
 var azureAiDeveloperRoleId = '64702f94-c441-49e6-a78b-ef80e0188fee'
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
   location: location
   tags: commonTags
@@ -58,8 +70,18 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   properties: {
     allowProjectManagement: true
     customSubDomainName: accountName
+    networkAcls: {
+      defaultAction: 'Allow'
+      virtualNetworkRules: []
+      ipRules: []
+    }
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    // disableLocalAuth: true matches the Azure-Samples/azd-ai-starter-basic
+    // template; the agent identity that hosted agents use is Entra-ID-based
+    // anyway and our examples authenticate via `az login` /
+    // DefaultAzureCredential, so disabling key auth is safe and avoids a
+    // class of accidental key leakage.
+    disableLocalAuth: true
   }
 }
 
@@ -79,6 +101,30 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
   }
 }
 
+// Embedding-model deployment — used by the agent-framework multi-agent example
+// to vector-search news. The default text-embedding-3-small produces 1536-dim
+// embeddings, matching the public `companies` demo graph's `news` vector index.
+// Serial dependency on modelDeployment because ARM doesn't allow two
+// deployments under the same account to provision in parallel.
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: foundryAccount
+  name: embeddingModelName
+  sku: {
+    name: embeddingModelSkuName
+    capacity: embeddingModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+      version: embeddingModelVersion
+    }
+  }
+  dependsOn: [
+    modelDeployment
+  ]
+}
+
 resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview' = {
   parent: foundryAccount
   name: projectName
@@ -93,8 +139,17 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-0
   }
   dependsOn: [
     modelDeployment
+    embeddingDeployment
   ]
 }
+
+// No `capabilityHosts` resource is needed for the hosted-agents flow this
+// project participates in. The starter template
+// (Azure-Samples/azd-ai-starter-basic) defaults ENABLE_HOSTED_AGENTS=false
+// and still deploys agents successfully via `azd ai agent init` — public-
+// endpoint hosted agents work against any project that has
+// `allowProjectManagement: true` (set above on the account). The
+// capabilityHost is only needed for BYO-VNet / custom-subnet scenarios.
 
 resource deployerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
   scope: foundryAccount
@@ -110,3 +165,4 @@ output accountName string = foundryAccount.name
 output projectName string = foundryProject.name
 output projectEndpoint string = foundryProject.properties.endpoints['AI Foundry API']
 output modelDeploymentName string = modelDeployment.name
+output embeddingDeploymentName string = embeddingDeployment.name

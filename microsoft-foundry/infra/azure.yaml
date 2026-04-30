@@ -7,7 +7,7 @@ infra:
 hooks:
   preprovision:
     posix:
-      shell: bash
-      run: hooks/preprovision.sh
+      shell: sh
+      run: bash hooks/preprovision.sh
       interactive: true
       continueOnError: false

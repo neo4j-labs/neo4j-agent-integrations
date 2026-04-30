@@ -47,13 +47,22 @@ The Python example uses `AzureCliCredential` from your `az login`
 session. See [`microsoft-foundry/.env.example`](../.env.example)
 for the full schema.
 
-`azd up` prompts for three things on first run:
+`azd up` prompts on first run unless these are already set in the
+azd env. `deploy.sh` defaults `AZURE_LOCATION` to `swedencentral` so
+the same Foundry project can later host the agent-framework
+[`foundry-hosted`](../../microsoft-agent-framework/examples/foundry-hosted/)
+example without having to redeploy in a different region.
 
-| Prompt | Meaning | Examples |
-| --- | --- | --- |
-| **Environment name** | Resource suffix. | `dev`, `prod` |
-| **Subscription** | Azure subscription to deploy into. | — |
-| **Location** | Azure region. | `eastus2`, `westeurope` |
+| Prompt | Meaning | Default | Examples |
+| --- | --- | --- | --- |
+| **Environment name** | Resource suffix. | — | `dev`, `prod` |
+| **Subscription** | Azure subscription to deploy into. | — | — |
+| **Location** | Azure region. | `swedencentral` | `northcentralus`, `eastus2` |
+
+If you don't need hosted agents and want a different region, override
+with `azd env set AZURE_LOCATION <region>` before `./deploy.sh`. For
+hosted-agent compatibility, stick to Sweden Central, North Central US,
+Canada Central, or Australia East ([current list](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents)).
 
 The Bicep is subscription-scoped, so `azd` creates
 `rg-foundry-neo4j-<env>` for you.
@@ -186,10 +195,11 @@ role assignment.
 
 **`azd up` fails with `DeploymentModelNotSupported` or a quota error.**
 The default model `gpt-4o-mini` (version `2024-07-18`) is broadly
-available, but not in every region. Foundry agent APIs are
-supported in `eastus`, `eastus2`, `swedencentral`, `westus`,
-and `westus3`. To switch models, set overrides before running
-`./deploy.sh`:
+available, but not in every region. Foundry agent APIs are supported
+in `eastus`, `eastus2`, `swedencentral`, `westus`, `westus3`, and
+others; Foundry hosted agents narrow that to Sweden Central, North
+Central US, Canada Central, and Australia East. To switch models,
+set overrides before running `./deploy.sh`:
 
 ```bash
 azd env set FOUNDRY_MODEL_NAME gpt-5-mini

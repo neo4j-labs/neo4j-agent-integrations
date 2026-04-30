@@ -87,6 +87,18 @@ param foundryModelSkuName string = 'GlobalStandard'
 @description('Foundry model deployment capacity (thousands of tokens per minute).')
 param foundryModelCapacity string = '30'
 
+@description('Foundry embedding model deployment name. Must match a model available in the chosen region. Used by the agent-framework multi-agent example to do vector search over the public companies demo graph (which uses 1536-dim cosine embeddings).')
+param foundryEmbeddingModelName string = 'text-embedding-3-small'
+
+@description('Foundry embedding model version.')
+param foundryEmbeddingModelVersion string = '1'
+
+@description('Foundry embedding model SKU.')
+param foundryEmbeddingModelSkuName string = 'GlobalStandard'
+
+@description('Foundry embedding model capacity (thousands of tokens per minute).')
+param foundryEmbeddingModelCapacity string = '30'
+
 @description('Entra object ID granted Azure AI Developer on the Foundry account so the signed-in user can call the Foundry data plane after az login. azd auto-populates this from the signed-in user. Empty disables the role assignment.')
 param principalId string = ''
 
@@ -151,6 +163,10 @@ module foundry './foundry.bicep' = if (foundryEnabled) {
     modelVersion: foundryModelVersion
     modelSkuName: foundryModelSkuName
     modelCapacity: int(foundryModelCapacity)
+    embeddingModelName: foundryEmbeddingModelName
+    embeddingModelVersion: foundryEmbeddingModelVersion
+    embeddingModelSkuName: foundryEmbeddingModelSkuName
+    embeddingModelCapacity: int(foundryEmbeddingModelCapacity)
     principalId: principalId
     principalType: principalType
   }
@@ -168,3 +184,12 @@ output foundryAccountName string = foundryEnabled ? foundry.outputs.accountName 
 output foundryProjectName string = foundryEnabled ? foundry.outputs.projectName : ''
 output foundryProjectEndpoint string = foundryEnabled ? foundry.outputs.projectEndpoint : ''
 output foundryModelDeploymentName string = foundryEnabled ? foundry.outputs.modelDeploymentName : ''
+output foundryEmbeddingDeploymentName string = foundryEnabled ? foundry.outputs.embeddingDeploymentName : ''
+
+// Names the `azure.ai.agents` azd extension expects in its postdeploy hook.
+// Without these, `azd up` fails with "AZURE_AI_PROJECT_ENDPOINT is not set"
+// once the extension is installed locally. `AZURE_TENANT_ID` is the third
+// var the hook requires; it isn't a deployment artifact, so deploy.sh
+// seeds it into the azd env from `az account show` before `azd up`.
+output AZURE_AI_PROJECT_ENDPOINT string = foundryEnabled ? foundry.outputs.projectEndpoint : ''
+output AZURE_AI_MODEL_DEPLOYMENT_NAME string = foundryEnabled ? foundry.outputs.modelDeploymentName : ''

@@ -20,3 +20,6 @@ __pycache__
 .bedrock_agentcore
 _antora-staging/
 _generated/
+
+# Bicep build artifact (az bicep build output)
+microsoft-foundry/infra/infra/main.json
