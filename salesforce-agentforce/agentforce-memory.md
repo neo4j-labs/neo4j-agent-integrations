@@ -184,6 +184,9 @@ start_agent agent_router:
                     with conversationId = @variables.conversationId
                     with message = @system_variables.user_input
                     with role = @variables.userRole
+                run @actions.NAMS_recall_context
+                    with conversationId = @variables.conversationId
+                    with query = @system_variables.user_input
         actions:
             go_to_off_topic: @utils.transition to @subagent.off_topic
             go_to_ambiguous_question: @utils.transition to @subagent.ambiguous_question
@@ -216,6 +219,10 @@ subagent Get_Neo4j_Organization_Insights:
                     description: "transition_and_store_NAMS_message"
 
 ```
+
+Storing the agent's message can be more problematic, but this is where Prompt Builder and its templates come into play. Salesforce Prompt Builder is a way to communicate with a large language model (LLM) and use generative AI, such as ChatGPT, in the backend. The main tool in the box is a prompt template, a structured framework or guideline for creating prompts that generate specific responses or outputs, particularly in contexts like artificial intelligence or writing.
+
+When the agent's action is a Prompt Template -> Flow (and not just calling Flow directly), the output of the action is an already formulated, natural language response, based on the grounded data from the integration (like the Neo4j "Get company insights" use case). Therefore, the assistant's message can be directly persisted in memory - which is exactly what we need. 
 
 ## Validation
 
