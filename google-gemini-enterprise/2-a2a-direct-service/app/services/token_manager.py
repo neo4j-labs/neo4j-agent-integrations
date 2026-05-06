@@ -31,7 +31,8 @@ class TokenManager:
         memory_uri: str = None,
         memory_user: str = None,
         memory_pass: str = None,
-        memory_db: str = None
+        memory_db: str = None,
+        nams_api_key: str = None
     ) -> None:
         """Saves the user's specific Neo4j DB credentials and optional memory DB credentials."""
         query = """
@@ -44,6 +45,7 @@ class TokenManager:
             u.memory_user = $memory_user,
             u.memory_password = $memory_pass,
             u.memory_database = $memory_db,
+            u.nams_api_key = $nams_api_key,
             u.is_active = true,
             u.created_at = coalesce(u.created_at, datetime()),
             u.updated_at = datetime(),
@@ -62,6 +64,7 @@ class TokenManager:
                 memory_user=memory_user,
                 memory_pass=memory_pass,
                 memory_db=memory_db,
+                nams_api_key=nams_api_key,
                 default_limit=self.default_daily_limit
             )
             logging.info(f"[token_manager] Successfully registered tenant config for: {email} (Memory configured: {bool(memory_uri)})")
@@ -72,15 +75,16 @@ class TokenManager:
     def get_user_credentials(self, email: str) -> dict:
         """Retrieves the target Neo4j credentials and optional memory credentials for a specific active user."""
         query = """
-        MATCH (u:User {email: $email, is_active: true})
-        RETURN u.target_uri AS uri, 
-               u.target_user AS user, 
-               u.target_password AS password, 
-               u.target_database AS database,
-               u.memory_uri AS memory_uri,
-               u.memory_user AS memory_user,
-               u.memory_password AS memory_password,
-               u.memory_database AS memory_database
+         MATCH (u:User {email: $email, is_active: true})
+         RETURN u.target_uri AS uri, 
+             u.target_user AS user, 
+             u.target_password AS password, 
+             u.target_database AS database,
+             coalesce(u.memory_uri, null) AS memory_uri,
+             coalesce(u.memory_user, null) AS memory_user,
+             coalesce(u.memory_password, null) AS memory_password,
+             coalesce(u.memory_database, null) AS memory_database,
+             coalesce(u.nams_api_key, null) AS nams_api_key
         """
         try:
             records, _, _ = self.driver.execute_query(query, email=email)
@@ -88,6 +92,11 @@ class TokenManager:
                 return None
 
             record = records[0]
+            try:
+                nams_key = record.get("nams_api_key", None)
+            except Exception:
+                nams_key = record["nams_api_key"] if "nams_api_key" in record else None
+
             return {
                 "uri": record["uri"],
                 "user": record["user"],
@@ -96,7 +105,8 @@ class TokenManager:
                 "memory_uri": record["memory_uri"],
                 "memory_user": record["memory_user"],
                 "memory_password": record["memory_password"],
-                "memory_database": record["memory_database"]
+                "memory_database": record["memory_database"],
+                "nams_api_key": nams_key
             }
         except Exception as e:
             logging.error(f"Failed to retrieve DB credentials for {email}: {e}")

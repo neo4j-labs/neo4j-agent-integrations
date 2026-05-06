@@ -28,6 +28,8 @@ from neo4j_agent_memory.config.settings import (
 from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
 from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from google.adk.tools.load_memory_tool import LoadMemoryTool
+from app.services.nams_memory_service import NAMSMemoryService
+from neo4j_agent_memory.embeddings.vertex_ai import VertexAIEmbedder
 
 from ..core.config import (
     GEMINI_MODEL,
@@ -41,6 +43,7 @@ from ..core.config import (
 )
 from .token_manager import TokenManager
 from .custom_tools import get_tenant_tools
+from neo4j import GraphDatabase
 
 MAX_QUERY_LENGTH = 2000
 
@@ -187,45 +190,79 @@ class Neo4jADKExecutor(AgentExecutor):
             memory_user = creds.get("memory_user")
             memory_password = creds.get("memory_password")
             memory_db = creds.get("memory_database", "neo4j")
+            nams_api_key = creds.get("nams_api_key")
 
-            memory_enabled = all([memory_uri, memory_user, memory_password])
+            # Prefer managed NAMS if API key is present; otherwise fall back to self-hosted memory creds
+            using_nams = bool(nams_api_key)
+            memory_enabled = using_nams or all([memory_uri, memory_user, memory_password])
 
             if memory_enabled:
-                logging.info(f"[agent_executor] Memory feature opted-in for {user_email}. Initializing Neo4jMemoryService.")
-                memory_settings = MemorySettings(
-                    neo4j=Neo4jConfig(
-                        uri=memory_uri,
-                        username=memory_user,
-                        password=memory_password,
-                        database=memory_db
-                    ),
-                    embedding=EmbeddingConfig(
-                        provider=EmbeddingProvider.VERTEX_AI,
-                        model="text-embedding-004",
-                        project_id=GCP_PROJECT_ID,
-                        location=GCP_LOCATION,
-                    ),
-                    extraction=ExtractionConfig(
-                        extractor_type=ExtractorType.SPACY
-                    ),
-                )
-                
-                memory_client = MemoryClient(memory_settings)
-                await memory_client.connect()
+                if using_nams:
+                    logging.info(f"[agent_executor] NAMS API key present for {user_email}. Initializing NAMS memory service.")
+                    neo4j_memory_service = NAMSMemoryService(api_key=nams_api_key)
+                    tenant_tools.append(PreloadMemoryTool())
+                    tenant_tools.append(LoadMemoryTool())
+                    active_instruction = (
+                        AGENT_PROMPT + 
+                        "\n\n[SYSTEM NOTE]: You are connected to a managed memory service (NAMS). "
+                        "When asked to recall past facts or preferences, use the provided memory tools to query the managed memory."
+                    )
+                else:
+                    logging.info(f"[agent_executor] Memory feature opted-in for {user_email}. Initializing Neo4jMemoryService.")
+                    memory_settings = MemorySettings(
+                        neo4j=Neo4jConfig(
+                            uri=memory_uri,
+                            username=memory_user,
+                            password=memory_password,
+                            database=memory_db
+                        ),
+                        embedding=EmbeddingConfig(
+                            provider=EmbeddingProvider.VERTEX_AI,
+                            model="text-embedding-004",
+                            dimensions=768,
+                            project_id=GCP_PROJECT_ID,
+                            location=GCP_LOCATION,
+                        ),
+                        extraction=ExtractionConfig(
+                            extractor_type=ExtractorType.SPACY
+                        ),
+                    )
+                    
+                    memory_client = MemoryClient(memory_settings)
+                    await memory_client.connect()
 
-                neo4j_memory_service = Neo4jMemoryService(
-                    memory_client=memory_client,
-                    user_id=user_email,
-                )
-                
-                tenant_tools.append(PreloadMemoryTool())
-                tenant_tools.append(LoadMemoryTool())
-                active_instruction = (
-                    AGENT_PROMPT + 
-                    "\n\n[SYSTEM NOTE]: You have access to a persistent, long-term memory database containing the user's facts and preferences. "
-                    "If the user asks about past conversations, their preferences, or facts they previously told you, "
-                    "you MUST actively use the LoadMemoryTool to search the database for the answer before responding."
-                )
+                    try:
+                        working_embedder = VertexAIEmbedder(
+                            model="text-embedding-004",
+                            project_id=GCP_PROJECT_ID,
+                            location=GCP_LOCATION,
+                        )
+                        memory_client.embedder = working_embedder
+                        try:
+                            memory_client.short_term._embedder = working_embedder
+                        except Exception:
+                            pass
+                        try:
+                            memory_client.long_term._embedder = working_embedder
+                        except Exception:
+                            pass
+                        logging.info("[agent_executor] Injected VertexAIEmbedder into MemoryClient")
+                    except Exception as e:
+                        logging.warning(f"[agent_executor] Failed to inject embedder: {e}")
+
+                    neo4j_memory_service = Neo4jMemoryService(
+                        memory_client=memory_client,
+                        user_id=user_email,
+                    )
+                    
+                    tenant_tools.append(PreloadMemoryTool())
+                    tenant_tools.append(LoadMemoryTool())
+                    active_instruction = (
+                        AGENT_PROMPT + 
+                        "\n\n[SYSTEM NOTE]: You have access to a persistent, long-term memory database containing the user's facts and preferences. "
+                        "If the user asks about past conversations, their preferences, or facts they previously told you, "
+                        "you MUST actively use the LoadMemoryTool to search the database for the answer before responding."
+                    )
             else:
                 logging.info(f"[agent_executor] Memory feature not configured for {user_email}. Proceeding stateless.")
                 active_instruction = AGENT_PROMPT
@@ -347,6 +384,11 @@ class Neo4jADKExecutor(AgentExecutor):
                     await memory_client.close()
                 except Exception as e:
                     logging.warning(f"[agent_executor] Error closing memory client: {e}")
+            try:
+                if neo4j_memory_service and hasattr(neo4j_memory_service, 'close'):
+                    await neo4j_memory_service.close()
+            except Exception as e:
+                logging.warning(f"[agent_executor] Error closing memory service client: {e}")
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancels the agent task."""

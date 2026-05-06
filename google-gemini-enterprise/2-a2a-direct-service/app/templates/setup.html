@@ -56,7 +56,15 @@
 
                 <label>Memory Password</label>
                 <input type="password" id="memory_password" name="memory_password">
+                
+                <hr style="border:none;border-top:1px solid #e8eaed;margin:12px 0;">
+
+                <label>Or use Managed Memory (NAMS)</label>
+                <input type="text" id="nams_api_key" name="nams_api_key" placeholder="Enter NAMS API Key (optional)">
+
+                <p style="color: #5f6368; font-size: 13px; margin-top: 6px;">Tip: If you provide a NAMS API Key it will be used instead of a Memory DB.</p>
             </div>
+            
 
             <button type="submit" class="btn">Save & Activate</button>
         </form>
@@ -69,22 +77,47 @@
             const memoryInputs = memorySection.querySelectorAll("input");
 
             if (checkBox.checked) {
-                // Show section and mandate the fields
+                // Show section and enable inputs
                 memorySection.style.display = "block";
-                memoryInputs.forEach(input => input.setAttribute("required", "true"));
+                memoryInputs.forEach(input => { input.removeAttribute("disabled"); });
             } else {
-                // Hide section, remove mandate, and wipe the data so it doesn't submit accidentally
+                // Hide section, disable fields, and wipe the data so it doesn't submit accidentally
                 memorySection.style.display = "none";
                 memoryInputs.forEach(input => {
-                    input.removeAttribute("required");
+                    input.setAttribute("disabled", "true");
                     if (input.name !== "memory_database") {
-                        input.value = ""; 
+                        input.value = "";
                     } else {
                         input.value = "neo4j"; // reset default db name
                     }
                 });
             }
         }
+
+        // Validate on form submit: when memory is enabled, require either memory DB creds or a NAMS key
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            form.addEventListener('submit', function(e) {
+                const checkBox = document.getElementById("enable_memory");
+                if (!checkBox.checked) return; // nothing to validate
+
+                const memoryUri = document.getElementById('memory_uri').value.trim();
+                const memoryUser = document.getElementById('memory_user').value.trim();
+                const memoryPwd = document.getElementById('memory_password').value.trim();
+                const namsKey = document.getElementById('nams_api_key').value.trim();
+
+                const hasMemoryCreds = memoryUri !== '' && memoryUser !== '' && memoryPwd !== '';
+                const hasNams = namsKey !== '';
+
+                if (!hasMemoryCreds && !hasNams) {
+                    alert('When enabling persistent memory you must provide either Memory DB credentials or a NAMS API key.');
+                    e.preventDefault();
+                    return false;
+                }
+            });
+
+            toggleMemoryFields();
+        });
     </script>
 </body>
 </html>
