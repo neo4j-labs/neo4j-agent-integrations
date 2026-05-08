@@ -18,23 +18,7 @@
 
 ## Architecture
 
-```mermaid
-graph TD
-    User(["Notebook / App"]) --> gen
-
-    subgraph sdk["Vercel AI SDK"]
-        gen["generateText()"]
-    end
-
-    gen --> p1["1. MCP Agent\n@ai-sdk/mcp"]
-    gen --> p2["2. Custom Tools\ntool() + neo4j-driver"]
-    gen --> p3["3. Memory Agent\nneo4j-driver"]
-
-    p1 -->|HTTP Basic Auth| mcp["neo4j-mcp-server"]
-    p2 --> db[("Neo4j\nGraph DB")]
-    p3 --> memdb[("Neo4j\nMemory DB")]
-    mcp --> db
-```
+![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApuZW80ai1kcml2ZXIiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG1lbWRiWygiTmVvNGoKTWVtb3J5IERCIildCiAgICBtY3AgLS0-IGRi)
 
 ## Examples
 
