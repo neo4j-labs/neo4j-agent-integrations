@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vercel AI SDK + Neo4j — Interactive Demo</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@observablehq/inspector@5/dist/inspector.css">
+  <!-- neo4j-driver browser bundle (UMD) — sets window.neo4j -->
+  <script src="https://unpkg.com/neo4j-driver@5/lib/browser/neo4j-web.js"></script>
   <style>
     body { max-width: 860px; margin: 0 auto; padding: 1.5rem 2rem; font-family: sans-serif; }
     .observablehq { padding: 0.25rem 0; }
@@ -84,9 +86,9 @@ Three patterns for building AI agents over a Neo4j graph database, running live 
   );
 
   // ── Package imports ───────────────────────────────────────────────────────
-  main.variable(observer("neo4j")).define("neo4j", async function () {
-    const m = await import("https://esm.sh/neo4j-driver@5");
-    return m.default ?? m;
+  // neo4j-driver loaded via browser UMD bundle in <head> → window.neo4j
+  main.variable(observer("neo4j")).define("neo4j", function () {
+    return window.neo4j;
   });
 
   main.variable(observer("aiPkg")).define("aiPkg", async function () {

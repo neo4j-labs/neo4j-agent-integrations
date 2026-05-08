@@ -80,9 +80,20 @@ Three patterns for building AI agents over a Neo4j graph database, running live 
   );
 
   // ── Package imports ────────────────────────────────────────────────────────
+  // Note: when running in a plain HTML page, load neo4j-driver via the browser
+  // UMD bundle in <head> and read window.neo4j here. esm.sh serves the Node.js
+  // build which fails in browsers (string_decoder not available).
   main.variable(observer("neo4j")).define("neo4j", async function () {
-    const m = await import("https://esm.sh/neo4j-driver@5");
-    return m.default ?? m;
+    if (typeof window !== "undefined" && window.neo4j) return window.neo4j;
+    // Fallback: dynamically inject the browser UMD bundle
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/neo4j-driver@5/lib/browser/neo4j-web.js";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return window.neo4j;
   });
 
   main.variable(observer("aiPkg")).define("aiPkg", async function () {
