@@ -18,9 +18,23 @@
 
 ## Architecture
 
-![Vercel AI SDK + Neo4j Solution Architecture](images/architecture.jpeg)
+```mermaid
+graph TD
+    User(["Notebook / App"]) --> gen
 
-The diagram shows three progressive integration patterns: MCP Agent → Custom Tools Agent → Memory Agent. Each builds on the previous, adding capability while sharing the same Neo4j knowledge graph backend.
+    subgraph sdk["Vercel AI SDK"]
+        gen["generateText()"]
+    end
+
+    gen --> p1["1. MCP Agent\n@ai-sdk/mcp"]
+    gen --> p2["2. Custom Tools\ntool() + neo4j-driver"]
+    gen --> p3["3. Memory Agent\nneo4j-driver"]
+
+    p1 -->|HTTP Basic Auth| mcp["neo4j-mcp-server"]
+    p2 --> db[("Neo4j\nGraph DB")]
+    p3 --> memdb[("Neo4j\nMemory DB")]
+    mcp --> db
+```
 
 ## Examples
 
@@ -149,43 +163,55 @@ Result: Google has made investments in several notable companies:
 
 ### 3. Custom Tools / Persistent Memory
 
-The `neo4j-agent-memory` package stores agent knowledge as a graph in Neo4j, enabling cross-session persistence. The pattern wraps `generateText` with two hooks:
+Memory is stored directly in Neo4j using `neo4j-driver` — no additional packages needed. The pattern wraps `generateText` with two hooks:
 
-- **Before hook** (`injectMemoryContext`) — retrieves relevant memories and injects them into the system prompt
-- **After hook** (`saveInteraction`) — saves the interaction to the memory graph for future sessions
+- **Before hook** (`injectMemoryContext`) — queries recent messages from Neo4j and injects them into the system prompt
+- **After hook** (`saveInteraction`) — saves the interaction as `(:MemoryMessage)` nodes for future recall
 
-```bash
-npm install neo4j-agent-memory
+Memory schema:
+```
+(:MemorySession {id})-[:HAS_MESSAGE]->(:MemoryMessage {role, content, timestamp})
 ```
 
 ```js
-import { createMemoryService, createMemoryTools } from 'neo4j-agent-memory';
+import neo4j from 'neo4j-driver';
 
-// neo4j-agent-memory bundles driver v5 — use bolt+ssc:// (trust all certs) for AuraDB
-const memUri = process.env.MEMORY_NEO4J_URI.replace(/^neo4j(\+s)?:\/\//, 'bolt+ssc://');
+const memDriver = neo4j.driver(MEMORY_URI, neo4j.auth.basic(MEMORY_USER, MEMORY_PASS));
 
-const memory = await createMemoryService({
-  neo4j: { uri: memUri, username, password, database },
-  autoRelate: { enabled: true, minSharedTags: 2 },
-});
-const memoryTools = createMemoryTools(memory);
-// Available: store_skill, store_pattern, store_concept, recall_skills, recall_concepts, recall_patterns
+async function getRecentMessages(limit = 10) {
+  const { records } = await memDriver.executeQuery(
+    `MATCH (s:MemorySession {id: $sessionId})-[:HAS_MESSAGE]->(m:MemoryMessage)
+     RETURN m.role AS role, m.content AS content
+     ORDER BY m.timestamp ASC LIMIT $limit`,
+    { sessionId: SESSION_ID, limit },
+    { database: MEMORY_DB }
+  );
+  return records.map(r => `${r.get('role').toUpperCase()}: ${r.get('content')}`);
+}
 
 async function runWithMemory(query) {
-  // BEFORE: inject relevant memories into system prompt
-  const bundle = await memory.retrieveContextBundle({ agentId, prompt: query });
-  const ctx = bundle.memories.map(m => `- ${m.content}`).join('\n') || 'None yet.';
+  // BEFORE: inject conversation history into system prompt
+  const history = await getRecentMessages();
+  const systemWithContext = history.length
+    ? `${SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n${history.join('\n')}\n----------------------------`
+    : SYSTEM_PROMPT;
 
   const { text } = await generateText({
     model,
-    system: `${SYSTEM_PROMPT}\n\n--- MEMORY CONTEXT ---\n${ctx}\n----------------------`,
-    prompt: query,
-    tools:  { ...mcpTools, ...memoryTools },
+    system:   systemWithContext,
+    prompt:   query,
+    tools:    mcpTools,
     stopWhen: stepCountIs(10),
   });
 
   // AFTER: save interaction to memory graph
-  await saveInteraction(query, text);
+  await memDriver.executeQuery(
+    `MERGE (s:MemorySession {id: $sessionId})
+     CREATE (m:MemoryMessage {role: $role, content: $content, timestamp: datetime()})
+     CREATE (s)-[:HAS_MESSAGE]->(m)`,
+    { sessionId: SESSION_ID, role: 'user', content: query },
+    { database: MEMORY_DB }
+  );
   return text;
 }
 ```
@@ -247,10 +273,9 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 | **JavaScript only** | The Vercel AI SDK has no Python support — all agent code runs in Node.js |
 | **`stopWhen` is v6+** | `maxSteps` was silently removed in AI SDK v6; passing it does nothing. Use `stopWhen: stepCountIs(N)` |
 | **MCP transport type** | `neo4j-mcp-server` HTTP mode requires `type: 'http'`, not `type: 'sse'` |
-| **Memory TLS** | `neo4j-agent-memory` bundles driver v5 — use `bolt+ssc://` for AuraDB/demo servers, not `neo4j+s://` |
-| **Edge runtime** | Neo4j driver and `neo4j-agent-memory` need persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
+| **Memory DB** | Memory uses `neo4j-driver` directly — requires a separate writable Neo4j instance from the read-only knowledge graph |
+| **Edge runtime** | Neo4j driver needs persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
 | **`experimental_createMCPClient`** | Still experimental; API may change in future SDK versions |
-| **Separate memory DB** | `neo4j-agent-memory` requires write access — keep it on a separate instance from read-only knowledge graphs |
 
 ## Resources
 
@@ -258,6 +283,6 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 - [Vercel AI SDK — Tool Use](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
 - [Vercel AI SDK — MCP Clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
 - [`@ai-sdk/mcp` on npm](https://www.npmjs.com/package/@ai-sdk/mcp)
-- [`neo4j-agent-memory` on npm](https://www.npmjs.com/package/neo4j-agent-memory)
+- [Neo4j Agent Memory (Python)](https://github.com/neo4j-labs/agent-memory)
 - [Neo4j MCP Server](https://github.com/neo4j-contrib/mcp-neo4j)
 - [Neo4j JavaScript Driver Documentation](https://neo4j.com/docs/javascript-manual/current/)

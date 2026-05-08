@@ -1,26 +1,26 @@
 /**
- * 3-memory-agent.mjs — Neo4j Agent with Persistent Memory
+ * 3-memory-agent.mjs — Neo4j Agent with Custom Graph Memory
  *
- * Demonstrates integrating neo4j-agent-memory for cross-session persistent memory.
- * The pattern implements two hooks around generateText:
+ * Demonstrates persistent memory using neo4j-driver directly — no third-party
+ * memory packages required. Memory is stored as graph nodes in a writable Neo4j
+ * database, making it natively queryable.
  *
- *   BEFORE hook (injectMemoryContext):
- *     Retrieves relevant memories from Neo4j and injects them into the system
- *     prompt so the model has prior context before it generates a response.
+ * Memory schema:
+ *   (:MemorySession {id})-[:HAS_MESSAGE]->(:MemoryMessage {role, content, timestamp})
  *
- *   AFTER hook (saveInteraction):
- *     After the model responds, saves the interaction to the memory graph so
- *     future sessions can recall it.
+ * Pattern:
+ *   BEFORE hook — retrieve recent messages and inject into system prompt
+ *   AFTER hook  — save interaction as (:MemoryMessage) nodes
  *
- * The two-turn demo shows the memory in action:
- *   Turn 1 — establishes a research context (Google competitive analysis)
- *   Turn 2 — asks a follow-up; the before-hook injects Turn 1's memory so the
- *             agent knows which company is being tracked without being told again.
+ * The two-turn demo shows memory in action:
+ *   Turn 1 — establishes research context (Google analysis)
+ *   Turn 2 — follow-up; the before-hook injects Turn 1's history so the agent
+ *             knows which company was being discussed without being told again.
  *
  * Prerequisites:
- *   - neo4j-mcp-server running on MCP_PORT (see README for start command)
+ *   - neo4j-mcp-server running on MCP_PORT (see README)
  *   - MEMORY_NEO4J_* env vars pointing to a writable Neo4j database
- *   - All other env vars set (copy .env.example → .env and fill in values)
+ *   - All other env vars set (copy .env.example → .env)
  *
  * Run:
  *   node 3-memory-agent.mjs
@@ -28,7 +28,7 @@
 
 import { generateText, stepCountIs } from 'ai';
 import { experimental_createMCPClient } from '@ai-sdk/mcp';
-import { createMemoryService, createMemoryTools } from 'neo4j-agent-memory';
+import neo4j from 'neo4j-driver';
 import { getModel } from './providers.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
@@ -37,7 +37,18 @@ const creds = Buffer.from(
   `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
 ).toString('base64');
 
-// ── MCP tools ─────────────────────────────────────────────────────────────────
+const MEMORY_URI  = process.env.MEMORY_NEO4J_URI;
+const MEMORY_USER = process.env.MEMORY_NEO4J_USERNAME || 'neo4j';
+const MEMORY_PASS = process.env.MEMORY_NEO4J_PASSWORD;
+const MEMORY_DB   = process.env.MEMORY_NEO4J_DATABASE || 'neo4j';
+const SESSION_ID  = `session-${Date.now()}`;
+
+if (!MEMORY_URI) {
+  console.error('ERROR: MEMORY_NEO4J_URI is not set. See .env.example for setup.');
+  process.exit(1);
+}
+
+// ── MCP client (Neo4j knowledge graph tools) ──────────────────────────────────
 const mcpClient = await experimental_createMCPClient({
   transport: {
     type:    'http',
@@ -48,121 +59,62 @@ const mcpClient = await experimental_createMCPClient({
 const mcpTools = await mcpClient.tools();
 console.log('Connected to Neo4j MCP ✓');
 
-// ── Memory service ────────────────────────────────────────────────────────────
-// neo4j-agent-memory bundles driver v5 which requires bolt+ssc:// (TLS, trust
-// all certs) rather than neo4j+s:// to avoid certificate validation errors.
-const memUri = (process.env.MEMORY_NEO4J_URI || '').replace(/^neo4j(\+s)?:\/\//, 'bolt+ssc://');
+// ── Memory driver (separate writable Neo4j instance) ─────────────────────────
+// Memory is stored as a lightweight graph using neo4j-driver directly —
+// no additional packages needed.
+//
+// Schema:
+//   (:MemorySession {id})-[:HAS_MESSAGE]->(:MemoryMessage {role, content, timestamp})
+const memDriver = neo4j.driver(MEMORY_URI, neo4j.auth.basic(MEMORY_USER, MEMORY_PASS),
+  { disableLosslessIntegers: true });
 
-const memory = await createMemoryService({
-  neo4j: {
-    uri:      memUri,
-    username: process.env.MEMORY_NEO4J_USERNAME,
-    password: process.env.MEMORY_NEO4J_PASSWORD,
-    database: process.env.MEMORY_NEO4J_DATABASE || 'neo4j',
-  },
-  autoRelate: { enabled: true, minSharedTags: 2 },
-});
-const memoryTools = createMemoryTools(memory);
+/** Save a message to the memory graph. */
+async function storeMessage(role, content) {
+  await memDriver.executeQuery(
+    `MERGE (s:MemorySession {id: $sessionId})
+     CREATE (m:MemoryMessage {role: $role, content: $content, timestamp: datetime()})
+     CREATE (s)-[:HAS_MESSAGE]->(m)`,
+    { sessionId: SESSION_ID, role, content },
+    { database: MEMORY_DB }
+  );
+}
 
-console.log('Memory service initialised ✓');
-console.log('Memory tools:', Object.keys(memoryTools).join(', '), '\n');
+/** Retrieve recent conversation messages for context injection. */
+async function getRecentMessages(limit = 10) {
+  const { records } = await memDriver.executeQuery(
+    `MATCH (s:MemorySession {id: $sessionId})-[:HAS_MESSAGE]->(m:MemoryMessage)
+     RETURN m.role AS role, m.content AS content
+     ORDER BY m.timestamp ASC LIMIT $limit`,
+    { sessionId: SESSION_ID, limit },
+    { database: MEMORY_DB }
+  );
+  return records.map(r => `${r.get('role').toUpperCase()}: ${r.get('content')}`);
+}
 
 // ── Agent setup ───────────────────────────────────────────────────────────────
-const model       = await getModel();
-const agentId     = 'neo4j_analyst_agent';
-const allTools    = { ...mcpTools, ...memoryTools };
+const model = await getModel();
 
-const SYSTEM_PROMPT = `You are a helpful assistant with access to a Neo4j graph database AND
-long-term memory of past interactions.
+const SYSTEM_PROMPT = `You are a helpful graph analyst with access to a Neo4j companies \
+knowledge graph. Use the available tools to answer questions accurately.`;
 
-YOUR PRIORITY:
-1. Check the MEMORY CONTEXT section below first. Use it directly if relevant.
-2. If the answer is not in memory, query Neo4j using the available tools.
-3. State clearly if the answer cannot be found.`;
-
-// ── BEFORE hook: retrieve relevant memories, inject into system prompt ────────
+// ── BEFORE hook: inject conversation history into system prompt ───────────────
 async function injectMemoryContext(userQuery) {
-  let memories = [];
-  try {
-    const bundle = await memory.retrieveContextBundle({
-      agentId,
-      prompt:   userQuery,
-      fallback: { enabled: true, useFulltext: true },
-    });
-    memories = bundle?.memories ?? [];
-  } catch (_) { /* first run — no memories yet */ }
+  const history = await getRecentMessages();
+  if (!history.length) return SYSTEM_PROMPT;
 
-  if (memories.length) {
-    console.log(` ↳ Injecting ${memories.length} memories into context.`);
-    memories.slice(0, 3).forEach((m, i) =>
-      console.log(`   Memory ${i + 1}: ${(m.content ?? m).toString().slice(0, 100)}...`)
-    );
-  }
-
-  const ctx = memories.length
-    ? memories.map(m => `- ${m.content ?? m}`).join('\n')
-    : 'None yet.';
-
-  return `${SYSTEM_PROMPT}\n\n--- MEMORY CONTEXT ---\n${ctx}\n----------------------`;
+  console.log(` ↳ Injecting ${history.length} message(s) from memory.`);
+  return `${SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n${history.join('\n')}\n----------------------------`;
 }
 
 // ── AFTER hook: save interaction to memory graph ──────────────────────────────
 async function saveInteraction(userQuery, agentResponse) {
-  try {
-    console.log(' [Hook] Saving interaction to Neo4j memory graph...');
-
-    // 1. Save full interaction as a concept memory
-    const learnings = [
-      {
-        kind:       'concept',
-        polarity:   'positive',
-        title:      userQuery.slice(0, 120),
-        content:    `User asked: "${userQuery}"\n\nAgent responded: "${agentResponse.slice(0, 500)}"`,
-        tags:       extractTags(userQuery),
-        confidence: 0.8,
-        utility:    0.7,
-      },
-    ];
-
-    // 2. If the query mentions a company being tracked, also store a compact
-    //    "tracking context" fact with keywords that will fire on follow-up
-    //    queries like "the company I am currently tracking"
-    const trackMatch = userQuery.match(/(?:analysis of|tracking|following)\s+['"]?([A-Z][A-Za-z0-9 &.'-]{1,40}?)['"]?[.,\s]/);
-    if (trackMatch) {
-      const trackedCompany = trackMatch[1].trim();
-      learnings.push({
-        kind:       'concept',
-        polarity:   'positive',
-        title:      `Currently tracking: ${trackedCompany}`,
-        content:    `The user is currently tracking "${trackedCompany}" for competitive analysis, including subsidiaries and AI competitors.`,
-        tags:       ['tracking', 'currently', 'company', ...trackedCompany.toLowerCase().split(/\s+/)],
-        confidence: 0.9,
-        utility:    0.9,
-      });
-    }
-
-    const result = await memory.saveLearnings({ agentId, learnings });
-    const saved   = result.saved?.length ?? 0;
-    const deduped = result.saved?.filter(s => s.deduped).length ?? 0;
-    console.log(`   ↳ Saved ${saved} memory node(s)${deduped ? ` (${deduped} deduped)` : ''}.`);
-  } catch (e) {
-    console.warn(' [Hook] Save failed:', e.message);
-  }
-}
-
-/** Extract simple keyword tags from the query for memory retrieval. */
-function extractTags(text) {
-  const stopWords = new Set(['i', 'am', 'a', 'the', 'is', 'are', 'in', 'of', 'for',
-    'and', 'or', 'to', 'their', 'who', 'what', 'me', 'my', 'be', 'about', 'as', 'that']);
-  return [...new Set(
-    text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
-      .filter(w => w.length > 3 && !stopWords.has(w))
-      .slice(0, 6)
-  )];
+  await storeMessage('user', userQuery);
+  await storeMessage('assistant', agentResponse);
+  console.log(' [Memory] Interaction saved to Neo4j ✓');
 }
 
 // ── Run agent with memory hooks ───────────────────────────────────────────────
-async function runAnalystTask(query) {
+async function runWithMemory(query) {
   console.log(`\n[USER]: ${query}`);
 
   const systemWithContext = await injectMemoryContext(query);
@@ -171,7 +123,7 @@ async function runAnalystTask(query) {
     model,
     system:   systemWithContext,
     prompt:   query,
-    tools:    allTools,
+    tools:    mcpTools,
     stopWhen: stepCountIs(10),
   });
 
@@ -182,17 +134,14 @@ async function runAnalystTask(query) {
 
 // ── Two-turn demo ─────────────────────────────────────────────────────────────
 // Turn 1: establish research context
-await runAnalystTask(
-  "I am conducting a competitive analysis of 'Google'. I am specifically worried about their subsidiaries and who their top-tier competitors are in the AI space."
+await runWithMemory(
+  "I am conducting a competitive analysis of 'Google'. Tell me about their presence in the knowledge graph."
 );
 
-console.log('\n--- Indexing memory (5s)... ---\n');
-await new Promise(r => setTimeout(r, 5000));
-
-// Turn 2: follow-up — memory context from Turn 1 is injected automatically
-await runAnalystTask(
-  "What are the main risks in the supply chain for the company I am currently tracking?"
+// Turn 2: follow-up — conversation history from Turn 1 is injected automatically
+await runWithMemory(
+  "Based on our conversation, what subsidiaries of the company we discussed appear in the database?"
 );
 
-await memory.close();
 await mcpClient.close();
+await memDriver.close();
