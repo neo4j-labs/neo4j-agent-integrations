@@ -24,7 +24,7 @@
 
 | File | Description |
 |------|-------------|
-| [vercel_agent.js](https://observablehq.com/import?url=https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
+| [vercel_agent.js](https://observablehq.com/import?url=https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
 | [vercel_agent.ipynb](vercel_agent.ipynb) | **Jupyter setup notebook** — Node.js install, credentials, MCP server start |
 
 ## Extension Points

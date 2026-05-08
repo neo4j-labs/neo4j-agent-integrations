@@ -2,7 +2,7 @@
 // Vercel AI SDK + Neo4j — interactive browser demo
 //
 // Import to ObservableHQ:
-//   https://observablehq.com/import?url=https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js
+//   https://observablehq.com/import?url=https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js
 //
 // This notebook covers three patterns — all running live in the browser:
 //   0. Direct Neo4j query  (neo4j-driver, no AI)
