@@ -20,11 +20,12 @@
 
 ![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApuZW80ai1kcml2ZXIiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG1lbWRiWygiTmVvNGoKTWVtb3J5IERCIildCiAgICBtY3AgLS0-IGRi)
 
-## Examples
+## Notebooks
 
 | File | Description |
 |------|-------------|
-| [vercel_agent.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/vercel-agent/vercel_agent.ipynb) | Notebook walkthrough of all three integration patterns |
+| [vercel_agent.js](https://observablehq.com/import?url=https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
+| [vercel_agent.ipynb](vercel_agent.ipynb) | **Jupyter setup notebook** — Node.js install, credentials, MCP server start |
 
 ## Extension Points
 
