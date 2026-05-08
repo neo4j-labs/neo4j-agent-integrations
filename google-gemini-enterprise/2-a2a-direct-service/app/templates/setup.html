@@ -5,11 +5,18 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f8f9fa; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
         h2 { color: #202124; margin-top: 0; }
         label { font-weight: 500; color: #5f6368; font-size: 14px; display: block; margin-bottom: 5px; }
         input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
         .btn { background-color: #1a73e8; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
+        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
         .btn:hover { background-color: #1557b0; }
+        .memory-section { display: none; padding: 15px; background-color: #f1f3f4; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e8eaed; }
+        .toggle-container { display: flex; align-items: center; margin-bottom: 20px; cursor: pointer; }
+        .toggle-container input { margin-right: 10px; cursor: pointer; width: auto; margin-bottom: 0; }
+        .toggle-container span { font-weight: 500; color: #202124; font-size: 15px; }
         .memory-section { display: none; padding: 15px; background-color: #f1f3f4; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e8eaed; }
         .toggle-container { display: flex; align-items: center; margin-bottom: 20px; cursor: pointer; }
         .toggle-container input { margin-right: 10px; cursor: pointer; width: auto; margin-bottom: 0; }

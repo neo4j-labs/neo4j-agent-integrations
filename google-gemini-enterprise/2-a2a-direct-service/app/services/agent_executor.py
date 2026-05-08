@@ -184,6 +184,7 @@ class Neo4jADKExecutor(AgentExecutor):
             dynamic_db = creds.get("database", "neo4j")
 
             logging.info("[agent_executor] Setting up main tenant tools")
+            logging.info("[agent_executor] Setting up main tenant tools")
             tenant_tools = get_tenant_tools(dynamic_user, dynamic_pass, dynamic_uri, dynamic_db)
 
             memory_uri = creds.get("memory_uri")
@@ -377,6 +378,7 @@ class Neo4jADKExecutor(AgentExecutor):
                     new_agent_text_message("An unexpected error occurred while processing your request.")
                 )
         finally:
+            logging.info(f"[agent_executor] Cleaning up resources")
             logging.info(f"[agent_executor] Cleaning up resources")
             token_manager.close()
             if memory_client:

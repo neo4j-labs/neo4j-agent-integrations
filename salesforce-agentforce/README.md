@@ -2,9 +2,14 @@
 
 ## Overview
 
-**Salesforce Agentforce** is Salesforce's enterprise AI agent platform powered by the **Atlas Reasoning Engine (ARE)** — a ReAct-style orchestration loop that plans, selects tools, observes results, and iterates to answer user queries.
+**Salesforce Agentforce** is Salesforce's enterprise AI agent platform powered by the **Atlas Reasoning Engine (ARE)** — a ReAct-style orchestration loop that plans, selects tools, observes results, and iterates to answer user queries. 
+
+This README focuses on the general integration approach for connecting Agentforce to Neo4j through Salesforce extension points, then walks through a concrete [Get company insights](#get-company-insights--implementation) use case implementation.
+
+For an agent memory implementation that uses a Neo4j-backed knowledge graph to persist and recall conversational context, see [Agentforce integration with Neo4j Agent Memory](agentforce-memory.md).
 
 **Key Features:**
+
 - Atlas Reasoning Engine (plan → act → observe → decide loop)
 - Topics (semantic routing layer) + Actions (tool execution layer)
 - Native MCP client (Pilot July 2025, Beta features October 2025)
@@ -15,6 +20,7 @@
 - Agent API — invoke agents from external Python/Java/REST clients
 
 **Official Resources:**
+
 - Website: https://www.salesforce.com/agentforce/
 - MCP Support: https://www.salesforce.com/agentforce/mcp-support/
 - Developer Docs: https://developer.salesforce.com/docs/einstein/genai/guide/get-started-agents.html
@@ -327,4 +333,3 @@ RETURN
 - **Neo4j MCP Labs**: https://github.com/neo4j-contrib/mcp-neo4j
 - **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
 - **BYOM Guide**: https://developer.salesforce.com/blogs/2024/10/build-generative-ai-solutions-with-llm-open-connector
-

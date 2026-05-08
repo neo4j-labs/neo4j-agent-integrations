@@ -110,6 +110,7 @@ class TokenManager:
             }
         except Exception as e:
             logging.error(f"Failed to retrieve DB credentials for {email}: {e}")
+            logging.error(f"Failed to retrieve DB credentials for {email}: {e}")
             return None
 
     # ==========================================

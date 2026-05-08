@@ -120,6 +120,25 @@ def _make_inline(folder: str, path_xref: dict):
         return f'link:{url}[{text}]'
 
     def _inline(line: str) -> str:
+        # Emoji shortcodes → Unicode (common GitHub/Slack codes; unknown codes are stripped)
+        _EMOJI = {
+            'sparkles': '✨', 'rocket': '🚀', 'bulb': '💡', 'gear': '⚙️',
+            'warning': '⚠️', 'check': '✅', 'x': '❌', 'fire': '🔥',
+            'star': '⭐', 'tada': '🎉', 'zap': '⚡', 'memo': '📝',
+            'books': '📚', 'book': '📖', 'link': '🔗', 'lock': '🔒',
+            'key': '🔑', 'wrench': '🔧', 'hammer': '🔨', 'computer': '💻',
+            'robot': '🤖', 'satellite': '📡', 'arrows_counterclockwise': '🔄',
+            'open_file_folder': '📂', 'file_folder': '📁', 'package': '📦',
+            'globe_with_meridians': '🌐', 'cloud': '☁️', 'shield': '🛡️',
+            'mag': '🔍', 'chart_with_upwards_trend': '📈', 'bar_chart': '📊',
+            'white_check_mark': '✅', 'heavy_check_mark': '✔️',
+            'information_source': 'ℹ️', 'exclamation': '❗',
+        }
+        line = re.sub(
+            r':([a-z][a-z0-9_+-]*):',
+            lambda m: _EMOJI.get(m.group(1), ''),
+            line
+        )
         # Images before links
         line = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'image::\2[\1]', line)
         line = re.sub(r'(?<!!)\[([^\]]+)\]\(([^)]+)\)', _link, line)
@@ -331,7 +350,11 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             continue
 
         # ── Regular paragraph line ────────────────────────────────────────
-        out.append(_inline(line))
+        # Markdown trailing double-space = hard line break → AsciiDoc " +"
+        if line.endswith('  '):
+            out.append(_inline(line.rstrip()) + ' +')
+        else:
+            out.append(_inline(line))
         i += 1
 
     # Flush any open table
