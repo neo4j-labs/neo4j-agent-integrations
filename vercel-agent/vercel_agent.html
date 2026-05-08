@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vercel AI SDK + Neo4j — Interactive Demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@observablehq/inspector@5/dist/inspector.css">
+  <style>
+    body { max-width: 860px; margin: 0 auto; padding: 1.5rem 2rem; font-family: sans-serif; }
+    .observablehq { padding: 0.25rem 0; }
+  </style>
+</head>
+<body>
+<script type="module">
+// Loads the Observable Classic notebook (vercel_agent.js) using the
+// @observablehq/runtime. The notebook JS is served via jsDelivr which
+// correctly sets Content-Type: application/javascript for GitHub files.
+import { Runtime, Inspector } from "https://cdn.jsdelivr.net/npm/@observablehq/runtime@5/dist/runtime.js";
+import define from "https://cdn.jsdelivr.net/gh/karanchellani/neo4j-agent-integrations@vercel-agent/vercel-agent/vercel_agent.js";
+new Runtime().module(define, Inspector.into(document.body));
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 // Observable Classic notebook
 // Vercel AI SDK + Neo4j — interactive browser demo
 //
-// Import to ObservableHQ:
-//   https://observablehq.com/import?url=https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.js
+// Open in browser:
+//   https://htmlpreview.github.io/?https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.html
 //
 // This notebook covers three patterns — all running live in the browser:
 //   0. Direct Neo4j query  (neo4j-driver, no AI)
