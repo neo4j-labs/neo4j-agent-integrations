@@ -1,7 +1,8 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
-import { useState, useCallback, useMemo, FormEvent } from 'react';
+import { useChat, type UIMessage } from '@ai-sdk/react';
+import { useState, useCallback, useMemo, type FormEvent } from 'react';
+import { Banner, Button, Flex, LoadingSpinner, StatusIndicator, TextArea, Typography } from '@neo4j-ndl/react';
 
 interface DemoStatus {
   modelProvider: string;
@@ -11,12 +12,18 @@ interface DemoStatus {
   agentId: string;
 }
 
-function getMessageText(message: any): string {
-  if (typeof message.content === 'string') return message.content;
-  if (Array.isArray(message.parts)) {
-    return message.parts
-      .filter((p: any) => p?.type === 'text')
-      .map((p: any) => p?.text || '')
+function getMessageText(message?: UIMessage): string {
+  const candidate = message as unknown as {
+    content?: unknown;
+    parts?: Array<{ type?: string; text?: string }>;
+  };
+
+  if (!candidate) return '';
+  if (typeof candidate.content === 'string') return candidate.content;
+  if (Array.isArray(candidate.parts)) {
+    return candidate.parts
+      .filter((part) => part?.type === 'text' && typeof part?.text === 'string')
+      .map((part) => part.text || '')
       .join('\n');
   }
   return '';
@@ -56,11 +63,11 @@ export default function ChatPage() {
     }
   }, []);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || isBusy) return;
     setSaveMessage('');
-    sendMessage({ text: input });
+    await sendMessage({ text: input.trim() });
     setInput('');
   };
 
@@ -98,128 +105,163 @@ export default function ChatPage() {
   }, [lastAssistantText, saving]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
+    <div className='n-bg-palette-neutral-bg-weak min-h-screen p-6'>
+      <Flex flexDirection='column' gap='6' className='mx-auto max-w-5xl'>
+        <div className='n-bg-palette-neutral-bg-default rounded-2xl border n-border-palette-neutral-border-weak p-6 shadow-sm'>
+          <Typography variant='label' className='n-text-palette-primary-text'>
+            Neo4j Integration Demo
+          </Typography>
+          <Typography variant='h2' className='mt-2'>
             Vercel AI SDK + Neo4j Agent Memory
-          </h1>
-          <p className="text-slate-300">
-            Chat with an AI assistant that remembers your research insights
-          </p>
-        </div>
+          </Typography>
+          <Typography variant='body-medium' className='mt-2 max-w-3xl n-text-palette-neutral-text-weak'>
+            Streaming chat with Neo4j graph search and memory-backed follow-ups.
+          </Typography>
 
-        {/* Status Panel */}
-        <div className="bg-slate-700 rounded-lg p-6 mb-6 border border-slate-600">
-          <div className="flex gap-4 items-center mb-4">
-            <button
-              onClick={loadStatus}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+          <Flex gap='2' className='mt-4' flexWrap='wrap'>
+            <Button size='medium' fill='outlined' color='neutral' onClick={loadStatus}>
+              Refresh Status
+            </Button>
+            <Button
+              size='medium'
+              fill='outlined'
+              color='primary'
+              onClick={saveAnswer}
+              isDisabled={!lastAssistantText || saving}
             >
-              Load Status
-            </button>
-            {lastAssistantText && (
-              <button
-                onClick={saveAnswer}
-                disabled={saving}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition"
-              >
-                {saving ? 'Saving...' : 'Save to Memory'}
-              </button>
-            )}
-          </div>
-
-          {statusError && <div className="text-red-400 mb-2">{statusError}</div>}
-          {saveMessage && <div className={`mb-2 ${saveMessage.includes('failed') || saveMessage.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>{saveMessage}</div>}
+              {saving ? (
+                <Flex gap='2' alignItems='center'>
+                  <LoadingSpinner size='small' />
+                  Saving...
+                </Flex>
+              ) : (
+                'Save Last Answer To Memory'
+              )}
+            </Button>
+          </Flex>
 
           {status && (
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-slate-400">Model:</span>
-                <span className="text-white ml-2">
+            <div className='mt-4 grid grid-cols-1 gap-2 md:grid-cols-2'>
+              <Flex gap='2' alignItems='center'>
+                <Typography variant='label' className='n-text-palette-neutral-text-weak'>
+                  Model
+                </Typography>
+                <Typography variant='body-medium'>
                   {status.modelProvider} / {status.modelName}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400">Memory:</span>
-                <span className={`ml-2 ${status.memoryEnabled ? 'text-green-400' : 'text-red-400'}`}>
-                  {status.memoryEnabled ? '✓ Enabled' : '✗ Disabled'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400">Source:</span>
-                <span className="text-white ml-2">{status.memoryConfigSource}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Agent ID:</span>
-                <span className="text-white ml-2">{status.agentId}</span>
-              </div>
+                </Typography>
+              </Flex>
+              <Flex gap='2' alignItems='center'>
+                <Typography variant='label' className='n-text-palette-neutral-text-weak'>
+                  Memory
+                </Typography>
+                <StatusIndicator type={status.memoryEnabled ? 'success' : 'danger'} />
+                <Typography variant='body-medium'>{status.memoryEnabled ? 'Enabled' : 'Disabled'}</Typography>
+              </Flex>
+              <Flex gap='2' alignItems='center'>
+                <Typography variant='label' className='n-text-palette-neutral-text-weak'>
+                  Source
+                </Typography>
+                <Typography variant='body-medium'>{status.memoryConfigSource}</Typography>
+              </Flex>
+              <Flex gap='2' alignItems='center'>
+                <Typography variant='label' className='n-text-palette-neutral-text-weak'>
+                  Agent ID
+                </Typography>
+                <Typography variant='body-medium'>{status.agentId}</Typography>
+              </Flex>
+            </div>
+          )}
+
+          {statusError && (
+            <div className='mt-3'>
+              <Banner type='danger' description={statusError} />
+            </div>
+          )}
+
+          {saveMessage && (
+            <div className='mt-3'>
+              <Banner
+                type={
+                  saveMessage.toLowerCase().includes('fail') || saveMessage.toLowerCase().includes('error')
+                    ? 'danger'
+                    : 'success'
+                }
+                description={saveMessage}
+              />
+            </div>
+          )}
+
+          {chatError && (
+            <div className='mt-3'>
+              <Banner type='danger' description={chatError.message} />
             </div>
           )}
         </div>
 
-        {/* Chat Container */}
-        <div className="bg-slate-700 rounded-lg overflow-hidden border border-slate-600 flex flex-col h-96">
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.length === 0 && (
-              <div className="text-slate-400 text-center py-8">
-                Try: "Show me tech companies" or "What industries have the most funding?"
-              </div>
-            )}
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-600 text-slate-100'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{getMessageText(msg)}</p>
-                </div>
-              </div>
-            ))}
-            {isBusy && (
-              <div className="flex justify-start">
-                <div className="bg-slate-600 text-slate-100 px-4 py-2 rounded-lg">
-                  <div className="flex gap-2">
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  </div>
-                </div>
-              </div>
-            )}
+        <div className='n-bg-palette-neutral-bg-default rounded-2xl border n-border-palette-neutral-border-weak p-6 shadow-sm'>
+          <div className='mb-4 max-h-[52vh] overflow-y-auto rounded-xl n-bg-palette-neutral-bg-weak p-4'>
+            <Flex flexDirection='column' gap='3'>
+              {messages.length === 0 && (
+                <Typography variant='body-medium' className='n-text-palette-neutral-text-weak'>
+                  Try: &quot;Show me tech companies&quot; or &quot;Which industries have the most organizations?&quot;
+                </Typography>
+              )}
+
+              {messages.map((message) => {
+                const text = getMessageText(message) || '[non-text content]';
+                const isUser = message.role === 'user';
+
+                return (
+                  <Flex key={message.id} justifyContent={isUser ? 'flex-end' : 'flex-start'}>
+                    <div
+                      className={[
+                        'max-w-[85%] rounded-xl px-4 py-3 shadow-sm',
+                        isUser
+                          ? 'n-bg-palette-primary-bg-strong n-text-palette-neutral-text-inverse'
+                          : 'n-bg-palette-neutral-bg-default border n-border-palette-neutral-border-weak',
+                      ].join(' ')}
+                    >
+                      <Typography variant='label' className='mb-1 opacity-70'>
+                        {message.role}
+                      </Typography>
+                      <Typography variant='body-medium' className='whitespace-pre-wrap'>
+                        {text}
+                      </Typography>
+                    </div>
+                  </Flex>
+                );
+              })}
+
+              {isBusy && (
+                <Flex gap='2' alignItems='center'>
+                  <LoadingSpinner size='small' />
+                  <Typography variant='body-medium' className='n-text-palette-neutral-text-weak'>
+                    Streaming response...
+                  </Typography>
+                </Flex>
+              )}
+            </Flex>
           </div>
 
-          {/* Input */}
-          <form onSubmit={handleSubmit} className="border-t border-slate-600 p-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
+          <form onSubmit={handleSubmit}>
+            <Flex gap='3' flexDirection='column' className='md:flex-row'>
+              <TextArea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about organizations, industries, or locations..."
-                disabled={isBusy}
-                className="flex-1 px-4 py-2 bg-slate-600 text-white placeholder-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                placeholder='Ask about organizations, industries, or locations...'
+                isFluid={true}
+                className='flex-1'
+                style={{ minHeight: '6rem' }}
+                htmlAttributes={{
+                  onChange: (event) => setInput(event.target.value),
+                }}
               />
-              <button
-                type="submit"
-                disabled={!input.trim() || isBusy}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded-lg font-medium transition"
-              >
+              <Button type='submit' size='large' fill='filled' color='primary' isDisabled={isBusy || !input.trim()}>
                 Send
-              </button>
-            </div>
-            {chatError && <div className="text-red-400 text-sm mt-2">{chatError.message}</div>}
+              </Button>
+            </Flex>
           </form>
         </div>
-      </div>
+      </Flex>
     </div>
   );
 }
