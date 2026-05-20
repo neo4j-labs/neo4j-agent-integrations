@@ -1,17 +1,24 @@
 from aws_cdk import (
     Stack,
     CfnOutput,
+    Tags,
     aws_bedrockagentcore as bedrockagentcore,
     aws_ecr_assets as ecr_assets,
     aws_iam as iam,
 )
 from constructs import Construct
 
+# AWS Partner Revenue Measurement: attribute resource usage to Neo4j.
+# https://docs.aws.amazon.com/PRM/latest/aws-prm-onboarding-guide/prm-resource-tagging.html
+AWS_PRM_PRODUCT_CODE = "prod-vfprhasjyi4ug"
+
 
 class Neo4jMCPRuntimeStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        Tags.of(self).add("aws-apn-id", f"pc:{AWS_PRM_PRODUCT_CODE}")
 
         # 1. create a Policy for the AgentCore runtime
         # taken from https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html#runtime-permissions-execution
