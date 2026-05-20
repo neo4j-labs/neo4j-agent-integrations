@@ -56,8 +56,8 @@ NEO4J_DATABASE=companies
 NEO4J_MCP_CONTAINER_URI=<marketplace-container-image-uri>
 
 # Run-time: used by the demo client, sent per-request via custom auth header
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=neo4j
+NEO4J_USERNAME=companies
+NEO4J_PASSWORD=companies
 ```
 
 **Deploy-time values.** `deploy.sh` reads `NEO4J_URI`, `NEO4J_DATABASE`, and `NEO4J_MCP_CONTAINER_URI` and passes them to CDK as context. The stack injects the URI and database name into the `CfnRuntime` as container environment variables, and the container URI tells AgentCore which image to pull. Changing any of these requires redeploying the stack.
