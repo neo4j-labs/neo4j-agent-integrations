@@ -21,6 +21,10 @@ SERVICE_URL = os.environ.get("SERVICE_URL")
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 GCP_LOCATION = os.environ.get("GCP_LOCATION")
 
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "true"
+os.environ["GOOGLE_CLOUD_PROJECT"] = GCP_PROJECT_ID
+os.environ["GOOGLE_CLOUD_LOCATION"] = GCP_LOCATION
+
 AGENT_PROMPT = """
 You are a Graph Database Assistant. Your goal is to translate user natural language into accurate Cypher queries, execute them, and explain the results.
 Follow this strict execution workflow:

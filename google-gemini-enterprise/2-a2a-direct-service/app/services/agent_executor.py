@@ -28,7 +28,8 @@ from neo4j_agent_memory.config.settings import (
 from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
 from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from google.adk.tools.load_memory_tool import LoadMemoryTool
-from app.services.nams_memory_service import NAMSMemoryService
+from pydantic import SecretStr
+from neo4j_agent_memory.config.settings import NamsConfig
 from neo4j_agent_memory.embeddings.vertex_ai import VertexAIEmbedder
 
 from ..core.config import (
@@ -184,7 +185,21 @@ class Neo4jADKExecutor(AgentExecutor):
             dynamic_db = creds.get("database", "neo4j")
 
             logging.info("[agent_executor] Setting up main tenant tools")
-            logging.info("[agent_executor] Setting up main tenant tools")
+            session_id = context.context_id
+            if not session_id:
+                session_id = f"session_{user_email}_{uuid.uuid4().hex}"
+                logging.info(f"[agent_executor] Generated secure session ID for user {user_email}: {session_id}")
+
+            session = await self.session_service.get_session(
+                app_name="neo4j_a2a_app", user_id=user_email, session_id=session_id
+            )
+
+            if not session:
+                session = await self.session_service.create_session(
+                    session_id=session_id, state={}, app_name="neo4j_a2a_app", user_id=user_email
+                )
+
+            logging.info(f"[agent_executor] Running agent for session {session.id}")
             tenant_tools = get_tenant_tools(dynamic_user, dynamic_pass, dynamic_uri, dynamic_db)
 
             memory_uri = creds.get("memory_uri")
@@ -193,77 +208,108 @@ class Neo4jADKExecutor(AgentExecutor):
             memory_db = creds.get("memory_database", "neo4j")
             nams_api_key = creds.get("nams_api_key")
 
-            # Prefer managed NAMS if API key is present; otherwise fall back to self-hosted memory creds
             using_nams = bool(nams_api_key)
             memory_enabled = using_nams or all([memory_uri, memory_user, memory_password])
 
             if memory_enabled:
                 if using_nams:
-                    logging.info(f"[agent_executor] NAMS API key present for {user_email}. Initializing NAMS memory service.")
-                    neo4j_memory_service = NAMSMemoryService(api_key=nams_api_key)
-                    tenant_tools.append(PreloadMemoryTool())
-                    tenant_tools.append(LoadMemoryTool())
-                    active_instruction = (
-                        AGENT_PROMPT + 
-                        "\n\n[SYSTEM NOTE]: You are connected to a managed memory service (NAMS). "
-                        "When asked to recall past facts or preferences, use the provided memory tools to query the managed memory."
+                    logging.info(f"[agent_executor] NAMS API key present. Initializing Native NAMS backend.")
+                    memory_settings = MemorySettings(
+                        backend="nams",
+                        nams=NamsConfig(
+                            api_key=SecretStr(nams_api_key),
+                            validate_on_connect=False 
+                        )
                     )
                 else:
-                    logging.info(f"[agent_executor] Memory feature opted-in for {user_email}. Initializing Neo4jMemoryService.")
+                    logging.info(f"[agent_executor] Self-hosted memory configured. Initializing Bolt backend.")
                     memory_settings = MemorySettings(
+                        backend="bolt",
                         neo4j=Neo4jConfig(
                             uri=memory_uri,
                             username=memory_user,
                             password=memory_password,
                             database=memory_db
                         ),
-                        embedding=EmbeddingConfig(
-                            provider=EmbeddingProvider.VERTEX_AI,
-                            model="text-embedding-004",
-                            dimensions=768,
-                            project_id=GCP_PROJECT_ID,
-                            location=GCP_LOCATION,
-                        ),
-                        extraction=ExtractionConfig(
-                            extractor_type=ExtractorType.SPACY
-                        ),
+                        embedding="vertex_ai/text-embedding-004",
+                        llm=f"vertex_ai/{GEMINI_MODEL}",
+                        extraction=ExtractionConfig(extractor_type=ExtractorType.LLM)
                     )
-                    
-                    memory_client = MemoryClient(memory_settings)
-                    await memory_client.connect()
 
-                    try:
-                        working_embedder = VertexAIEmbedder(
-                            model="text-embedding-004",
-                            project_id=GCP_PROJECT_ID,
-                            location=GCP_LOCATION,
-                        )
-                        memory_client.embedder = working_embedder
-                        try:
-                            memory_client.short_term._embedder = working_embedder
-                        except Exception:
-                            pass
-                        try:
-                            memory_client.long_term._embedder = working_embedder
-                        except Exception:
-                            pass
-                        logging.info("[agent_executor] Injected VertexAIEmbedder into MemoryClient")
-                    except Exception as e:
-                        logging.warning(f"[agent_executor] Failed to inject embedder: {e}")
+                memory_client = MemoryClient(memory_settings)
+                await memory_client.connect()
 
-                    neo4j_memory_service = Neo4jMemoryService(
-                        memory_client=memory_client,
-                        user_id=user_email,
-                    )
-                    
+                neo4j_memory_service = Neo4jMemoryService(
+                    memory_client=memory_client,
+                    user_id=user_email,
+                    include_entities=True,
+                    include_preferences=True
+                )
+                
+                if using_nams:
+                    async def load_memory(query: str) -> str:
+                        """Search past memories, preferences, and facts for the user."""
+                        results_list = []
+                        try:
+                            logging.info(f"[agent_executor] LLM invoked short term load_memory with query: '{query}'")
+                            response_msgs = await memory_client.short_term.search_messages(query, session_id=session.id, limit=3)
+                            if response_msgs:
+                                results_list.extend([f"- Chat: {m.content}" for m in response_msgs if getattr(m, 'content', None)])
+                        except Exception as e:
+                            logging.warning(f"[agent_executor] NAMS message search warning: {e}")
+
+                        try:
+                            logging.info(f"[agent_executor] LLM invoked long term load_memory with query: '{query}' for user {user_email}")
+                            response_entities = await memory_client.long_term.search_entities(query=query, user_identifier=user_email, limit=3)
+                            if response_entities:
+                                for ent in response_entities:
+                                    results_list.append(f"- Fact ({getattr(ent, 'name', 'Unknown')}): {getattr(ent, 'description', '')}")
+                        except Exception as e:
+                            logging.warning(f"[agent_executor] NAMS entity search warning: {e}")
+
+                        return "\n".join(results_list) if results_list else "No memory found."
+
+                    async def save_memory(fact: str, entity_name: str, entity_type: str) -> str:
+                        """Saves an important user fact, preference, or memory instantly to the graph database.
+                        Args:
+                            fact: The detailed fact to remember (e.g., 'User's favorite coding language is Python').
+                            entity_name: The core subject of the fact (e.g., 'Python').
+                            entity_type: The category label (e.g., 'TECHNOLOGY', 'PREFERENCE', 'PERSON').
+                        """
+                        try:
+                            await memory_client.long_term.add_entity(
+                                name=entity_name,
+                                entity_type=entity_type,
+                                description=fact,
+                                user_identifier=user_email
+                            )
+                            logging.info(f"[agent_executor] Synchronously wrote entity '{entity_name}' to NAMS.")
+                            return f"Successfully saved '{entity_name}' to memory."
+                        except Exception as e:
+                            logging.error(f"[agent_executor] NAMS save failed: {e}")
+                            return "Failed to save memory."
+
+                    tenant_tools.extend([load_memory, save_memory])
+                else:
                     tenant_tools.append(PreloadMemoryTool())
                     tenant_tools.append(LoadMemoryTool())
-                    active_instruction = (
-                        AGENT_PROMPT + 
-                        "\n\n[SYSTEM NOTE]: You have access to a persistent, long-term memory database containing the user's facts and preferences. "
-                        "If the user asks about past conversations, their preferences, or facts they previously told you, "
-                        "you MUST actively use the LoadMemoryTool to search the database for the answer before responding."
+
+                if using_nams:
+                    active_note = (
+                        "\n\n[SYSTEM NOTE]: You are connected to a managed cloud graph database (NAMS). "
+                        "If a user asks you to save, remember, or note something, you MUST use the `save_memory` tool to instantly write it to the database. "
+                        "If a user asks you to retrieve, recall, or remind them of past information, you MUST use the `load_memory` tool."
                     )
+                else:
+                    active_note = (
+                        "\n\n[SYSTEM NOTE]: You are connected to a self-hosted persistent memory database. "
+                        "Your memory architecture is completely passive and automatic. Every conversation you have is automatically saved to the database in the background. "
+                        "If a user asks you to save, remember, or note something, simply acknowledge their request in plain text (e.g., 'I will remember that.'). "
+                        "You do NOT need a tool to save information. "
+                        "If a user asks you to retrieve, recall, or remind them of past information, you MUST use the provided memory tools to search the database."
+                    )
+
+                active_instruction = AGENT_PROMPT + active_note
             else:
                 logging.info(f"[agent_executor] Memory feature not configured for {user_email}. Proceeding stateless.")
                 active_instruction = AGENT_PROMPT
@@ -304,22 +350,6 @@ class Neo4jADKExecutor(AgentExecutor):
                 ),
                 after_model_callback=[track_token_usage_callback]
             )
-
-            session_id = context.context_id
-            if not session_id:
-                session_id = f"session_{user_email}_{uuid.uuid4().hex}"
-                logging.info(f"[agent_executor] Generated secure session ID for user {user_email}: {session_id}")
-
-            session = await self.session_service.get_session(
-                app_name="neo4j_a2a_app", user_id=user_email, session_id=session_id
-            )
-
-            if not session:
-                session = await self.session_service.create_session(
-                    session_id=session_id, state={}, app_name="neo4j_a2a_app", user_id=user_email
-                )
-
-            logging.info(f"[agent_executor] Running agent for session {session.id}")
             
             runner_kwargs = {
                 "app_name": "neo4j_a2a_app",
@@ -327,7 +357,7 @@ class Neo4jADKExecutor(AgentExecutor):
                 "artifact_service": self.artifact_service,
                 "session_service": self.session_service,
             }
-            if memory_enabled:
+            if memory_enabled and not using_nams:
                 runner_kwargs["memory_service"] = neo4j_memory_service
                 
             runner = Runner(**runner_kwargs)
@@ -339,24 +369,47 @@ class Neo4jADKExecutor(AgentExecutor):
             async for event in events_async:
                 if hasattr(event, 'content') and event.content:
                     for part in event.content.parts:
+                        logging.info(f"[agent_executor] Processing new part from agent event: {part}")
                         if getattr(part, 'function_call', None) or getattr(part, 'function_response', None):
                             continue
-                        if part.text:
+                        elif getattr(part, 'text', None):
+                            logging.info(f"[agent_executor] Received new text part from agent: {part.text}")
                             total_response_text += part.text
                             await event_queue.enqueue_event(new_agent_text_message(part.text))
 
             logging.info(f"[agent_executor] Agent execution finished. Total response length: {len(total_response_text)}")
 
-            if memory_enabled and neo4j_memory_service:
-                logging.info(f"[agent_executor] Syncing memory to Neo4j for session {session.id}")
-                fresh_session = await self.session_service.get_session(
-                    session_id=session.id, app_name="neo4j_a2a_app", user_id=user_email
-                )
+            if memory_enabled:
+                logging.info(f"[agent_executor] Syncing transaction context to memory for session {session.id}")
                 try:
-                    await neo4j_memory_service.add_session_to_memory(fresh_session)
-                    logging.info("[agent_executor] Neo4j memory sync successful")
+                    if using_nams:
+                        await memory_client.short_term.create_conversation(
+                            session_id=session.id, 
+                            user_identifier=user_email
+                        )
+
+                        await memory_client.short_term.add_message(
+                            session_id=session.id,
+                            role="user",
+                            content=user_query
+                        )
+
+                        if total_response_text:
+                            await memory_client.short_term.add_message(
+                                session_id=session.id,
+                                role="assistant",
+                                content=total_response_text
+                            )
+                        logging.info("[agent_executor] Native NAMS memory sync successful.")
+                    else:
+                        fresh_session = await self.session_service.get_session(
+                            session_id=session.id, app_name="neo4j_a2a_app", user_id=user_email
+                        )
+                        if neo4j_memory_service:
+                            await neo4j_memory_service.add_session_to_memory(fresh_session)
+                        logging.info("[agent_executor] Bolt local memory sync successful.")
                 except Exception as e:
-                    logging.error(f"[agent_executor] Neo4j memory sync failed: {e}")
+                    logging.error(f"[agent_executor] Memory sync failed: {e}")
 
             if TRACK_TOKEN_USAGE:
                 exact_tokens = current_request_tokens.get()

@@ -66,10 +66,15 @@
                 
                 <hr style="border:none;border-top:1px solid #e8eaed;margin:12px 0;">
 
-                <label>Or use Managed Memory (NAMS)</label>
-                <input type="text" id="nams_api_key" name="nams_api_key" placeholder="Enter NAMS API Key (optional)">
+                <label>Or use <strong>Neo4j Agent Memory Service (Labs)</strong></label>
+                <p style="color: #5f6368; font-size: 13px; margin-top: 6px; margin-bottom: 10px;">
+                    A managed memory service hosted by Neo4j. <a href="https://memory.neo4jlabs.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Learn more</a>
+                </p>
+                <input type="text" id="nams_api_key" name="nams_api_key" placeholder="Enter Neo4j Agent Memory Service API Key (optional)">
 
-                <p style="color: #5f6368; font-size: 13px; margin-top: 6px;">Tip: If you provide a NAMS API Key it will be used instead of a Memory DB.</p>
+                <p style="color: #5f6368; font-size: 13px; margin-top: 10px;">
+                    <strong>Tip:</strong> If you provide a Neo4j Agent Memory Service API Key, it will be used instead of a self-hosted Memory DB. This is ideal if you want a fully managed, low-maintenance setup.
+                </p>
             </div>
             
 
