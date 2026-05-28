@@ -6,7 +6,15 @@ import {
   createUIMessageStreamResponse,
   type UIMessage,
 } from 'ai';
-import { getMemoryClient, ensureConversation, searchMemoryContext } from '@/Chat/chat';
+import {
+  ensureConversation,
+  searchMemoryContext,
+  getConversationContext,
+  addMessage,
+  deleteConversation,
+  runWithMcpTracker,
+  type McpToolRecord,
+} from '@/Chat/chat';
 import { BASE_SYSTEM_PROMPT } from '@/lib/constants';
 import { generateTitle } from '@/lib/title';
 import type { HistoryMsg } from '@/lib/types';
@@ -33,7 +41,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const ctx = await getMemoryClient().shortTerm.getContext(conversationId);
+    const ctx = await getConversationContext(conversationId);
     const uiMessages: UIMessage[] = [...ctx.recentMessages]
       .reverse()
       .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -55,10 +63,10 @@ export async function DELETE(req: Request) {
   if (!conversationId) return json({ error: 'Missing conversationId' }, 400);
 
   try {
-    await getMemoryClient().shortTerm.deleteConversation(conversationId);
+    await deleteConversation(conversationId);
     return json({ deleted: true }, 200);
-  } catch (err) {
-    console.error('[chat/route] Failed to delete NAMS conversation:', err);
+  } catch (err: unknown) {
+    console.error('[chat/route] Failed to delete conversation:', err);
     return json({ error: 'Failed to delete conversation from memory.' }, 500);
   }
 }
@@ -83,26 +91,38 @@ export async function POST(req: Request) {
   let conversationId: string;
   try {
     conversationId = await ensureConversation(userId, existingConversationId);
-  } catch (err) {
-    console.error('[chat/route] Failed to create NAMS conversation:', err);
+  } catch (err: unknown) {
+    console.error('[chat/route] Failed to create conversation:', err);
     return json({ error: 'Memory service unavailable. Please try again.' }, 503);
   }
 
-  const lastUser = [...uiMessages].reverse().find(m => m.role === 'user');
+  const lastUser = [...uiMessages].reverse().find((m) => m.role === 'user');
   const userText = lastUser
     ? lastUser.parts
         .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-        .map(p => p.text)
+        .map((p) => p.text)
         .join('')
     : '';
-  let historyMsgs: HistoryMsg[] = [];
-  let memoryCtxData = { semanticMatches: 0, reflections: 0, observations: 0, recentMessages: 0 };
-  try {
-    const ctx = await getMemoryClient().shortTerm.getContext(conversationId);
 
-    const semanticMatches = userText
-      ? await searchMemoryContext(conversationId, userText)
-      : [];
+  let historyMsgs: HistoryMsg[] = [];
+  let memoryCtxData: {
+    semanticMatches: number;
+    reflections: number;
+    observations: number;
+    recentMessages: number;
+    mcpTools: McpToolRecord[];
+  } = { semanticMatches: 0, reflections: 0, observations: 0, recentMessages: 0, mcpTools: [] };
+
+  try {
+    const { result, mcpTools } = await runWithMcpTracker(async () => {
+      const ctx = await getConversationContext(conversationId);
+      const semanticMatches = userText
+        ? await searchMemoryContext(conversationId, userText)
+        : [];
+      return { ctx, semanticMatches };
+    });
+
+    const { ctx, semanticMatches } = result;
     const recentContents = new Set(ctx.recentMessages.map((m) => m.content));
     const uniqueMatches = semanticMatches.filter((c) => !recentContents.has(c));
 
@@ -111,25 +131,26 @@ export async function POST(req: Request) {
       reflections: ctx.reflections.length,
       observations: ctx.observations.length,
       recentMessages: ctx.recentMessages.length,
+      mcpTools,
     };
     historyMsgs = [
       ...uniqueMatches.map((c) => ({ role: 'system' as const, content: `[relevant past context] ${c}` })),
-      ...ctx.reflections.map(r  => ({ role: 'system' as const, content: `[reflection] ${r.content}` })),
-      ...ctx.observations.map(o => ({ role: 'system' as const, content: `[observation] ${o.content}` })),
-      ...[...ctx.recentMessages].reverse().map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      ...ctx.reflections.map((r) => ({ role: 'system' as const, content: `[reflection] ${r.content}` })),
+      ...ctx.observations.map((o) => ({ role: 'system' as const, content: `[observation] ${o.content}` })),
+      ...[...ctx.recentMessages].reverse().map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn('[chat/route] Could not load conversation context:', err);
   }
 
   const isFirstMessage =
-    uiMessages.filter(m => m.role === 'user').length === 1 &&
-    uiMessages.filter(m => m.role === 'assistant').length === 0;
+    uiMessages.filter((m) => m.role === 'user').length === 1 &&
+    uiMessages.filter((m) => m.role === 'assistant').length === 0;
 
   if (userText) {
-    getMemoryClient().shortTerm
-      .addMessage(conversationId, 'user', userText)
-      .catch(err => console.error('[chat/route] Failed to persist user message:', err));
+    addMessage(conversationId, 'user', userText).catch((err: unknown) =>
+      console.error('[chat/route] Failed to persist user message:', err),
+    );
   }
 
   try {
@@ -141,9 +162,7 @@ export async function POST(req: Request) {
           isFirstMessage && userText
             ? generateTitle(userText).catch(() => null)
             : Promise.resolve(null);
-        const latestMsg = userText
-          ? [{ role: 'user' as const, content: userText }]
-          : [];
+        const latestMsg = userText ? [{ role: 'user' as const, content: userText }] : [];
 
         const result = streamText({
           model: openai('gpt-4o-mini'),
@@ -151,11 +170,9 @@ export async function POST(req: Request) {
           messages: [...historyMsgs, ...latestMsg],
           onFinish: async ({ text }) => {
             if (text) {
-              getMemoryClient().shortTerm
-                .addMessage(conversationId, 'assistant', text)
-                .catch(err =>
-                  console.error('[chat/route] Failed to persist assistant message:', err),
-                );
+              addMessage(conversationId, 'assistant', text).catch((err: unknown) =>
+                console.error('[chat/route] Failed to persist assistant message:', err),
+              );
             }
           },
         });
@@ -174,7 +191,7 @@ export async function POST(req: Request) {
     });
 
     return createUIMessageStreamResponse({ stream });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[chat/route] createUIMessageStream failed:', err);
     return json({ error: 'Failed to generate a response. Please try again.' }, 500);
   }
