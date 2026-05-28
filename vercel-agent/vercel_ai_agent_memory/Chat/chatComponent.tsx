@@ -72,7 +72,6 @@ export default function ChatComponent({
   onTitleGeneratedRef.current = onTitleGenerated;
   const onConversationIdResolvedRef = useRef(onConversationIdResolved);
   onConversationIdResolvedRef.current = onConversationIdResolved;
-  // Tracks the NAMS conversationId for this session so every request reuses the same conversation
   const conversationIdRef = useRef<string | undefined>(conversationId);
   const pendingMemoryContextRef = useRef<MemoryContextData | null>(null);
   const [input, setInput] = useState('');
@@ -90,9 +89,6 @@ export default function ChatComponent({
   } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      // Use a function so every request reads the latest conversationId from the ref.
-      // A static object would capture the value at creation time and miss updates
-      // (e.g. when a new conversation is created on the first history fetch).
       body: () => ({ sessionId, userId, conversationId: conversationIdRef.current }),
     }),
     onFinish: ({ message }) => {
@@ -119,7 +115,6 @@ export default function ChatComponent({
     },
   });
 
-  // Load existing conversation history when the component mounts for this session
   useEffect(() => {
     let cancelled = false;
     setMessages([]);
@@ -146,14 +141,13 @@ export default function ChatComponent({
 
   const isStreaming = status === 'submitted' || status === 'streaming';
 
-  // Record submitted timestamp so we can measure thinking duration
+
   useEffect(() => {
     if (status === 'submitted') {
       submittedAtRef.current = Date.now();
     }
   }, [status]);
 
-  // Record a timestamp for each new message
   useEffect(() => {
     messages.forEach((msg) => {
       if (!msgTimestampsRef.current.has(msg.id)) {
@@ -320,7 +314,6 @@ export default function ChatComponent({
                         />
                       )}
                       <div className="n-flex n-flex-col n-gap-2">
-                        {/* Agent Memory context badge — shows what was retrieved from NAMS */}
                         {msgMemoryContexts[msg.id] &&
                           (msgMemoryContexts[msg.id].recentMessages +
                            msgMemoryContexts[msg.id].semanticMatches +

@@ -1,9 +1,6 @@
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 
-/**
- * Uses an LLM to generate a concise session title from the user's first message.
- */
 export async function generateTitle(firstMessage: string): Promise<string> {
   const prompt = `Generate a concise and meaningful descriptive title (4 to 8 words maximum) for the following chat conversation,
 based primarily on the initial message. The title should capture the specific topic or request in the conversation.

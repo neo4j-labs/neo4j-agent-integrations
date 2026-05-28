@@ -26,19 +26,10 @@ export function getMemoryClient(): MemoryClient {
   return _client;
 }
 
-/**
- * Returns an existing NAMS conversation ID (when the client already has one stored)
- * or creates a brand-new conversation for this session.
- *
- * We intentionally avoid `listConversations` because the NAMS API does not
- * reliably filter by userId, which would cause a new session to inherit
- * messages from an unrelated older session.
- */
 export async function ensureConversation(
   sessionId: string,
   existingConversationId?: string,
 ): Promise<string> {
-  // If the client already has a conversationId for this session, trust it.
   if (existingConversationId) {
     return existingConversationId;
   }
@@ -53,11 +44,6 @@ export async function ensureConversation(
   }
 }
 
-/**
- * Semantic search over stored messages in a conversation.
- * Returns the content strings of matching messages above the similarity threshold.
- * Used to surface long-term relevant context beyond the recent-messages window.
- */
 export async function searchMemoryContext(
   conversationId: string,
   query: string,
