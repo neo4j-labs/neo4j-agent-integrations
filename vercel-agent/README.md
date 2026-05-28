@@ -26,6 +26,7 @@
 |------|-------------|
 | [vercel_agent.html](https://htmlpreview.github.io/?https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.html) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
 | [vercel_agent.ipynb](vercel_agent.ipynb) | **Jupyter setup notebook** — Node.js install, credentials, MCP server start |
+| [vercel_ai_agent_memory/](vercel_ai_agent_memory/) | **Next.js chat app** — full NAMS integration with short-term memory, semantic search, and Neo4j graph-query tools |
 
 ## Extension Points
 
@@ -220,6 +221,70 @@ async function runWithMemory(query) {
 
 ---
 
+### 4. NAMS — Hosted Agent Memory
+
+[NAMS (Neo4j Agent Memory Service)](https://neo4j.com/docs/agent-memory/) is a **managed, graph-native REST service** that gives AI agents persistent memory across conversations — no database to run or maintain. It provides three interconnected memory layers stored in a single hosted knowledge graph:
+
+| Layer | What it stores |
+|-------|---------------|
+| **Short-term** | Conversation history and session state; supports semantic search |
+| **Long-term** | Extracted facts, user preferences, and entities (Person, Org, Location, …) across sessions |
+| **Reasoning** | Tool-use traces and decision records for future self-improvement |
+
+Get an API key at the [NAMS console](https://console.neo4j.io/agent-memory), then:
+
+```bash
+npm install @neo4j-labs/agent-memory
+```
+
+```js
+import { MemoryClient } from '@neo4j-labs/agent-memory';
+import { generateText, stepCountIs } from 'ai';
+
+const memory = new MemoryClient({
+  endpoint: 'https://memory.neo4jlabs.com/v1',
+  apiKey:   process.env.MEMORY_API_KEY,
+});
+
+// Create (or resume) a conversation scoped to this user
+const { id: conversationId } = await memory.shortTerm.createConversation({ userId: 'user-123' });
+
+async function runWithMemory(query) {
+  // BEFORE: inject short-term context + semantic matches into system prompt
+  const ctx     = await memory.shortTerm.getContext(conversationId);
+  const matches = await memory.shortTerm.searchMessages(query, {
+    sessionId: conversationId, limit: 5, threshold: 0.75,
+  });
+  const injected = [
+    ...matches.map(m  => `[relevant] ${m.content}`),
+    ...ctx.reflections.map(r => `[reflection] ${r.content}`),
+    ...[...ctx.recentMessages].reverse().slice(-8)
+      .map(m => `${m.role.toUpperCase()}: ${m.content}`),
+  ].join('\n');
+
+  const { text } = await generateText({
+    model,
+    system:   injected ? `${BASE_SYSTEM_PROMPT}\n\n${injected}` : BASE_SYSTEM_PROMPT,
+    prompt:   query,
+    tools:    mcpTools,
+    stopWhen: stepCountIs(10),
+  });
+
+  // AFTER: persist the exchange
+  await memory.shortTerm.addMessage(conversationId, 'user',      query);
+  await memory.shortTerm.addMessage(conversationId, 'assistant', text);
+  return text;
+}
+```
+
+**Transports:** The SDK defaults to REST with `MEMORY_API_KEY`. You can also connect via the NAMS MCP endpoint using Basic auth — set `MEMORY_TRANSPORT=mcp` and provide `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
+
+**Full example:** [`vercel_ai_agent_memory/`](vercel_ai_agent_memory/) — a Next.js chat UI wired to NAMS, with Neo4j graph-query tools, session management, and support for both SDK and MCP transports.
+
+**When to use:** Conversational agents that need out-of-the-box personalization, entity tracking, and reasoning traces across sessions — without managing your own Neo4j instance.
+
+---
+
 ## MCP Authentication
 
 **Supported Mechanisms:**
@@ -258,7 +323,7 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 | **JavaScript only** | The Vercel AI SDK has no Python support — all agent code runs in Node.js |
 | **`stopWhen` is v6+** | `maxSteps` was silently removed in AI SDK v6; passing it does nothing. Use `stopWhen: stepCountIs(N)` |
 | **MCP transport type** | `neo4j-mcp-server` HTTP mode requires `type: 'http'`, not `type: 'sse'` |
-| **Memory DB** | Memory uses `neo4j-driver` directly — requires a separate writable Neo4j instance from the read-only knowledge graph |
+| **Memory DB** | `3-memory-agent.mjs` uses `neo4j-driver` directly — requires a separate writable Neo4j instance. Use NAMS (Extension Point 4) to avoid managing your own database. |
 | **Edge runtime** | Neo4j driver needs persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
 | **`experimental_createMCPClient`** | Still experimental; API may change in future SDK versions |
 
@@ -268,6 +333,9 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 - [Vercel AI SDK — Tool Use](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
 - [Vercel AI SDK — MCP Clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
 - [`@ai-sdk/mcp` on npm](https://www.npmjs.com/package/@ai-sdk/mcp)
-- [Neo4j Agent Memory (Python)](https://github.com/neo4j-labs/agent-memory)
+- [Neo4j Agent Memory Documentation](https://neo4j.com/docs/agent-memory/)
+- [Neo4j Agent Memory Console (get an API key)](https://console.neo4j.io/agent-memory)
+- [`@neo4j-labs/agent-memory` on npm](https://www.npmjs.com/package/@neo4j-labs/agent-memory)
+- [Neo4j Agent Memory (source / Python)](https://github.com/neo4j-labs/agent-memory)
 - [Neo4j MCP Server](https://github.com/neo4j-contrib/mcp-neo4j)
 - [Neo4j JavaScript Driver Documentation](https://neo4j.com/docs/javascript-manual/current/)

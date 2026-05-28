@@ -377,7 +377,7 @@ export default function HomePage() {
             onMessageCountChange={setMessageCount}
             onTitleGenerated={(title) => autoTitleSession(currentSessionId, title)}
             suggestions={[
-              'What companies are in the graph?',
+              'What organizations are in the graph?',
               'Find the most connected nodes',
               'I want to import data',
               'Create an AI agent',

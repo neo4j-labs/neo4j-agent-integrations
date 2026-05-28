@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import type { UIMessage } from 'ai';
+import type { UIMessage, DynamicToolUIPart } from 'ai';
 
 import { CleanIconButton, TextLink, Typography } from '@neo4j-ndl/react';
 import {
@@ -400,6 +400,65 @@ export default function ChatComponent({
                             )}
                           </div>
                         )}
+                        {/* Tool calls made by the model for this response */}
+                        {msg.parts
+                          .filter((p): p is DynamicToolUIPart => p.type === 'dynamic-tool')
+                          .map((part) => {
+                            const isRunning = part.state === 'input-streaming' || part.state === 'input-available';
+                            const isDone = part.state === 'output-available';
+                            const isError = (part as any).state === 'output-error';
+                            const query = (!isRunning && (part.input as any)?.query) || null;
+                            const rawOutput = isDone ? (part as any).output : null;
+                            const outputText =
+                              rawOutput == null ? null
+                              : typeof rawOutput === 'string' ? rawOutput
+                              : JSON.stringify(rawOutput);
+                            const displayOutput =
+                              outputText === '[]' ? 'No results found.'
+                              : outputText != null ? outputText.slice(0, 800)
+                              : null;
+                            return (
+                              <div
+                                key={part.toolCallId}
+                                style={{
+                                  fontSize: '12px',
+                                  fontFamily: 'monospace',
+                                  padding: '8px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid var(--theme-color-neutral-border-weak)',
+                                  backgroundColor: 'var(--theme-color-neutral-bg-default)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '4px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontWeight: 600, color: 'var(--theme-color-primary-text)' }}>
+                                    🔧 {part.title ?? part.toolName}
+                                  </span>
+                                  {isRunning && <span style={{ opacity: 0.6, fontSize: '11px' }}>running…</span>}
+                                  {isDone && <span style={{ color: 'var(--theme-color-success-text)', fontSize: '11px' }}>✓ done</span>}
+                                  {isError && <span style={{ color: 'var(--theme-color-danger-text)', fontSize: '11px' }}>✗ error</span>}
+                                </div>
+                                {query && (
+                                  <div style={{ color: 'var(--theme-color-neutral-text-weaker)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                    {query}
+                                  </div>
+                                )}
+                                {displayOutput && (
+                                  <div style={{ color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderTop: '1px solid var(--theme-color-neutral-border-weak)', paddingTop: '4px', marginTop: '2px' }}>
+                                    {displayOutput}
+                                  </div>
+                                )}
+                                {isError && (
+                                  <div style={{ color: 'var(--theme-color-danger-text)' }}>
+                                    {(part as any).errorText}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        }
                         <Response
                           isAnimating={
                             isStreaming && idx === messages.length - 1

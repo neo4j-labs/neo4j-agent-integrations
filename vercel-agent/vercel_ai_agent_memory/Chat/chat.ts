@@ -12,7 +12,6 @@ export interface McpToolRecord {
 
 const _mcpRecordStore = new AsyncLocalStorage<McpToolRecord[]>();
 
-/** Runs fn() with a per-request MCP tool recorder active. Returns the result and all tool records. */
 export async function runWithMcpTracker<T>(
   fn: () => Promise<T>,
 ): Promise<{ result: T; mcpTools: McpToolRecord[] }> {
@@ -21,18 +20,14 @@ export async function runWithMcpTracker<T>(
   return { result, mcpTools: records };
 }
 
-// ─── Config ──────────────────────────────────────────────────────────────────
-
 const DEFAULT_SDK_ENDPOINT = 'https://memory.neo4jlabs.com/v1';
 const DEFAULT_MCP_URL = 'https://memory.neo4jlabs.com/mcp';
 const GOOD_MATCH_THRESHOLD = 0.75;
 
-/** Set MEMORY_TRANSPORT=mcp in your env to use the MCP backend instead of the SDK. */
 function useMcpTransport(): boolean {
   return process.env.MEMORY_TRANSPORT?.trim().toLowerCase() === 'mcp';
 }
 
-// ─── SDK backend (MEMORY_API_KEY) ────────────────────────────────────────────
 
 let _sdkClient: MemoryClient | null = null;
 
@@ -48,21 +43,11 @@ function getSdkClient(): MemoryClient {
   return _sdkClient;
 }
 
-/** Returns the shared MemoryClient (SDK transport only). Throws if MEMORY_API_KEY is absent. */
 export function getMemoryClient(): MemoryClient {
   return getSdkClient();
 }
 
-// ─── MCP backend ─────────────────────────────────────────────────────────────
-//
-// Auth priority:
-//   1. Bearer token  — MEMORY_API_KEY        (hosted NAMS MCP server)
-//   2. Basic auth    — NEO4J_USERNAME + NEO4J_PASSWORD  (self-hosted MCP server)
-
 function getMcpAuthHeader(): string {
-  const apiKey = process.env.MEMORY_API_KEY?.trim();
-  if (apiKey) return `Bearer ${apiKey}`;
-
   const username = process.env.NEO4J_USERNAME?.trim();
   const password = process.env.NEO4J_PASSWORD?.trim();
   if (username && password) {
@@ -70,7 +55,7 @@ function getMcpAuthHeader(): string {
   }
 
   throw new Error(
-    'MCP transport requires auth. Set MEMORY_API_KEY (Bearer) or NEO4J_USERNAME + NEO4J_PASSWORD (Basic).',
+    'Neo4j MCP tools require auth. Set NEO4J_USERNAME + NEO4J_PASSWORD (Basic).',
   );
 }
 
@@ -93,11 +78,32 @@ function getMcpClientPromise(): Promise<MCPClient> {
   return _mcpClientPromise;
 }
 
-/** Returns the MCP tool set for use in streamText / generateText (MCP mode only). */
-export async function getMemoryTools() {
+const MAX_TOOL_RESULT_CHARS = 50_000;
+const TRUNCATION_NOTICE = '\n[...Result truncated. Use a more specific Cypher query with LIMIT and specific property selectors.]';
+
+export async function getNeo4jMcpTools() {
   const client = await getMcpClientPromise();
-  return client.tools();
+  const rawTools = await client.tools();
+  return Object.fromEntries(
+    Object.entries(rawTools).map(([name, tool]) => [
+      name,
+      {
+        ...tool,
+        execute: async (...args: Parameters<typeof tool.execute>) => {
+          const result = await tool.execute(...args);
+          const str = typeof result === 'string' ? result : JSON.stringify(result);
+          if (str.length > MAX_TOOL_RESULT_CHARS) {
+            return str.slice(0, MAX_TOOL_RESULT_CHARS) + TRUNCATION_NOTICE;
+          }
+          return result;
+        },
+      },
+    ]),
+  );
 }
+
+/** @deprecated use getNeo4jMcpTools */
+export const getMemoryTools = getNeo4jMcpTools;
 
 async function callMcpTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   const client = await getMcpClientPromise();
@@ -118,8 +124,6 @@ async function callMcpTool(name: string, args: Record<string, unknown>): Promise
     _mcpRecordStore.getStore()?.push({ tool: name, durationMs: Date.now() - start, ok });
   }
 }
-
-// ─── Public API (auto-selects backend) ───────────────────────────────────────
 
 export async function ensureConversation(
   sessionId: string,
@@ -159,7 +163,6 @@ export async function addMessage(
   content: string,
 ): Promise<void> {
   if (useMcpTransport()) {
-    // MCP schema: messages is an array of { role, content } objects
     await callMcpTool('memory_add_messages', {
       conversation_id: conversationId,
       messages: [{ role, content }],
@@ -177,7 +180,6 @@ export async function searchMemoryContext(
   if (!query.trim()) return [];
   try {
     if (useMcpTransport()) {
-      // MCP schema has no threshold param — limit is the only filter available
       const results = (await callMcpTool('memory_search_messages', {
         conversation_id: conversationId,
         query,
@@ -200,7 +202,6 @@ export async function searchMemoryContext(
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   if (useMcpTransport()) {
-    // No MCP tool for delete — fall back to REST using the same auth header.
     const restBase = process.env.MEMORY_REST_URL?.trim() || 'https://memory.neo4jlabs.com/v1';
     const res = await fetch(`${restBase}/short-term/conversations/${conversationId}`, {
       method: 'DELETE',

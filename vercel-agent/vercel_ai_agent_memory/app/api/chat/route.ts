@@ -4,6 +4,7 @@ import {
   streamText,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  stepCountIs,
   type UIMessage,
 } from 'ai';
 import {
@@ -13,6 +14,7 @@ import {
   addMessage,
   deleteConversation,
   runWithMcpTracker,
+  getNeo4jMcpTools,
   type McpToolRecord,
 } from '@/Chat/chat';
 import { BASE_SYSTEM_PROMPT } from '@/lib/constants';
@@ -137,7 +139,7 @@ export async function POST(req: Request) {
       ...uniqueMatches.map((c) => ({ role: 'system' as const, content: `[relevant past context] ${c}` })),
       ...ctx.reflections.map((r) => ({ role: 'system' as const, content: `[reflection] ${r.content}` })),
       ...ctx.observations.map((o) => ({ role: 'system' as const, content: `[observation] ${o.content}` })),
-      ...[...ctx.recentMessages].reverse().map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      ...[...ctx.recentMessages].reverse().slice(-8).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
   } catch (err: unknown) {
     console.warn('[chat/route] Could not load conversation context:', err);
@@ -164,10 +166,19 @@ export async function POST(req: Request) {
             : Promise.resolve(null);
         const latestMsg = userText ? [{ role: 'user' as const, content: userText }] : [];
 
+        let neo4jTools = {};
+        try {
+          neo4jTools = await getNeo4jMcpTools();
+        } catch (err) {
+          console.warn('[chat/route] Could not load Neo4j MCP tools:', err);
+        }
+
         const result = streamText({
           model: openai('gpt-4o-mini'),
           system: BASE_SYSTEM_PROMPT,
           messages: [...historyMsgs, ...latestMsg],
+          tools: neo4jTools,
+          stopWhen: stepCountIs(5),
           onFinish: async ({ text }) => {
             if (text) {
               addMessage(conversationId, 'assistant', text).catch((err: unknown) =>
