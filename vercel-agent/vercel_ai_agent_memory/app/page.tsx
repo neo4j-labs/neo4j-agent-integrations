@@ -17,15 +17,13 @@ interface ChatSession {
   id: string;
   title: string;
   createdAt: string;
+  conversationId?: string;
 }
-
-const SESSIONS_KEY = 'neo4j-chat-sessions';
-const CURRENT_KEY = 'neo4j-chat-current-session';
-const THEME_KEY = 'neo4j-chat-theme';
 
 export default function HomePage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,27 +33,24 @@ export default function HomePage() {
   const [isMobile, setIsMobile] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
 
+  // Load session store from server on mount (cookie-backed, userId stable per browser)
   useEffect(() => {
-    const raw = localStorage.getItem(SESSIONS_KEY);
-    let storedSessions: ChatSession[] = raw ? JSON.parse(raw) : [];
-
-    if (storedSessions.length === 0) {
-      const id = crypto.randomUUID();
-      storedSessions = [{ id, title: 'New Chat', createdAt: new Date().toISOString() }];
-      localStorage.setItem(SESSIONS_KEY, JSON.stringify(storedSessions));
-    }
-
-    const storedCurrentId = localStorage.getItem(CURRENT_KEY);
-    const validId =
-      storedSessions.find((s) => s.id === storedCurrentId)?.id ?? storedSessions[0].id;
-    localStorage.setItem(CURRENT_KEY, validId);
-
-    const savedTheme = localStorage.getItem(THEME_KEY);
-    if (savedTheme !== null) setIsDarkMode(savedTheme === 'dark');
-
-    setSessions(storedSessions);
-    setCurrentSessionId(validId);
-    setHydrated(true);
+    fetch('/api/sessions')
+      .then(r => r.json())
+      .then((store) => {
+        const list: ChatSession[] = store.sessions ?? [];
+        setSessions(list);
+        setCurrentSessionId(store.currentSessionId ?? (list[0]?.id ?? null));
+        setIsDarkMode(store.theme !== 'light');
+        setUserId(store.userId ?? null);
+        setHydrated(true);
+      })
+      .catch(() => {
+        const id = crypto.randomUUID();
+        setSessions([{ id, title: 'New Chat', createdAt: new Date().toISOString() }]);
+        setCurrentSessionId(id);
+        setHydrated(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -77,37 +72,54 @@ export default function HomePage() {
     };
   }, []);
 
-  const persist = (updated: ChatSession[]) => {
-    setSessions(updated);
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(updated));
-  };
+  const apiPatch = (body: Record<string, unknown>) =>
+    fetch('/api/sessions', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(err => console.error('[HomePage] Session sync error:', err));
 
   const switchTo = (id: string) => {
     setCurrentSessionId(id);
-    localStorage.setItem(CURRENT_KEY, id);
+    apiPatch({ currentSessionId: id });
     setMessageCount(0);
     if (isMobile) setIsDrawerOpen(false);
   };
 
-  const createNewSession = () => {
-    const id = crypto.randomUUID();
-    const newSession: ChatSession = { id, title: 'New Chat', createdAt: new Date().toISOString() };
-    const updated = [newSession, ...sessions];
-    persist(updated);
-    switchTo(id);
+  const createNewSession = async () => {
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      setSessions(data.sessions);
+      setCurrentSessionId(data.currentSessionId);
+      setMessageCount(0);
+      if (isMobile) setIsDrawerOpen(false);
+    } catch (err) {
+      console.error('[HomePage] Failed to create session:', err);
+    }
   };
 
-  const deleteSession = (id: string, e: React.MouseEvent) => {
+  const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = sessions.filter((s) => s.id !== id);
-    if (updated.length === 0) {
-      const newId = crypto.randomUUID();
-      const newSession: ChatSession = { id: newId, title: 'New Chat', createdAt: new Date().toISOString() };
-      persist([newSession]);
-      switchTo(newId);
-    } else {
-      persist(updated);
-      if (currentSessionId === id) switchTo(updated[0].id);
+    const session = sessions.find(s => s.id === id);
+    if (session?.conversationId) {
+      fetch(`/api/chat?conversationId=${encodeURIComponent(session.conversationId)}`, { method: 'DELETE' })
+        .catch(err => console.error('[HomePage] Failed to delete NAMS conversation:', err));
+    }
+    try {
+      const res = await fetch(`/api/sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      setSessions(data.sessions);
+      if (data.currentSessionId !== currentSessionId) {
+        setCurrentSessionId(data.currentSessionId);
+        setMessageCount(0);
+      }
+    } catch (err) {
+      console.error('[HomePage] Failed to delete session:', err);
     }
   };
 
@@ -119,7 +131,9 @@ export default function HomePage() {
 
   const saveEdit = (id: string) => {
     if (editTitle.trim()) {
-      persist(sessions.map((s) => (s.id === id ? { ...s, title: editTitle.trim() } : s)));
+      const title = editTitle.trim();
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s));
+      apiPatch({ sessionId: id, update: { title } });
     }
     setEditingId(null);
     setEditTitle('');
@@ -130,10 +144,15 @@ export default function HomePage() {
     setEditTitle('');
   };
 
+  const autoTitleSession = (sessionId: string, title: string) => {
+    setSessions(prev => prev.map(s => s.id === sessionId && s.title === 'New Chat' ? { ...s, title } : s));
+    apiPatch({ sessionId, update: { title } });
+  };
+
   const toggleTheme = () => {
     const next = !isDarkMode;
     setIsDarkMode(next);
-    localStorage.setItem(THEME_KEY, next ? 'dark' : 'light');
+    apiPatch({ theme: next ? 'dark' : 'light' });
   };
 
   const formatDate = (dateStr: string) => {
@@ -145,7 +164,7 @@ export default function HomePage() {
     return date.toLocaleDateString();
   };
 
-  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const currentSession = sessions.find(s => s.id === currentSessionId);
 
   if (!hydrated || !currentSessionId) return null;
 
@@ -344,10 +363,19 @@ export default function HomePage() {
           <ChatComponent
             key={currentSessionId}
             sessionId={currentSessionId}
+            userId={userId ?? undefined}
+            conversationId={currentSession?.conversationId}
+            onConversationIdResolved={(convId) => {
+              setSessions(prev => prev.map(s =>
+                s.id === currentSessionId ? { ...s, conversationId: convId } : s
+              ));
+              apiPatch({ sessionId: currentSessionId, update: { conversationId: convId } });
+            }}
             userName="User"
             fluid
             hideHeader
             onMessageCountChange={setMessageCount}
+            onTitleGenerated={(title) => autoTitleSession(currentSessionId, title)}
             suggestions={[
               'What companies are in the graph?',
               'Find the most connected nodes',
@@ -360,4 +388,3 @@ export default function HomePage() {
     </div>
   );
 }
-

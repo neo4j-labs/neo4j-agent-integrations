@@ -10,6 +10,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
     "@ai-sdk/react": "^3.0.179",
+    "@neo4j-labs/agent-memory": "^0.3.0",
     "@neo4j-ndl/base": "^4.12.4",
     "@neo4j-ndl/react": "^4.12.5",
     "@tanstack/react-table": "^8.21.3",

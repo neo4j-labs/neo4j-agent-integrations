@@ -17,19 +17,29 @@ import {
   ArrowPathIconOutline,
   Cog6ToothIconOutline,
   HandThumbDownIconOutline,
-  PlusIconOutline,
   Square2StackIconOutline,
   XMarkIconOutline,
 } from '@neo4j-ndl/react/icons';
 
+interface MemoryContextData {
+  semanticMatches: number;
+  reflections: number;
+  observations: number;
+  recentMessages: number;
+}
+
 interface ChatComponentProps {
   sessionId: string;
+  userId?: string;
+  conversationId?: string;
+  onConversationIdResolved?: (id: string) => void;
   userName?: string;
   suggestions?: string[];
   onClose?: () => void;
   fluid?: boolean;
   hideHeader?: boolean;
   onMessageCountChange?: (count: number) => void;
+  onTitleGenerated?: (title: string) => void;
 }
 
 
@@ -43,32 +53,98 @@ const DEFAULT_SUGGESTIONS = [
 
 export default function ChatComponent({
   sessionId,
+  userId,
+  conversationId,
+  onConversationIdResolved,
   userName = 'User',
   suggestions = DEFAULT_SUGGESTIONS,
   onClose,
   fluid = false,
   hideHeader = false,
   onMessageCountChange,
+  onTitleGenerated,
 }: ChatComponentProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const msgTimestampsRef = useRef<Map<string, Date>>(new Map());
-  const thinkingTimesRef = useRef<Map<string, number>>(new Map()); // assistantMsgId → ms
   const submittedAtRef = useRef<number | null>(null);
+  const [msgThinkingTimes, setMsgThinkingTimes] = useState<Record<string, number>>({});
+  const onTitleGeneratedRef = useRef(onTitleGenerated);
+  onTitleGeneratedRef.current = onTitleGenerated;
+  const onConversationIdResolvedRef = useRef(onConversationIdResolved);
+  onConversationIdResolvedRef.current = onConversationIdResolved;
+  // Tracks the NAMS conversationId for this session so every request reuses the same conversation
+  const conversationIdRef = useRef<string | undefined>(conversationId);
+  const pendingMemoryContextRef = useRef<MemoryContextData | null>(null);
   const [input, setInput] = useState('');
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [msgMemoryContexts, setMsgMemoryContexts] = useState<Record<string, MemoryContextData>>({});
   const {
     messages,
+    setMessages,
     sendMessage,
+    regenerate,
     stop,
     status,
+    error,
   } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      body: { sessionId },
+      // Use a function so every request reads the latest conversationId from the ref.
+      // A static object would capture the value at creation time and miss updates
+      // (e.g. when a new conversation is created on the first history fetch).
+      body: () => ({ sessionId, userId, conversationId: conversationIdRef.current }),
     }),
+    onFinish: ({ message }) => {
+      if (message.role === 'assistant') {
+        if (submittedAtRef.current !== null) {
+          const thinkingMs = Date.now() - submittedAtRef.current;
+          submittedAtRef.current = null;
+          setMsgThinkingTimes(prev => ({ ...prev, [message.id]: thinkingMs }));
+        }
+        if (pendingMemoryContextRef.current) {
+          const memCtx = pendingMemoryContextRef.current;
+          pendingMemoryContextRef.current = null;
+          setMsgMemoryContexts(prev => ({ ...prev, [message.id]: memCtx }));
+        }
+      }
+    },
+    onData: (dataPart) => {
+      if (dataPart.type === 'data-session-title') {
+        onTitleGeneratedRef.current?.(dataPart.data as string);
+      }
+      if (dataPart.type === 'data-memory-context') {
+        pendingMemoryContextRef.current = dataPart.data as MemoryContextData;
+      }
+    },
   });
 
+  // Load existing conversation history when the component mounts for this session
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([]);
+    setHistoryLoading(true);
+    const params = new URLSearchParams({ sessionId });
+    if (conversationIdRef.current) params.set('conversationId', conversationIdRef.current);
+    fetch(`/api/chat?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          if (data.conversationId && !conversationIdRef.current) {
+            conversationIdRef.current = data.conversationId;
+            onConversationIdResolvedRef.current?.(data.conversationId);
+          }
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages);
+          }
+        }
+      })
+      .catch((err) => { console.warn('[ChatComponent] Failed to load conversation history:', err); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   const isStreaming = status === 'submitted' || status === 'streaming';
-  const lastMsg = messages[messages.length - 1];
 
   // Record submitted timestamp so we can measure thinking duration
   useEffect(() => {
@@ -77,15 +153,11 @@ export default function ChatComponent({
     }
   }, [status]);
 
-  // Record a timestamp for each new message; capture thinking time for assistant messages
+  // Record a timestamp for each new message
   useEffect(() => {
     messages.forEach((msg) => {
       if (!msgTimestampsRef.current.has(msg.id)) {
         msgTimestampsRef.current.set(msg.id, new Date());
-        if (msg.role === 'assistant' && submittedAtRef.current !== null) {
-          thinkingTimesRef.current.set(msg.id, Date.now() - submittedAtRef.current);
-          submittedAtRef.current = null;
-        }
       }
     });
     onMessageCountChange?.(messages.length);
@@ -119,6 +191,19 @@ export default function ChatComponent({
 
   const handleCancel = () => stop();
 
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyError(null);
+    } catch {
+      setCopyError('Copy failed — please copy manually.');
+      setTimeout(() => setCopyError(null), 3000);
+    }
+  };
+
+  const errorMessage =
+    error instanceof Error ? error.message : error ? String(error) : null;
+
   return (
     <section
       style={
@@ -149,8 +234,28 @@ export default function ChatComponent({
           className="n-p-4 n-flex n-flex-col n-grow n-overflow-y-auto"
           style={fluid ? { flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' } : undefined}
         >
+          {historyLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '32px' }}>
+              <Typography variant="body-small" style={{ opacity: 0.5 }}>Loading conversation…</Typography>
+            </div>
+          ) : (
+            <>
+          {copyError && (
+            <div className="n-bg-warning-bg-weak n-border n-border-warning-border-weak n-rounded-lg n-p-2 n-mb-2">
+              <Typography variant="body-small">{copyError}</Typography>
+            </div>
+          )}
+
           {messages.length === 0 ? (
-            <div className="n-flex n-flex-col">
+            <div className="n-flex n-flex-col n-gap-4">
+              {errorMessage && (
+                <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3 n-flex n-items-start n-justify-between n-gap-2">
+                  <Typography variant="body-small">⚠ {errorMessage}</Typography>
+                  <CleanIconButton size="small" description="Retry" onClick={() => regenerate()}>
+                    <ArrowPathIconOutline />
+                  </CleanIconButton>
+                </div>
+              )}
               <div className="n-flex n-flex-col n-gap-12">
                 <Typography variant="display">
                   Hi {userName}, how can I help you today?
@@ -208,13 +313,59 @@ export default function ChatComponent({
                   ) : (
                     <div className="n-w-full n-flex n-flex-col n-gap-2">
                       {/* Show completed thinking duration above the response */}
-                      {thinkingTimesRef.current.has(msg.id) && (
+                      {msg.id in msgThinkingTimes && (
                         <Thinking
                           isThinking={false}
-                          thinkingMs={thinkingTimesRef.current.get(msg.id)}
+                          thinkingMs={msgThinkingTimes[msg.id]}
                         />
                       )}
                       <div className="n-flex n-flex-col n-gap-2">
+                        {/* Agent Memory context badge — shows what was retrieved from NAMS */}
+                        {msgMemoryContexts[msg.id] &&
+                          (msgMemoryContexts[msg.id].recentMessages +
+                           msgMemoryContexts[msg.id].semanticMatches +
+                           msgMemoryContexts[msg.id].reflections +
+                           msgMemoryContexts[msg.id].observations) > 0 && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexWrap: 'wrap',
+                              padding: '5px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--theme-color-primary-border-weak)',
+                              backgroundColor: 'var(--theme-color-primary-bg-weak)',
+                            }}
+                          >
+                            <Typography
+                              variant="body-small"
+                              style={{ fontWeight: 600, color: 'var(--theme-color-primary-text)', whiteSpace: 'nowrap' }}
+                            >
+                              🧠 Agent Memory
+                            </Typography>
+                            {msgMemoryContexts[msg.id].recentMessages > 0 && (
+                              <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-info-bg-weak)', color: 'var(--theme-color-info-text)' }}>
+                                {msgMemoryContexts[msg.id].recentMessages} recent
+                              </span>
+                            )}
+                            {msgMemoryContexts[msg.id].semanticMatches > 0 && (
+                              <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-success-bg-weak)', color: 'var(--theme-color-success-text)' }}>
+                                {msgMemoryContexts[msg.id].semanticMatches} semantic
+                              </span>
+                            )}
+                            {msgMemoryContexts[msg.id].reflections > 0 && (
+                              <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-warning-bg-weak)', color: 'var(--theme-color-warning-text)' }}>
+                                {msgMemoryContexts[msg.id].reflections} reflections
+                              </span>
+                            )}
+                            {msgMemoryContexts[msg.id].observations > 0 && (
+                              <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-neutral-bg-weak)', color: 'var(--theme-color-neutral-text-default)' }}>
+                                {msgMemoryContexts[msg.id].observations} observations
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <Response
                           isAnimating={
                             isStreaming && idx === messages.length - 1
@@ -242,9 +393,7 @@ export default function ChatComponent({
                             <CleanIconButton
                               size="small"
                               description="Copy"
-                              onClick={() =>
-                                navigator.clipboard.writeText(getMsgText(msg))
-                              }
+                              onClick={() => handleCopy(getMsgText(msg))}
                             >
                               <Square2StackIconOutline />
                             </CleanIconButton>
@@ -257,19 +406,32 @@ export default function ChatComponent({
               ))}
 
               {(status === 'submitted') && (
-                <Thinking isThinking />
+                <>
+                  <Thinking isThinking />
+                  <Typography
+                    variant="body-small"
+                    style={{ opacity: 0.5, paddingLeft: '4px', marginTop: '-6px' }}
+                  >
+                    Fetching memory context…
+                  </Typography>
+                </>
               )}
 
               {status === 'error' && (
-                <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3">
+                <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3 n-flex n-items-start n-justify-between n-gap-2">
                   <Typography variant="body-small">
-                    ⚠ Something went wrong. Please try again.
+                    ⚠ {errorMessage ?? 'Something went wrong. Please try again.'}
                   </Typography>
+                  <CleanIconButton size="small" description="Retry" onClick={() => regenerate()}>
+                    <ArrowPathIconOutline />
+                  </CleanIconButton>
                 </div>
               )}
 
               <div ref={messagesEndRef} />
             </div>
+          )}
+            </>
           )}
         </div>
 
@@ -289,11 +451,6 @@ export default function ChatComponent({
                 All information should be verified independently.
               </Typography>
             }
-          // bottomContent={
-          //   <CleanIconButton description="Add files" size="small">
-          //     <PlusIconOutline />
-          //   </CleanIconButton>
-          // }
           />
         </div>
 

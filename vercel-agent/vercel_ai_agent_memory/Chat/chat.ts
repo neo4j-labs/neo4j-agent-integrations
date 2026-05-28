@@ -1,88 +1,79 @@
 
-import neo4j, { type Driver } from 'neo4j-driver';
+import { MemoryClient } from '@neo4j-labs/agent-memory';
 
-// ── Environment ───────────────────────────────────────────────────────────────
-const MEMORY_URI = process.env.MEMORY_NEO4J_URI!;
-const MEMORY_USER = process.env.MEMORY_NEO4J_USERNAME ?? 'neo4j';
-const MEMORY_PASS = process.env.MEMORY_NEO4J_PASSWORD!;
-const MEMORY_DB = process.env.MEMORY_NEO4J_DATABASE ?? 'neo4j';
+const DEFAULT_MEMORY_ENDPOINT = 'https://memory.neo4jlabs.com/v1';
+const GOOD_MATCH_THRESHOLD = 0.75;
 
-if (!MEMORY_URI || !MEMORY_PASS) {
-  throw new Error(
-    'Missing MEMORY_NEO4J_URI or MEMORY_NEO4J_PASSWORD. Copy .env.local.example → .env.local.'
-  );
+let _client: MemoryClient | null = null;
+
+function getMemoryApiKey(): string | null {
+  return process.env.MEMORY_API_KEY?.trim() || null;
 }
 
-let _driver: Driver | null = null;
+function getMemoryEndpoint(): string {
+  return process.env.MEMORY_ENDPOINT?.trim() || DEFAULT_MEMORY_ENDPOINT;
+}
 
-function getDriver(): Driver {
-  if (!_driver) {
-    _driver = neo4j.driver(
-      MEMORY_URI,
-      neo4j.auth.basic(MEMORY_USER, MEMORY_PASS),
-      { disableLosslessIntegers: true }
-    );
+/** Returns the shared MemoryClient, initialising it lazily on first call. Throws if MEMORY_API_KEY is absent. */
+export function getMemoryClient(): MemoryClient {
+  const apiKey = getMemoryApiKey();
+  if (!apiKey) {
+    throw new Error('MEMORY_API_KEY is not configured. Copy .env.local.example → .env.local and set it.');
   }
-  return _driver;
+  if (!_client) {
+    _client = new MemoryClient({ endpoint: getMemoryEndpoint(), apiKey });
+  }
+  return _client;
 }
 
-export function createSessionId(seed?: string): string {
-  return seed ? `session-${seed}` : `session-${Date.now()}`;
-}
-
-export async function storeMessage(
+/**
+ * Returns an existing NAMS conversation ID (when the client already has one stored)
+ * or creates a brand-new conversation for this session.
+ *
+ * We intentionally avoid `listConversations` because the NAMS API does not
+ * reliably filter by userId, which would cause a new session to inherit
+ * messages from an unrelated older session.
+ */
+export async function ensureConversation(
   sessionId: string,
-  role: 'user' | 'assistant',
-  content: string
-): Promise<void> {
-  const driver = getDriver();
-  await driver.executeQuery(
-    `
-    MERGE (s:MemorySession {id: $sessionId})
-    CREATE (m:MemoryMessage {
-      role:      $role,
-      content:   $content,
-      timestamp: datetime()
-    })
-    CREATE (s)-[:HAS_MESSAGE]->(m)
-    `,
-    { sessionId, role, content },
-    { database: MEMORY_DB }
-  );
+  existingConversationId?: string,
+): Promise<string> {
+  // If the client already has a conversationId for this session, trust it.
+  if (existingConversationId) {
+    return existingConversationId;
+  }
+
+  const client = getMemoryClient();
+  try {
+    const conv = await client.shortTerm.createConversation({ userId: sessionId });
+    return conv.id;
+  } catch (err) {
+    console.error('[chat] Failed to create NAMS conversation for session', sessionId, err);
+    throw err;
+  }
 }
 
-
-export async function getRecentMessages(
-  sessionId: string,
-  limit = 20
-): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
-  const driver = getDriver();
-  const safeLimit = Math.max(0, Math.trunc(Number(limit) || 0));
-  const { records } = await driver.executeQuery(
-    `
-    MATCH (s:MemorySession {id: $sessionId})-[:HAS_MESSAGE]->(m:MemoryMessage)
-    RETURN m.role AS role, m.content AS content
-    ORDER BY m.timestamp ASC
-    LIMIT toInteger($limit)
-    `,
-    { sessionId, limit: neo4j.int(safeLimit) },
-    { database: MEMORY_DB }
-  );
-
-  return records.map((r) => ({
-    role: r.get('role') as 'user' | 'assistant',
-    content: r.get('content') as string,
-  }));
-}
-
-export async function clearSession(sessionId: string): Promise<void> {
-  const driver = getDriver();
-  await driver.executeQuery(
-    `
-    MATCH (s:MemorySession {id: $sessionId})-[r:HAS_MESSAGE]->(m:MemoryMessage)
-    DELETE r, m
-    `,
-    { sessionId },
-    { database: MEMORY_DB }
-  );
+/**
+ * Semantic search over stored messages in a conversation.
+ * Returns the content strings of matching messages above the similarity threshold.
+ * Used to surface long-term relevant context beyond the recent-messages window.
+ */
+export async function searchMemoryContext(
+  conversationId: string,
+  query: string,
+  limit = 5,
+): Promise<string[]> {
+  if (!query.trim()) return [];
+  try {
+    const client = getMemoryClient();
+    const results = await client.shortTerm.searchMessages(query, {
+      sessionId: conversationId,
+      limit,
+      threshold: GOOD_MATCH_THRESHOLD,
+    });
+    return results.map((m) => m.content).filter(Boolean);
+  } catch (err) {
+    console.warn('[chat] searchMessages failed:', err);
+    return [];
+  }
 }
