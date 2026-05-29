@@ -137,7 +137,7 @@ export async function POST(req: Request) {
   } = { semanticMatches: 0, reflections: 0, observations: 0, recentMessages: 0, mcpTools: [] };
 
   try {
-    const { result } = await runWithMcpTracker(async () => {
+    const { result, mcpTools } = await runWithMcpTracker(async () => {
       const ctx = await getConversationContext(conversationId);
       const conversationMatches = userText
         ? await searchMemoryContext(conversationId, userText)
@@ -170,7 +170,7 @@ export async function POST(req: Request) {
       reflections: ctx.reflections.length,
       observations: ctx.observations.length,
       recentMessages: ctx.recentMessages.length,
-      mcpTools: [], // only show tools if agent actually calls them
+      mcpTools
     };
 
     historyMsgs = [
