@@ -133,8 +133,18 @@ export async function ensureConversation(
 
   try {
     if (useMcpTransport()) {
-      const conv = (await callMcpTool('memory_create_conversation', { user_id: sessionId })) as { id: string };
-      return conv.id;
+      try {
+        const conv = (await callMcpTool('memory_create_conversation', { user_id: sessionId })) as { id: string };
+        return conv.id;
+      } catch (mcpErr: any) {
+        // Fall back to SDK if MCP tool not found
+        if (mcpErr?.code === -32602 || mcpErr?.message?.includes('not found')) {
+          console.warn('[chat] MCP tool not found, falling back to SDK client');
+          const conv = await getSdkClient().shortTerm.createConversation({ userId: sessionId });
+          return conv.id;
+        }
+        throw mcpErr;
+      }
     } else {
       const conv = await getSdkClient().shortTerm.createConversation({ userId: sessionId });
       return conv.id;
@@ -151,7 +161,16 @@ export async function getConversationContext(conversationId: string): Promise<{
   observations: Array<{ content: string }>;
 }> {
   if (useMcpTransport()) {
-    return (await callMcpTool('memory_get_context', { conversation_id: conversationId })) as any;
+    try {
+      return (await callMcpTool('memory_get_context', { conversation_id: conversationId })) as any;
+    } catch (mcpErr: any) {
+      // Fall back to SDK if MCP tool not found
+      if (mcpErr?.code === -32602 || mcpErr?.message?.includes('not found')) {
+        console.warn('[chat] MCP tool not found, falling back to SDK client');
+        return getSdkClient().shortTerm.getContext(conversationId) as any;
+      }
+      throw mcpErr;
+    }
   } else {
     return getSdkClient().shortTerm.getContext(conversationId) as any;
   }
@@ -163,10 +182,20 @@ export async function addMessage(
   content: string,
 ): Promise<void> {
   if (useMcpTransport()) {
-    await callMcpTool('memory_add_messages', {
-      conversation_id: conversationId,
-      messages: [{ role, content }],
-    });
+    try {
+      await callMcpTool('memory_add_messages', {
+        conversation_id: conversationId,
+        messages: [{ role, content }],
+      });
+    } catch (mcpErr: any) {
+      // Fall back to SDK if MCP tool not found
+      if (mcpErr?.code === -32602 || mcpErr?.message?.includes('not found')) {
+        console.warn('[chat] MCP tool not found, falling back to SDK client');
+        await getSdkClient().shortTerm.addMessage(conversationId, role, content);
+      } else {
+        throw mcpErr;
+      }
+    }
   } else {
     await getSdkClient().shortTerm.addMessage(conversationId, role, content);
   }
@@ -180,12 +209,26 @@ export async function searchMemoryContext(
   if (!query.trim()) return [];
   try {
     if (useMcpTransport()) {
-      const results = (await callMcpTool('memory_search_messages', {
-        conversation_id: conversationId,
-        query,
-        limit,
-      })) as Array<{ content: string }>;
-      return Array.isArray(results) ? results.map((m) => m.content).filter(Boolean) : [];
+      try {
+        const results = (await callMcpTool('memory_search_messages', {
+          conversation_id: conversationId,
+          query,
+          limit,
+        })) as Array<{ content: string }>;
+        return Array.isArray(results) ? results.map((m) => m.content).filter(Boolean) : [];
+      } catch (mcpErr: any) {
+        // Fall back to SDK if MCP tool not found
+        if (mcpErr?.code === -32602 || mcpErr?.message?.includes('not found')) {
+          console.warn('[chat] MCP tool not found, falling back to SDK client');
+          const results = await getSdkClient().shortTerm.searchMessages(query, {
+            sessionId: conversationId,
+            limit,
+            threshold: GOOD_MATCH_THRESHOLD,
+          });
+          return results.map((m) => m.content).filter(Boolean);
+        }
+        throw mcpErr;
+      }
     } else {
       const results = await getSdkClient().shortTerm.searchMessages(query, {
         sessionId: conversationId,
@@ -200,15 +243,115 @@ export async function searchMemoryContext(
   }
 }
 
+export async function searchUserMemoryContext(
+  userId: string,
+  query: string,
+  limit = 3,
+): Promise<string[]> {
+  if (!query.trim()) return [];
+  try {
+    if (useMcpTransport()) {
+      const authHeader = getMcpAuthHeader();
+      const restBase = process.env.MEMORY_REST_URL?.trim() || 'https://memory.neo4jlabs.com/v1';
+      const url = `${restBase}/short-term/search?user_id=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=${limit}`;
+      
+      try {
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { Authorization: authHeader },
+        });
+        
+        if (!res.ok) {
+          console.warn(`[chat] REST user search failed with ${res.status}:`, await res.text());
+          return [];
+        }
+        
+        const data = await res.json();
+        const results = Array.isArray(data) ? data : data.messages || data.results || [];
+        return results
+          .map((m: any) => m.content || m.text || typeof m === 'string' ? m : null)
+          .filter(Boolean)
+          .slice(0, limit);
+      } catch (restErr: any) {
+        console.warn('[chat] REST user search failed:', restErr.message);
+        return [];
+      }
+    } else {
+      try {
+        const client = getSdkClient();
+        console.log('[chat] User-level memory search via SDK not fully implemented, try MCP transport');
+        return [];
+      } catch (err) {
+        console.warn('[chat] SDK user search failed:', err);
+        return [];
+      }
+    }
+  } catch (err) {
+    console.warn('[chat] searchUserMemoryContext failed:', err);
+    return [];
+  }
+}
+
+export async function searchPreviousConversations(
+  conversationIds: string[],
+  query: string,
+  limit = 3,
+): Promise<string[]> {
+  if (!query.trim() || !conversationIds.length) return [];
+  
+  const results: string[] = [];
+  const seen = new Set<string>();
+  
+  try {
+    for (const convId of conversationIds) {
+      if (results.length >= limit) break;
+      try {
+        const matches = await searchMemoryContext(convId, query, Math.ceil(limit / conversationIds.length) + 1);
+        for (const match of matches) {
+          if (!seen.has(match) && results.length < limit) {
+            results.push(match);
+            seen.add(match);
+          }
+        }
+      } catch (err) {
+        console.warn(`[chat] Failed to search conversation ${convId}:`, err);
+        continue;
+      }
+    }
+    return results;
+  } catch (err) {
+    console.warn('[chat] searchPreviousConversations failed:', err);
+    return [];
+  }
+}
+
 export async function deleteConversation(conversationId: string): Promise<void> {
   if (useMcpTransport()) {
     const restBase = process.env.MEMORY_REST_URL?.trim() || 'https://memory.neo4jlabs.com/v1';
-    const res = await fetch(`${restBase}/short-term/conversations/${conversationId}`, {
-      method: 'DELETE',
-      headers: { Authorization: getMcpAuthHeader() },
-    });
-    if (!res.ok) throw new Error(`DELETE ${res.status} ${res.statusText}`);
+    try {
+      const res = await fetch(`${restBase}/short-term/conversations/${conversationId}`, {
+        method: 'DELETE',
+        headers: { Authorization: getMcpAuthHeader() },
+      });
+      if (res.status === 404) {
+        console.log(`[chat] Conversation ${conversationId} already deleted or never existed (404)`);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(`DELETE ${res.status} ${res.statusText}`);
+      }
+      console.log(`[chat] Successfully deleted conversation ${conversationId}`);
+    } catch (err) {
+      console.error(`[chat] Error deleting conversation ${conversationId}:`, err);
+      throw err;
+    }
   } else {
-    await getSdkClient().shortTerm.deleteConversation(conversationId);
+    try {
+      await getSdkClient().shortTerm.deleteConversation(conversationId);
+      console.log(`[chat] Successfully deleted conversation ${conversationId}`);
+    } catch (err) {
+      console.error(`[chat] Error deleting conversation ${conversationId}:`, err);
+      throw err;
+    }
   }
 }

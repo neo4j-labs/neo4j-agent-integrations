@@ -39,6 +39,7 @@ interface ChatComponentProps {
   sessionId: string;
   userId?: string;
   conversationId?: string;
+  previousConversationIds?: string[];
   onConversationIdResolved?: (id: string) => void;
   userName?: string;
   suggestions?: string[];
@@ -62,6 +63,7 @@ export default function ChatComponent({
   sessionId,
   userId,
   conversationId,
+  previousConversationIds = [],
   onConversationIdResolved,
   userName = 'User',
   suggestions = DEFAULT_SUGGESTIONS,
@@ -96,7 +98,7 @@ export default function ChatComponent({
   } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      body: () => ({ sessionId, userId, conversationId: conversationIdRef.current }),
+      body: () => ({ sessionId, userId, conversationId: conversationIdRef.current, previousConversationIds }),
     }),
     onFinish: ({ message }) => {
       if (message.role === 'assistant') {

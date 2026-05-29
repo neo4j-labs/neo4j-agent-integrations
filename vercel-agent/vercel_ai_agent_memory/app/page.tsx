@@ -365,6 +365,11 @@ export default function HomePage() {
             sessionId={currentSessionId}
             userId={userId ?? undefined}
             conversationId={currentSession?.conversationId}
+            previousConversationIds={sessions
+              .filter(s => s.id !== currentSessionId && s.conversationId)
+              .map(s => s.conversationId!)
+              .slice(0, 5) // Limit to 5 most recent
+            }
             onConversationIdResolved={(convId) => {
               setSessions(prev => prev.map(s =>
                 s.id === currentSessionId ? { ...s, conversationId: convId } : s
