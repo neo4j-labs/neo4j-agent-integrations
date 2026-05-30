@@ -275,7 +275,7 @@ def main() -> None:
         agent = project.agents.create_version(
             agent_name=os.environ.get("FOUNDRY_TEST_AGENT_NAME", "neo4j-research-agent-sdk"),
             definition=PromptAgentDefinition(
-                model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"),
+                model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-5-mini"),
                 instructions=INSTRUCTIONS,
                 tools=[function_tool(fn) for fn in TOOL_IMPLS.values()],
             ),

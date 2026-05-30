@@ -76,16 +76,16 @@ param neo4jAllowedOrigins string = ''
 param createFoundryProject string = 'true'
 
 @description('Foundry model deployment name. Must match a model available in the chosen region.')
-param foundryModelName string = 'gpt-4o-mini'
+param foundryModelName string = 'gpt-5-mini'
 
 @description('Foundry model version. Required for Azure OpenAI model deployments.')
-param foundryModelVersion string = '2024-07-18'
+param foundryModelVersion string = '2025-08-07'
 
 @description('Foundry model deployment SKU. Most modern Foundry models use GlobalStandard.')
 param foundryModelSkuName string = 'GlobalStandard'
 
 @description('Foundry model deployment capacity (thousands of tokens per minute).')
-param foundryModelCapacity string = '30'
+param foundryModelCapacity string = '120'
 
 @description('Foundry embedding model deployment name. Must match a model available in the chosen region. Used by the agent-framework multi-agent example to do vector search over the public companies demo graph (which uses 1536-dim cosine embeddings).')
 param foundryEmbeddingModelName string = 'text-embedding-3-small'
@@ -99,10 +99,10 @@ param foundryEmbeddingModelSkuName string = 'GlobalStandard'
 @description('Foundry embedding model capacity (thousands of tokens per minute).')
 param foundryEmbeddingModelCapacity string = '30'
 
-@description('Entra object ID granted Azure AI Developer on the Foundry account so the signed-in user can call the Foundry data plane after az login. azd auto-populates this from the signed-in user. Empty disables the role assignment.')
+@description('Entra object ID granted the Foundry User role on the Foundry project so the signed-in user can create/run agents and call models via the project endpoint after az login. azd auto-populates this from the signed-in user. Empty disables the role assignment.')
 param principalId string = ''
 
-@description('Type of the principal granted Azure AI Developer: "User" for interactive azd auth login, "ServicePrincipal" in CI.')
+@description('Type of the principal granted the Foundry User role: "User" for interactive azd auth login, "ServicePrincipal" in CI.')
 @allowed([
   'User'
   'ServicePrincipal'
@@ -180,16 +180,17 @@ output resourceGroupName string = rg.name
 output mcpExternalIngress string = mcpExternalIngress
 
 output foundryResourceGroup string = foundryEnabled ? rg.name : ''
-output foundryAccountName string = foundryEnabled ? foundry.outputs.accountName : ''
-output foundryProjectName string = foundryEnabled ? foundry.outputs.projectName : ''
-output foundryProjectEndpoint string = foundryEnabled ? foundry.outputs.projectEndpoint : ''
-output foundryModelDeploymentName string = foundryEnabled ? foundry.outputs.modelDeploymentName : ''
-output foundryEmbeddingDeploymentName string = foundryEnabled ? foundry.outputs.embeddingDeploymentName : ''
+output foundryAccountName string = foundryEnabled ? foundry!.outputs.accountName : ''
+output foundryProjectId string = foundryEnabled ? foundry!.outputs.projectId : ''
+output foundryProjectName string = foundryEnabled ? foundry!.outputs.projectName : ''
+output foundryProjectEndpoint string = foundryEnabled ? foundry!.outputs.projectEndpoint : ''
+output foundryModelDeploymentName string = foundryEnabled ? foundry!.outputs.modelDeploymentName : ''
+output foundryEmbeddingDeploymentName string = foundryEnabled ? foundry!.outputs.embeddingDeploymentName : ''
 
 // Names the `azure.ai.agents` azd extension expects in its postdeploy hook.
 // Without these, `azd up` fails with "AZURE_AI_PROJECT_ENDPOINT is not set"
 // once the extension is installed locally. `AZURE_TENANT_ID` is the third
 // var the hook requires; it isn't a deployment artifact, so deploy.sh
 // seeds it into the azd env from `az account show` before `azd up`.
-output AZURE_AI_PROJECT_ENDPOINT string = foundryEnabled ? foundry.outputs.projectEndpoint : ''
-output AZURE_AI_MODEL_DEPLOYMENT_NAME string = foundryEnabled ? foundry.outputs.modelDeploymentName : ''
+output AZURE_AI_PROJECT_ENDPOINT string = foundryEnabled ? foundry!.outputs.projectEndpoint : ''
+output AZURE_AI_MODEL_DEPLOYMENT_NAME string = foundryEnabled ? foundry!.outputs.modelDeploymentName : ''

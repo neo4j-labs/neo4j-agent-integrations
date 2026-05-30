@@ -29,9 +29,10 @@ neo4j_password="companies"
 
 foundry_resource_group=""
 foundry_account_name=""
+foundry_project_id=""
 foundry_project_name=""
 foundry_project_endpoint=""
-foundry_model_deployment_name="gpt-4o-mini"
+foundry_model_deployment_name="gpt-5-mini"
 foundry_embedding_deployment_name="text-embedding-3-small"
 neo4j_mcp_connection_name=""
 
@@ -55,10 +56,11 @@ read_kv_file() {
       NEO4J_PASSWORD)                [ -n "$value" ] && neo4j_password="$value"                     || : ;;
       FOUNDRY_RESOURCE_GROUP)        [ -n "$value" ] && foundry_resource_group="$value"             || : ;;
       FOUNDRY_ACCOUNT_NAME)          [ -n "$value" ] && foundry_account_name="$value"               || : ;;
+      FOUNDRY_PROJECT_ID)            [ -n "$value" ] && foundry_project_id="$value"                 || : ;;
       FOUNDRY_PROJECT_NAME)          [ -n "$value" ] && foundry_project_name="$value"               || : ;;
       FOUNDRY_PROJECT_ENDPOINT)      [ -n "$value" ] && foundry_project_endpoint="$value"           || : ;;
       FOUNDRY_MODEL_DEPLOYMENT_NAME)     [ -n "$value" ] && foundry_model_deployment_name="$value"      || : ;;
-      FOUNDRY_EMBEDDING_DEPLOYMENT_NAME) [ -n "$value" ] && foundry_embedding_deployment_name="$value" || : ;;
+      EMBEDDING_DEPLOYMENT_NAME)         [ -n "$value" ] && foundry_embedding_deployment_name="$value" || : ;;
       NEO4J_MCP_CONNECTION_NAME)         [ -n "$value" ] && neo4j_mcp_connection_name="$value"          || : ;;
     esac
   done < "$file"
@@ -135,6 +137,7 @@ azd up "$@" || azd_up_status=$?
 endpoint="$(azd_get mcpEndpoint)"
 foundry_rg_out="$(azd_get foundryResourceGroup)"
 foundry_account_out="$(azd_get foundryAccountName)"
+foundry_project_id_out="$(azd_get foundryProjectId)"
 foundry_project_out="$(azd_get foundryProjectName)"
 foundry_project_endpoint_out="$(azd_get foundryProjectEndpoint)"
 foundry_model_out="$(azd_get foundryModelDeploymentName)"
@@ -150,6 +153,7 @@ fi
 
 [ -n "$foundry_rg_out" ]               && foundry_resource_group="$foundry_rg_out"
 [ -n "$foundry_account_out" ]          && foundry_account_name="$foundry_account_out"
+[ -n "$foundry_project_id_out" ]       && foundry_project_id="$foundry_project_id_out"
 [ -n "$foundry_project_out" ]          && foundry_project_name="$foundry_project_out"
 [ -n "$foundry_project_endpoint_out" ] && foundry_project_endpoint="$foundry_project_endpoint_out"
 [ -n "$foundry_model_out" ]            && foundry_model_deployment_name="$foundry_model_out"
@@ -181,10 +185,11 @@ AZURE_SUBSCRIPTION_ID=${azure_subscription_id}
 AZURE_TENANT_ID=${azure_tenant_id}
 FOUNDRY_RESOURCE_GROUP=${foundry_resource_group}
 FOUNDRY_ACCOUNT_NAME=${foundry_account_name}
+FOUNDRY_PROJECT_ID=${foundry_project_id}
 FOUNDRY_PROJECT_NAME=${foundry_project_name}
 FOUNDRY_PROJECT_ENDPOINT=${foundry_project_endpoint}
 FOUNDRY_MODEL_DEPLOYMENT_NAME=${foundry_model_deployment_name}
-FOUNDRY_EMBEDDING_DEPLOYMENT_NAME=${foundry_embedding_deployment_name}
+EMBEDDING_DEPLOYMENT_NAME=${foundry_embedding_deployment_name}
 
 # Neo4j MCP project connection name. Set this manually after creating the
 # connection in the Foundry portal — see microsoft-foundry/examples/mcp/README.md.

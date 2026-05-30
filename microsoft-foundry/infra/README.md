@@ -6,6 +6,7 @@ Microsoft Agent Framework, and any other MCP client.
 
 ## Prerequisites
 
+- [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/install-azure-cli)
 - [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 - An Azure subscription with permission to create resource groups,
   Container Apps environments, and Log Analytics workspaces
@@ -87,11 +88,11 @@ deployment also creates:
   (`Microsoft.CognitiveServices/accounts`, kind `AIServices`,
   with `allowProjectManagement: true`)
 - Foundry project: `proj-foundry-neo4j-dev`
-- Model deployment: `gpt-4o-mini`
-  (version `2024-07-18`, `GlobalStandard`, capacity 30)
-- Azure AI Developer role assignment for the signed-in user on
-  the Foundry account, so `az login` is all the auth the
-  examples need
+- Model deployment: `gpt-5-mini`
+  (version `2025-08-07`, `GlobalStandard`, capacity 120)
+- Foundry User role assignment for the signed-in user on the
+  Foundry **project**, so `az login` is all the auth the examples
+  need (create/run agents, call models via the project endpoint)
 
 The hash keeps the account's custom subdomain globally unique
 while remaining deterministic for the same deployment inputs.
@@ -136,6 +137,8 @@ Important knobs (full list in `infra/.env.sample`):
 | `NEO4J_MCP_CONTAINER_IMAGE` | `mcp/neo4j:latest` | Pin a tested tag. |
 | `MCP_EXTERNAL_INGRESS` | `true` | Public HTTPS. `false` makes it internal. |
 | `MCP_MIN_REPLICAS` | `1` | Warm endpoint. Set `0` if cold starts are fine. |
+| `FOUNDRY_MODEL_CAPACITY` | `120` | Chat-model TPM capacity for the Foundry deployment. |
+| `FOUNDRY_EMBEDDING_MODEL_CAPACITY` | `30` | Embedding-model TPM capacity for vector search. |
 
 ## Authentication Model
 
@@ -179,7 +182,7 @@ can stall while waiting for a token refresh. Run `az login`
 and try again.
 
 **Foundry was provisioned but the smoke test or examples return 403.**
-The Azure AI Developer role assignment requires
+The Foundry User role assignment requires
 `AZURE_PRINCIPAL_ID`. In `az cli` auth mode that value can be
 empty, which causes the Bicep deployment to skip the role
 assignment. Fix it with:
@@ -194,16 +197,17 @@ The next `./deploy.sh` re-runs `azd up` and adds the missing
 role assignment.
 
 **`azd up` fails with `DeploymentModelNotSupported` or a quota error.**
-The default model `gpt-4o-mini` (version `2024-07-18`) is broadly
+The default model `gpt-5-mini` (version `2025-08-07`) is broadly
 available, but not in every region. Foundry agent APIs are supported
 in `eastus`, `eastus2`, `swedencentral`, `westus`, `westus3`, and
 others; Foundry hosted agents narrow that to Sweden Central, North
-Central US, Canada Central, and Australia East. To switch models,
-set overrides before running `./deploy.sh`:
+Central US, Canada Central, and Australia East. To switch models —
+for example to the faster/cheaper non-reasoning `gpt-4.1-mini`, or to a
+newer `gpt-5.4-mini` — set overrides before running `./deploy.sh`:
 
 ```bash
-azd env set FOUNDRY_MODEL_NAME gpt-5-mini
-azd env set FOUNDRY_MODEL_VERSION 2025-08-07
+azd env set FOUNDRY_MODEL_NAME gpt-4.1-mini
+azd env set FOUNDRY_MODEL_VERSION 2025-04-14
 ./deploy.sh
 ```
 
