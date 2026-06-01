@@ -20,6 +20,43 @@ fi
 
 shared_env="$(cd .. && pwd)/.env"
 
+# azd parameter interpolation can read the current process environment before
+# values we seed into the azd env, so inherited shell exports like NEO4J_URI can
+# unexpectedly override infra/.env or deploy.sh defaults. Run azd with those
+# deployment-facing vars unset and rely on azd env set/get as the source of truth.
+sanitized_azd_env_vars=(
+  NEO4J_URI
+  NEO4J_DATABASE
+  NEO4J_READ_ONLY
+  NEO4J_MCP_CONTAINER_IMAGE
+  MCP_PORT
+  MCP_EXTERNAL_INGRESS
+  MCP_MIN_REPLICAS
+  MCP_MAX_REPLICAS
+  MCP_CPU
+  MCP_MEMORY
+  MCP_CONCURRENT_REQUESTS
+  NEO4J_LOG_FORMAT
+  NEO4J_TELEMETRY
+  NEO4J_SCHEMA_SAMPLE_SIZE
+  NEO4J_MCP_HTTP_ALLOWED_ORIGINS
+  CREATE_FOUNDRY_PROJECT
+  FOUNDRY_MODEL_NAME
+  FOUNDRY_MODEL_VERSION
+  FOUNDRY_MODEL_SKU
+  FOUNDRY_MODEL_CAPACITY
+)
+
+sanitized_azd() {
+  local args=(env)
+  local key
+  for key in "${sanitized_azd_env_vars[@]}"; do
+    args+=(-u "$key")
+  done
+  args+=(azd "$@")
+  "${args[@]}"
+}
+
 # Demo defaults (match .env.sample). Overridden below by the existing shared
 # .env (if any) and then by this folder's local .env.
 neo4j_uri="neo4j+s://demo.neo4jlabs.com:7687"
@@ -129,7 +166,7 @@ fi
 # (e.g. the azure.ai.agents extension), the Bicep outputs are still in the
 # azd env and we can still stamp the shared .env. Capture status to report.
 azd_up_status=0
-azd up "$@" || azd_up_status=$?
+sanitized_azd up "$@" || azd_up_status=$?
 
 # Read deployed values back from the azd env. Empty when Foundry was disabled.
 endpoint="$(azd_get mcpEndpoint)"
