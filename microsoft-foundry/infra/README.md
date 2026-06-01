@@ -78,10 +78,10 @@ For environment name `dev`:
 - Container App: `ca-foundry-neo4j-dev`
 - Public HTTPS MCP endpoint: `https://<container-app-fqdn>/mcp`
 
-An azd `preprovision` hook
-([`hooks/preprovision.sh`](./hooks/preprovision.sh)) asks whether
-to also provision Microsoft Foundry. If you answer yes, the
-deployment also creates:
+By default, the deployment also provisions Microsoft Foundry. To
+deploy only the Neo4j MCP server, run
+`azd env set CREATE_FOUNDRY_PROJECT false` before deployment.
+When Foundry creation is enabled, the deployment also creates:
 
 - Microsoft Foundry account:
   `aif-foundry-neo4j-dev-<4-char-hash>`

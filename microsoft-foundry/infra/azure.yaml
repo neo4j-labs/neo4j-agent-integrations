@@ -4,10 +4,3 @@ metadata:
 infra:
   provider: bicep
   path: infra
-hooks:
-  preprovision:
-    posix:
-      shell: sh
-      run: bash hooks/preprovision.sh
-      interactive: true
-      continueOnError: false

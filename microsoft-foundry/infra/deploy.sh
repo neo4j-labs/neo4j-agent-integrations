@@ -125,8 +125,6 @@ if [ -z "$seed_tenant_id" ] && command -v az >/dev/null; then
   fi
 fi
 
-# The Foundry opt-in prompt runs as an azd preprovision hook
-# (hooks/preprovision.sh) so it happens after azd has created the env.
 # Don't `set -e` exit on a non-zero `azd up` — even when post-deploy hooks fail
 # (e.g. the azure.ai.agents extension), the Bicep outputs are still in the
 # azd env and we can still stamp the shared .env. Capture status to report.
