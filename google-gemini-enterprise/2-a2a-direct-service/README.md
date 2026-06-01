@@ -17,7 +17,7 @@ This service acts as a secure, intelligent bridge between Google's infrastructur
 
 It operates completely serverless on Google Cloud Run. To get started, a user visits a hosted `/setup` page to securely input their target Neo4j credentials, which are mapped to their Google Workspace email address. 
 
-When the user chats with the agent in Gemini, Gemini prompts them to "Sign in with Google." The application's custom ASGI middleware intercepts the request, validates the Google OAuth token, extracts the user's email, retrieves their database credentials, and securely executes their natural language query against the graph using the Google ADK.
+When the user chats with the agent in Gemini, Gemini prompts them to "Sign in with Google." The application's custom ASGI middleware intercepts the request, validates the Google OAuth token, extracts the user's email, retrieves their database credentials, and securely executes their natural language query against the graph using the Google ADK while reading from and writing to a persistent knowledge graph memory.
 
 ---
 
@@ -26,6 +26,7 @@ When the user chats with the agent in Gemini, Gemini prompts them to "Sign in wi
 
 **Seamless Google Authentication:** Offloads identity management entirely to Google Workspace. Users authenticate via standard OAuth 2.0, meaning no custom passwords or custom JWT infrastructure to maintain.  
 **Email-Based Multi-Tenancy:** Dynamically routes natural language queries to different target Neo4j databases based on the authenticated user's email address.  
+**Persistent Graph Memory:** Gives the agent long-term recall across independent sessions. Supports both the managed Neo4j Agent Memory Service (NAMS) via a custom REST wrapper and self hosted memory databases using Neo4j Agent Memory python package. 
 **Smart Graph Reasoning (Compute Pushdown):** Utilizes the ADK's `BuiltInPlanner` to force the agent to read the database schema and architect efficient, single-trip Cypher queries before executing them, eliminating expensive LLM "hallucination loops."  
 **Cost Control & Throttling:** Uses ADK callbacks to intercept exact LLM token usage per turn, deducting them from the user's allocated daily limit stored in the internal tracking database.  
 **Circuit Breakers:** Implements strict `RunConfig` guardrails (`max_llm_calls`) to prevent infinite retries on syntax errors, ensuring fast failures and low latency.  
@@ -40,7 +41,8 @@ When the user chats with the agent in Gemini, Gemini prompts them to "Sign in wi
 **Registration:** An admin adds the Agent to the Gemini Enterprise UI via the auto-generated Agent Card (`/.well-known/agent.json`), supplying standard Google Cloud OAuth credentials.  
 **Authorization:** When a user interacts with the agent, Gemini initiates a native Google OAuth flow. Gemini receives a Google Access Token and forwards it to the application.  
 **Validation:** The Starlette `OAuthValidationMiddleware` intercepts the request, pings the Google `userinfo` endpoint to verify the token, and extracts the user's email into the session context.  
-**Execution:** The `AgentExecutor` retrieves the user's specific database credentials from the tracking database, formulates a plan, securely connects to their graph, and streams the queried results back to the Gemini UI.  
+**Execution & Contextual Retrieval:** The `AgentExecutor` retrieves the user's specific database credentials from the tracking database, performs semantic vector search against their memory database for past context, formulates a plan, securely connects to their graph, and streams the queried results back to the Gemini UI.  
+**Retention:**  At the end of the turn the agent's memory service securely syncs the filtered conversation events back to the Neo4j memory backend for asynchronous entity extraction.  
 
 
 ---
@@ -86,6 +88,7 @@ You must create OAuth 2.0 Client IDs (Web Application) in your GCP console. Ensu
 **`TRACKING_NEO4J_PASS`**: Tracking DB password.  
 **`GEMINI_MODEL`**: The LLM model string (e.g., `gemini-2.5-pro`).  
 **`TRACK_TOKEN_USAGE`**: Boolean string (`True`/`False`) to toggle the token billing/limiting logic.  
+**`GCP_PROJECT_ID/GCP_LOCATION`**: Required if using the self-hosted vertex ai embedder for memory extraction.  
 
 ---
 ## :open_file_folder: Project Structure
@@ -105,6 +108,7 @@ You must create OAuth 2.0 Client IDs (Web Application) in your GCP console. Ensu
     ├── services/
     │   ├── agent_executor.py # Core ADK execution, dynamic DB routing, and Guardrails
     │   ├── custom_tools.py  # Custom Neo4j Python functions
+    |   ├── nams_memory_service.py # Custom REST client for neo4j agent memory service (NAMS)
     │   └── token_manager.py # Graph-backed OAuth, Billing, and User State engine
     └── templates/           # Jinja2 HTML templates
         ├── authorize.html   # Custom OAuth consent screen

@@ -188,7 +188,7 @@ class Neo4jADKExecutor(AgentExecutor):
                 name="neo4j_explorer",
                 instruction=AGENT_PROMPT,
                 tools=tenant_tools,
-                model_settings=types.GenerateContentConfig(
+                generate_content_config=types.GenerateContentConfig(
                     safety_settings=enterprise_safety_settings
                 ),
                 planner=BuiltInPlanner(

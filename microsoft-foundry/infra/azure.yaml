@@ -1,0 +1,13 @@
+name: foundry-neo4j
+metadata:
+  template: foundry-neo4j@0.1.0
+infra:
+  provider: bicep
+  path: infra
+hooks:
+  preprovision:
+    posix:
+      shell: sh
+      run: bash hooks/preprovision.sh
+      interactive: true
+      continueOnError: false

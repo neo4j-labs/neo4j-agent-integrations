@@ -17,16 +17,33 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.planners import BuiltInPlanner
 
+from neo4j_agent_memory import MemoryClient, MemorySettings
+from neo4j_agent_memory.config.settings import (
+    EmbeddingConfig, 
+    EmbeddingProvider, 
+    Neo4jConfig,
+    ExtractionConfig, 
+    ExtractorType
+)
+from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
+from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+from google.adk.tools.load_memory_tool import LoadMemoryTool
+from app.services.nams_memory_service import NAMSMemoryService
+from neo4j_agent_memory.embeddings.vertex_ai import VertexAIEmbedder
+
 from ..core.config import (
     GEMINI_MODEL,
     TRACK_TOKEN_USAGE,
     current_user_identity,
     current_request_tokens,
     SERVICE_URL,
-    AGENT_PROMPT
+    AGENT_PROMPT,
+    GCP_PROJECT_ID,  
+    GCP_LOCATION
 )
 from .token_manager import TokenManager
 from .custom_tools import get_tenant_tools
+from neo4j import GraphDatabase
 
 MAX_QUERY_LENGTH = 2000
 
@@ -104,10 +121,11 @@ class Neo4jADKExecutor(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Executes the agent task, handling user queries and tool integration."""
         user_email = current_user_identity.get()
-
         logging.info(f"[agent_executor] Executing task for user: {user_email} (Context ID provided: {bool(context.context_id)})")
 
         token_manager = TokenManager()
+        memory_client = None
+        neo4j_memory_service = None
 
         try:
             if TRACK_TOKEN_USAGE:
@@ -146,7 +164,7 @@ class Neo4jADKExecutor(AgentExecutor):
                     new_agent_text_message("I cannot process this request due to security policy restrictions.")
                 )
                 return
-
+                           
             logging.info(f"[agent_executor] Received query from user {user_email}: {user_query}")
 
             creds = token_manager.get_user_credentials(user_email)
@@ -165,10 +183,91 @@ class Neo4jADKExecutor(AgentExecutor):
             dynamic_uri = creds["uri"]
             dynamic_db = creds.get("database", "neo4j")
 
-            logging.info("[agent_executor] Setting up tools with tenant credentials")
-
+            logging.info("[agent_executor] Setting up main tenant tools")
+            logging.info("[agent_executor] Setting up main tenant tools")
             tenant_tools = get_tenant_tools(dynamic_user, dynamic_pass, dynamic_uri, dynamic_db)
-            logging.info("[agent_executor] Tools configured")
+
+            memory_uri = creds.get("memory_uri")
+            memory_user = creds.get("memory_user")
+            memory_password = creds.get("memory_password")
+            memory_db = creds.get("memory_database", "neo4j")
+            nams_api_key = creds.get("nams_api_key")
+
+            # Prefer managed NAMS if API key is present; otherwise fall back to self-hosted memory creds
+            using_nams = bool(nams_api_key)
+            memory_enabled = using_nams or all([memory_uri, memory_user, memory_password])
+
+            if memory_enabled:
+                if using_nams:
+                    logging.info(f"[agent_executor] NAMS API key present for {user_email}. Initializing NAMS memory service.")
+                    neo4j_memory_service = NAMSMemoryService(api_key=nams_api_key)
+                    tenant_tools.append(PreloadMemoryTool())
+                    tenant_tools.append(LoadMemoryTool())
+                    active_instruction = (
+                        AGENT_PROMPT + 
+                        "\n\n[SYSTEM NOTE]: You are connected to a managed memory service (NAMS). "
+                        "When asked to recall past facts or preferences, use the provided memory tools to query the managed memory."
+                    )
+                else:
+                    logging.info(f"[agent_executor] Memory feature opted-in for {user_email}. Initializing Neo4jMemoryService.")
+                    memory_settings = MemorySettings(
+                        neo4j=Neo4jConfig(
+                            uri=memory_uri,
+                            username=memory_user,
+                            password=memory_password,
+                            database=memory_db
+                        ),
+                        embedding=EmbeddingConfig(
+                            provider=EmbeddingProvider.VERTEX_AI,
+                            model="text-embedding-004",
+                            dimensions=768,
+                            project_id=GCP_PROJECT_ID,
+                            location=GCP_LOCATION,
+                        ),
+                        extraction=ExtractionConfig(
+                            extractor_type=ExtractorType.SPACY
+                        ),
+                    )
+                    
+                    memory_client = MemoryClient(memory_settings)
+                    await memory_client.connect()
+
+                    try:
+                        working_embedder = VertexAIEmbedder(
+                            model="text-embedding-004",
+                            project_id=GCP_PROJECT_ID,
+                            location=GCP_LOCATION,
+                        )
+                        memory_client.embedder = working_embedder
+                        try:
+                            memory_client.short_term._embedder = working_embedder
+                        except Exception:
+                            pass
+                        try:
+                            memory_client.long_term._embedder = working_embedder
+                        except Exception:
+                            pass
+                        logging.info("[agent_executor] Injected VertexAIEmbedder into MemoryClient")
+                    except Exception as e:
+                        logging.warning(f"[agent_executor] Failed to inject embedder: {e}")
+
+                    neo4j_memory_service = Neo4jMemoryService(
+                        memory_client=memory_client,
+                        user_id=user_email,
+                    )
+                    
+                    tenant_tools.append(PreloadMemoryTool())
+                    tenant_tools.append(LoadMemoryTool())
+                    active_instruction = (
+                        AGENT_PROMPT + 
+                        "\n\n[SYSTEM NOTE]: You have access to a persistent, long-term memory database containing the user's facts and preferences. "
+                        "If the user asks about past conversations, their preferences, or facts they previously told you, "
+                        "you MUST actively use the LoadMemoryTool to search the database for the answer before responding."
+                    )
+            else:
+                logging.info(f"[agent_executor] Memory feature not configured for {user_email}. Proceeding stateless.")
+                active_instruction = AGENT_PROMPT
+
             enterprise_safety_settings = [
                 types.SafetySetting(
                     category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
@@ -187,49 +286,51 @@ class Neo4jADKExecutor(AgentExecutor):
                     threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
                 ),
             ]
+            
             logging.info("[agent_executor] Instantiating ADK Agent")
             adk_agent = LlmAgent(
                 model=GEMINI_MODEL,
-                name="neo4j_explorer",
-                instruction=AGENT_PROMPT,
+                name="assistant",
+                instruction=active_instruction,
                 tools=tenant_tools,
-                model_settings=types.GenerateContentConfig(
+                generate_content_config=types.GenerateContentConfig(
                     safety_settings=enterprise_safety_settings
                 ),
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=False, 
                         thinking_budget=1024,
-                        )
-                    ),
+                    )
+                ),
                 after_model_callback=[track_token_usage_callback]
             )
-            logging.info("[agent_executor] ADK Agent instantiated")
 
             session_id = context.context_id
             if not session_id:
                 session_id = f"session_{user_email}_{uuid.uuid4().hex}"
-                logging.info(f"[agent_executor] No context ID provided. Generated secure session ID for user {user_email}: {session_id}")
+                logging.info(f"[agent_executor] Generated secure session ID for user {user_email}: {session_id}")
 
             session = await self.session_service.get_session(
                 app_name="neo4j_a2a_app", user_id=user_email, session_id=session_id
             )
 
             if not session:
-                logging.info(f"[agent_executor] No existing session found for {session_id}. Creating new session.")
                 session = await self.session_service.create_session(
                     session_id=session_id, state={}, app_name="neo4j_a2a_app", user_id=user_email
                 )
-            else:
-                logging.info(f"[agent_executor] Found existing session: {session_id}")
 
             logging.info(f"[agent_executor] Running agent for session {session.id}")
-            runner = Runner(
-                app_name="neo4j_a2a_app",
-                agent=adk_agent,
-                artifact_service=self.artifact_service,
-                session_service=self.session_service,
-            )
+            
+            runner_kwargs = {
+                "app_name": "neo4j_a2a_app",
+                "agent": adk_agent,
+                "artifact_service": self.artifact_service,
+                "session_service": self.session_service,
+            }
+            if memory_enabled:
+                runner_kwargs["memory_service"] = neo4j_memory_service
+                
+            runner = Runner(**runner_kwargs)
 
             total_response_text = ""
             content = types.Content(role='user', parts=[types.Part(text=user_query)])
@@ -238,20 +339,31 @@ class Neo4jADKExecutor(AgentExecutor):
             async for event in events_async:
                 if hasattr(event, 'content') and event.content:
                     for part in event.content.parts:
+                        if getattr(part, 'function_call', None) or getattr(part, 'function_response', None):
+                            continue
                         if part.text:
                             total_response_text += part.text
                             await event_queue.enqueue_event(new_agent_text_message(part.text))
 
-            logging.info(f"[agent_executor] Agent execution finished for session {session.id}. Full response: {total_response_text}")
+            logging.info(f"[agent_executor] Agent execution finished. Total response length: {len(total_response_text)}")
+
+            if memory_enabled and neo4j_memory_service:
+                logging.info(f"[agent_executor] Syncing memory to Neo4j for session {session.id}")
+                fresh_session = await self.session_service.get_session(
+                    session_id=session.id, app_name="neo4j_a2a_app", user_id=user_email
+                )
+                try:
+                    await neo4j_memory_service.add_session_to_memory(fresh_session)
+                    logging.info("[agent_executor] Neo4j memory sync successful")
+                except Exception as e:
+                    logging.error(f"[agent_executor] Neo4j memory sync failed: {e}")
 
             if TRACK_TOKEN_USAGE:
                 exact_tokens = current_request_tokens.get()
-                logging.info(f"[agent_executor] Total tokens used for this request: {exact_tokens}")
                 if exact_tokens == 0:
                     exact_tokens = math.ceil((len(user_query) + len(total_response_text)) / 4)
-                    logging.info(f"[agent_executor] No token metadata available. Estimated tokens based on text length: {exact_tokens}")
                 token_manager.add_tokens(user_email, exact_tokens)
-                logging.info(f"[agent_executor] User {user_email} used approximately {exact_tokens} tokens.")
+                logging.info(f"[agent_executor] User {user_email} used {exact_tokens} tokens.")
 
         except Exception as e:
             error_message = str(e).lower()
@@ -266,8 +378,19 @@ class Neo4jADKExecutor(AgentExecutor):
                     new_agent_text_message("An unexpected error occurred while processing your request.")
                 )
         finally:
-            logging.info(f"[agent_executor] Closing token manager for user {user_email}")
+            logging.info(f"[agent_executor] Cleaning up resources")
+            logging.info(f"[agent_executor] Cleaning up resources")
             token_manager.close()
+            if memory_client:
+                try:
+                    await memory_client.close()
+                except Exception as e:
+                    logging.warning(f"[agent_executor] Error closing memory client: {e}")
+            try:
+                if neo4j_memory_service and hasattr(neo4j_memory_service, 'close'):
+                    await neo4j_memory_service.close()
+            except Exception as e:
+                logging.warning(f"[agent_executor] Error closing memory service client: {e}")
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancels the agent task."""

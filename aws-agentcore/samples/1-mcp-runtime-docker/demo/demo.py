@@ -14,7 +14,11 @@ Required variables:
     NEO4J_PASSWORD         - Neo4j database password
 Optional:
     AWS_REGION             - AWS region (defaults to boto3 session default)
+    BEDROCK_MODEL_ID       - Bedrock model ID for agent mode
+                             (defaults to us.anthropic.claude-haiku-4-5-20251001-v1:0)
 """
+
+DEFAULT_BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 import argparse
 import base64
@@ -101,10 +105,13 @@ def do_call_tool(mcp_client):
 def do_agent_query(mcp_client, query):
     """Run a natural language query via the Strands Agent."""
     from strands import Agent
+    from strands.models import BedrockModel
 
+    model_id = os.getenv("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
     print("\n=== Running Agent Query ===\n")
+    print(f"  Model: {model_id}")
     print(f"  Query: {query}\n")
-    agent = Agent(tools=[mcp_client])
+    agent = Agent(model=BedrockModel(model_id=model_id), tools=[mcp_client])
     response = agent(query)
     print(f"\n  Response: {response}")
 
