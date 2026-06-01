@@ -269,9 +269,36 @@ async function runWithMemory(query) {
 
 **Transports:** The SDK defaults to REST with `MEMORY_API_KEY`. You can also connect via the NAMS MCP endpoint using Basic auth — set `MEMORY_TRANSPORT=mcp` and provide `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
 
-**Full example:** [`vercel_ai_agent_memory/`](vercel_ai_agent_memory/) — a Next.js chat UI wired to NAMS, with Neo4j graph-query tools, session management, and support for both SDK and MCP transports.
+**Full example:** [`vercel_agent_demo/`](vercel_agent_demo/) — a Next.js chat UI wired to NAMS, with Neo4j graph-query tools, session management, and support for both SDK and MCP transports. **This is a local demo only — see the [Chat App Demo](#chat-app-demo-local-only) section below.**
 
 **When to use:** Conversational agents that need out-of-the-box personalization, entity tracking, and reasoning traces across sessions — without managing your own Neo4j instance.
+
+---
+
+---
+
+## Chat App Demo (Local Only)
+
+> **This is boilerplate demo code.**
+> Run it locally to explore.
+
+[`vercel_agent_demo/`](vercel_agent_demo/) is a minimal Next.js chat UI that wires together Neo4j MCP tools and NAMS memory into a browser-based chat interface. Its purpose is to show — concretely and interactively — how the agent patterns from the `notebook/` scripts translate to a real UI.
+
+**What it is:**
+- A local-only reference implementation / starting point
+- A Next.js App Router project you run with `npm run dev`
+- Pre-wired to the same `.env` variables used by the notebook scripts
+
+**To run locally:**
+
+```bash
+cd vercel_agent_demo
+cp ../.env .env.local   # reuse the same env vars
+npm install
+npm run dev             # starts at http://localhost:3000
+```
+
+> If you want to build on top of this, treat it as a starting point and add authentication, error boundaries, and rate limiting before any public deployment.
 
 ---
 
