@@ -20,22 +20,9 @@
 
 ```
 vercel-agent/
-  demo/        ← Full-stack Next.js 15 app (streaming chat UI + Neo4j + NAMS memory)
   notebook/    ← Node.js scripts and Jupyter notebook (agents, MCP, memory demos)
   README.md    ← This file
 ```
-
-### `demo/` — Next.js Full-Stack App
-
-A production-ready Next.js 15 app with streaming AI chat, Neo4j knowledge graph search, and persistent memory via [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com).
-
-```bash
-cd demo
-cp .env.example .env.local   # fill in OPENAI_API_KEY, MEMORY_API_KEY
-npm install && npm run dev
-```
-
-See [`demo/README.md`](demo/README.md) for full setup instructions.
 
 ### `notebook/` — Node.js Scripts & Jupyter Notebook
 
