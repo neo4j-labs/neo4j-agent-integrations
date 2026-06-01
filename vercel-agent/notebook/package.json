@@ -1,0 +1,21 @@
+{
+  "type": "module",
+  "scripts": {
+    "direct-query":  "node 0-direct-query.mjs",
+    "mcp-agent":     "node 1-mcp-agent.mjs",
+    "custom-tools":  "node 2-custom-tools-agent.mjs",
+    "memory-agent":  "node 3-memory-agent.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp":              "^1.0.36",
+    "@ai-sdk/openai":           "^3.0.53",
+    "@neo4j-labs/agent-memory": "^0.4.0",
+    "ai":                       "^6.0.168",
+    "neo4j-driver":             "^6.0.1"
+  },
+  "optionalDependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google":    "^1.0.0",
+    "@ai-sdk/mistral":   "^1.0.0"
+  }
+}

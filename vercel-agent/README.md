@@ -9,46 +9,85 @@
 - Multi-step agentic loops via `stopWhen: stepCountIs(N)` (AI SDK v6+)
 - `tool()` helper with `jsonSchema()` for type-safe tool definitions (no Zod required)
 - Provider-agnostic — swap LLMs with a single environment variable change
-- MCP client support via `@ai-sdk/mcp`
+- MCP client support via `createMCPClient` from `@ai-sdk/mcp`
 
 **Official Resources:**
 - Website: [sdk.vercel.ai](https://sdk.vercel.ai)
 - Documentation: [sdk.vercel.ai/docs](https://sdk.vercel.ai/docs)
 - MCP client docs: [sdk.vercel.ai/docs/ai-sdk-core/mcp-clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
 
-## Architecture
+## Repository Structure
 
-![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApuZW80ai1kcml2ZXIiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG1lbWRiWygiTmVvNGoKTWVtb3J5IERCIildCiAgICBtY3AgLS0-IGRi)
+```
+vercel-agent/
+  demo/        ← Full-stack Next.js 15 app (streaming chat UI + Neo4j + NAMS memory)
+  notebook/    ← Node.js scripts and Jupyter notebook (agents, MCP, memory demos)
+  README.md    ← This file
+```
 
-## Notebooks
+### `demo/` — Next.js Full-Stack App
+
+A production-ready Next.js 15 app with streaming AI chat, Neo4j knowledge graph search, and persistent memory via [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com).
+
+```bash
+cd demo
+cp .env.example .env.local   # fill in OPENAI_API_KEY, MEMORY_API_KEY
+npm install && npm run dev
+```
+
+See [`demo/README.md`](demo/README.md) for full setup instructions.
+
+### `notebook/` — Node.js Scripts & Jupyter Notebook
+
+Step-by-step agent examples you can run directly with `node` or via the Jupyter notebook:
 
 | File | Description |
 |------|-------------|
-| [vercel_agent.html](https://htmlpreview.github.io/?https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.html) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
-| [vercel_agent.ipynb](vercel_agent.ipynb) | **Jupyter setup notebook** — Node.js install, credentials, MCP server start |
+| `0-direct-query.mjs` | Direct Neo4j query — sanity check, no AI |
+| `1-mcp-agent.mjs`    | MCP agent — connects to `neo4j-mcp-server` |
+| `2-custom-tools-agent.mjs` | MCP + custom Cypher tools merged |
+| `3-memory-agent.mjs` | Memory agent using `@neo4j-labs/agent-memory` |
+| `providers.mjs`      | Shared LLM provider config (OpenAI / Gemini / Anthropic / Mistral) |
+| [`vercel_agent.ipynb`](notebook/vercel_agent.ipynb) | Jupyter setup notebook — credentials, MCP server start |
+| [`vercel_agent.html`](https://htmlpreview.github.io/?https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/notebook/vercel_agent.html) | Observable notebook — interactive browser demo |
+
+```bash
+cd notebook
+cp .env.example .env   # fill in OPENAI_API_KEY, NEO4J_*, MEMORY_API_KEY
+npm install
+node 0-direct-query.mjs   # verify Neo4j connection
+node 1-mcp-agent.mjs      # requires MCP server (see notebook for setup)
+node 3-memory-agent.mjs   # requires MEMORY_API_KEY from memory.neo4jlabs.com
+```
+
+## Architecture
+
+![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApAbmVvNGotbGFicy9hZ2VudC1tZW1vcnkiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG5hbXNbKCJOQU1TCm1lbW9yeS5uZW80amxhYnMuY29tIildCiAgICBtY3AgLS0-IGRi)
+
 
 ## Extension Points
 
 ### 1. MCP Integration
 
-The Vercel AI SDK supports MCP via the `@ai-sdk/mcp` package. The `experimental_createMCPClient` function connects to any MCP server over HTTP or SSE transport, and `mcpClient.tools()` returns a tools object ready for `generateText`.
+The Vercel AI SDK supports MCP via the `@ai-sdk/mcp` package. Use `createMCPClient` (stable API) to connect to any MCP server over HTTP transport; `mcpClient.tools()` returns a tools object ready for `generateText`.
 
 ```bash
-npm install @ai-sdk/mcp
+cd notebook && npm install
 ```
 
 ```js
 import { generateText, stepCountIs } from 'ai';
-import { experimental_createMCPClient } from '@ai-sdk/mcp';
+import { createMCPClient } from '@ai-sdk/mcp';
 
-// Credentials passed per-request via Basic Auth header
-const creds = Buffer.from(`${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`)
+// MCP_URL: hosted remote server or local (default: http://localhost:8443/mcp)
+const mcpUrl = process.env.MCP_URL || `http://localhost:${process.env.MCP_PORT || '8443'}/mcp`;
+const creds  = Buffer.from(`${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`)
   .toString('base64');
 
-const mcpClient = await experimental_createMCPClient({
+const mcpClient = await createMCPClient({
   transport: {
     type:    'http',
-    url:     `http://localhost:${process.env.MCP_PORT}/mcp`,
+    url:     mcpUrl,
     headers: { Authorization: `Basic ${creds}` },
   },
 });
@@ -60,7 +99,7 @@ const { text, steps } = await generateText({
   system:   'You are a graph database assistant. Run get-schema first if unfamiliar.',
   prompt:   'How many organizations are in the database?',
   tools:    mcpTools,
-  stopWhen: stepCountIs(10),   // AI SDK v6+ — replaces the removed maxSteps
+  stopWhen: stepCountIs(10),
 });
 
 await mcpClient.close();
@@ -84,10 +123,6 @@ Result: There are 46,088 organizations in the database.
 ### 2. Direct Neo4j Integration
 
 For queries that need hand-tuned Cypher or access patterns the MCP server doesn't expose, use the `neo4j-driver` directly. Custom tools are defined with `tool()` + `jsonSchema()` and can be **merged with MCP tools** in the same `generateText` call.
-
-```bash
-npm install neo4j-driver
-```
 
 ```js
 import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
@@ -131,118 +166,85 @@ const { text } = await generateText({
 await driver.close();
 ```
 
-**Example output:**
-```
-Result: Google has made investments in several notable companies:
-- Ionic Security
-- Avere Systems
-- FlexiDAO
-- Cloudflare
-- Trifacta
-[Completed in 4 step(s)]
-```
-
-**When to use:** When you need precise Cypher beyond what the MCP server provides, or want to mix domain-specific tools (e.g. custom aggregations, write operations) with MCP tools in a single agent.
+**When to use:** When you need precise Cypher beyond what the MCP server provides, or want to mix domain-specific tools with MCP tools in a single agent.
 
 ---
 
-### 3. Custom Tools / Persistent Memory
+### 3. Persistent Memory via `@neo4j-labs/agent-memory`
 
-Memory is stored directly in Neo4j using `neo4j-driver` — no additional packages needed. The pattern wraps `generateText` with two hooks:
+Memory is managed by the [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com) via the official `@neo4j-labs/agent-memory` TypeScript client. No separate Neo4j instance required — just a free API key.
 
-- **Before hook** (`injectMemoryContext`) — queries recent messages from Neo4j and injects them into the system prompt
-- **After hook** (`saveInteraction`) — saves the interaction as `(:MemoryMessage)` nodes for future recall
-
-Memory schema:
-```
-(:MemorySession {id})-[:HAS_MESSAGE]->(:MemoryMessage {role, content, timestamp})
-```
+**Memory is split into two tiers:**
+- **Short-term** — conversation messages, reflections, observations (scoped per session)
+- **Long-term** — named entities (concepts, facts, research findings) searchable across sessions
 
 ```js
-import neo4j from 'neo4j-driver';
+import { generateText, stepCountIs } from 'ai';
+import { MemoryClient } from '@neo4j-labs/agent-memory';
 
-const memDriver = neo4j.driver(MEMORY_URI, neo4j.auth.basic(MEMORY_USER, MEMORY_PASS));
+const memoryClient = new MemoryClient({ apiKey: process.env.MEMORY_API_KEY });
 
-async function getRecentMessages(limit = 10) {
-  const { records } = await memDriver.executeQuery(
-    `MATCH (s:MemorySession {id: $sessionId})-[:HAS_MESSAGE]->(m:MemoryMessage)
-     RETURN m.role AS role, m.content AS content
-     ORDER BY m.timestamp ASC LIMIT $limit`,
-    { sessionId: SESSION_ID, limit },
-    { database: MEMORY_DB }
-  );
-  return records.map(r => `${r.get('role').toUpperCase()}: ${r.get('content')}`);
-}
+// Create a new conversation session
+const conv = await memoryClient.shortTerm.createConversation({ userId: 'my-agent' });
 
-async function runWithMemory(query) {
-  // BEFORE: inject conversation history into system prompt
-  const history = await getRecentMessages();
-  const systemWithContext = history.length
-    ? `${SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n${history.join('\n')}\n----------------------------`
-    : SYSTEM_PROMPT;
+// BEFORE query: inject relevant context into system prompt
+const ctx      = await memoryClient.shortTerm.getContext(conv.id);
+const entities = await memoryClient.longTerm.searchEntities(userQuery, { limit: 5 });
 
-  const { text } = await generateText({
-    model,
-    system:   systemWithContext,
-    prompt:   query,
-    tools:    mcpTools,
-    stopWhen: stepCountIs(10),
-  });
+const { text } = await generateText({
+  model,
+  system: buildSystemWithContext(ctx, entities),
+  prompt: userQuery,
+  tools:  mcpTools,
+  stopWhen: stepCountIs(10),
+});
 
-  // AFTER: save interaction to memory graph
-  await memDriver.executeQuery(
-    `MERGE (s:MemorySession {id: $sessionId})
-     CREATE (m:MemoryMessage {role: $role, content: $content, timestamp: datetime()})
-     CREATE (s)-[:HAS_MESSAGE]->(m)`,
-    { sessionId: SESSION_ID, role: 'user', content: query },
-    { database: MEMORY_DB }
-  );
-  return text;
-}
+// AFTER query: persist messages and save key findings
+await memoryClient.shortTerm.addMessage(conv.id, 'user',      userQuery);
+await memoryClient.shortTerm.addMessage(conv.id, 'assistant', text);
+await memoryClient.longTerm.addEntity('Research: Google', 'concept', { description: text.slice(0, 500) });
 ```
 
 **Example output (two-turn demo):**
 ```
-[USER]: I am conducting a competitive analysis of 'Google'. I am specifically
-        worried about their subsidiaries and top-tier competitors in the AI space.
-[AGENT]: Understood. I've noted that we're tracking Google for competitive intelligence...
- [Hook] Saving interaction to Neo4j memory graph...
+Memory session: conv_abc123
+Connected to Neo4j MCP ✓
 
---- Indexing memory (5s)... ---
+[USER]: I am conducting a competitive analysis of 'Google'. Tell me about their presence.
+ ↳ Injecting context: 0 messages, 0 entities.
+[AGENT]: Google appears 1,284 times in the knowledge graph...
+ [Memory] Interaction saved to NAMS ✓
 
-[USER]: What are the main risks in the supply chain for the company I am currently tracking?
- ↳ Injecting 1 memories into context.
-   Memory 1: Conducting competitive analysis of Google — focused on subsidiaries and AI competitors...
-[AGENT]: Based on our ongoing analysis of Google, the main supply chain risks include...
+[USER]: Based on our conversation, what subsidiaries appear in the database?
+ ↳ Injecting context: 2 messages, 1 entity.
+[AGENT]: Based on our earlier analysis of Google, the subsidiaries include...
 ```
 
-**When to use:** Multi-session agents that need to remember past queries, user context, or analysis state. Particularly useful for research assistants and monitoring agents.
+**When to use:** Multi-session agents that need to remember past queries, user context, or analysis state across runs. Requires `MEMORY_API_KEY` from [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
 
 ---
 
 ## MCP Authentication
 
-**Supported Mechanisms:**
-
-✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `experimental_createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
+✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
 
 ```js
 const creds = Buffer.from(`${NEO4J_USERNAME}:${NEO4J_PASSWORD}`).toString('base64');
 
-const mcpClient = await experimental_createMCPClient({
+const mcpClient = await createMCPClient({
   transport: {
     type:    'http',
-    url:     'http://localhost:8443/mcp',
+    url:     process.env.MCP_URL || 'http://localhost:8443/mcp',
     headers: { Authorization: `Basic ${creds}` },
   },
 });
 ```
 
-> **Important:** Do **not** export `NEO4J_USERNAME` / `NEO4J_PASSWORD` as environment variables when running `neo4j-mcp-server` in HTTP mode — the server will pick them up for its own connection and the per-request auth will not work correctly. Pass credentials only via the `Authorization` header inside your JS code.
+> **Important:** Do **not** export `NEO4J_USERNAME` / `NEO4J_PASSWORD` as environment variables when running `neo4j-mcp-server` in HTTP mode — the server will pick them up for its own connection and the per-request auth will not work correctly. Pass credentials only via the `Authorization` header.
 
 ## LLM Provider Configuration
 
-All three agent files import `getModel()` from [`providers.mjs`](providers.mjs), which selects the LLM based on the `AI_PROVIDER` environment variable. No code changes are needed to switch providers.
+All agent files import `getModel()` from [`notebook/providers.mjs`](notebook/providers.mjs), which selects the LLM based on `AI_PROVIDER`. No code changes needed to switch providers.
 
 | Provider | `AI_PROVIDER` | API Key Variable | Extra install |
 |----------|--------------|-----------------|---------------|
@@ -258,9 +260,8 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 | **JavaScript only** | The Vercel AI SDK has no Python support — all agent code runs in Node.js |
 | **`stopWhen` is v6+** | `maxSteps` was silently removed in AI SDK v6; passing it does nothing. Use `stopWhen: stepCountIs(N)` |
 | **MCP transport type** | `neo4j-mcp-server` HTTP mode requires `type: 'http'`, not `type: 'sse'` |
-| **Memory DB** | Memory uses `neo4j-driver` directly — requires a separate writable Neo4j instance from the read-only knowledge graph |
 | **Edge runtime** | Neo4j driver needs persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
-| **`experimental_createMCPClient`** | Still experimental; API may change in future SDK versions |
+| **NAMS API key** | `3-memory-agent.mjs` requires `MEMORY_API_KEY` — get a free key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
 
 ## Resources
 
@@ -268,6 +269,7 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 - [Vercel AI SDK — Tool Use](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
 - [Vercel AI SDK — MCP Clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
 - [`@ai-sdk/mcp` on npm](https://www.npmjs.com/package/@ai-sdk/mcp)
-- [Neo4j Agent Memory (Python)](https://github.com/neo4j-labs/agent-memory)
+- [Neo4j Agent Memory (`@neo4j-labs/agent-memory`)](https://github.com/neo4j-labs/agent-memory)
 - [Neo4j MCP Server](https://github.com/neo4j-contrib/mcp-neo4j)
 - [Neo4j JavaScript Driver Documentation](https://neo4j.com/docs/javascript-manual/current/)
+
