@@ -27,8 +27,11 @@ Both examples implement the same multi-agent graph. The local example runs your 
 ## Quick start
 
 ```bash
+git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
+cd neo4j-agent-integrations
+azd config set auth.useAzCliAuth true    # one-time: let azd reuse az's session
 az login
-cd microsoft-foundry/infra && ./deploy.sh    # one-time, opt in to Foundry
+cd microsoft-foundry/infra && ./deploy.sh    # one-time, provisions Foundry
 cd ../../microsoft-agent-framework/examples/multi-agent && uv run multi_agent_neo4j.py
 ```
 

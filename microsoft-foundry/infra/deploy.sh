@@ -8,6 +8,16 @@ command -v azd >/dev/null || {
   exit 1
 }
 
+# Fail fast if neither `az` nor `azd` is authenticated. Without this check,
+# `azd up` can hang silently waiting for an interactive token refresh.
+# Either tool being signed in is enough: with `azd config set
+# auth.useAzCliAuth true` (recommended in the Quick Start), azd reuses `az`'s
+# session; otherwise azd needs its own `azd auth login`.
+if ! az account show >/dev/null 2>&1 && ! azd auth login --check-status >/dev/null 2>&1; then
+  echo "Not signed in. Run: az login (and 'azd auth login' if azd uses standalone auth)" >&2
+  exit 1
+fi
+
 shared_env="$(cd .. && pwd)/.env"
 
 # Demo defaults (match .env.sample). Overridden below by the existing shared
@@ -57,6 +67,15 @@ read_kv_file() {
 # Order: existing shared .env, then local infra .env (wins for any key it sets).
 read_kv_file "$shared_env"
 read_kv_file ".env"
+
+# Default to an azd env called "demo" so `azd up` doesn't prompt on a fresh
+# shell (e.g. Azure Cloud Shell). Must run before any `azd env set` below.
+# The env name is an azd-local identifier and becomes the suffix on every
+# resource (rg-foundry-neo4j-demo, ...). Run `azd env new <name>` before
+# deploy.sh to use a different name.
+if [ ! -d .azure ] || [ -z "$(ls -A .azure 2>/dev/null)" ]; then
+  azd env new demo >/dev/null
+fi
 
 # Forward local infra .env values into the azd environment so deployment
 # parameters reach the Bicep. azd up itself prompts for AZURE_ENV_NAME, the

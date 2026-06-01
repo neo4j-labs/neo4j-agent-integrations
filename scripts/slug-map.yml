@@ -260,3 +260,21 @@ integrations:
     category: "Agent Frameworks"
     nav_label: LangChain
     thin: false
+
+  - folder: vercel-agent
+    slug: vercel-agent
+    title: "Vercel AI SDK + Neo4j Integration"
+    tags: "vercel, ai-sdk, agents, neo4j, mcp, javascript"
+    product: "Vercel AI SDK"
+    category: "Agent Frameworks"
+    nav_label: "Vercel AI SDK"
+    thin: false
+
+  - folder: uipath-ai-agent
+    slug: uipath-ai-agent
+    title: "UiPath AI Agent + Neo4j Integration"
+    tags: "uipath, rpa, agents, neo4j, mcp, automation"
+    product: "UiPath AI Agent"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "UiPath AI Agent"
+    thin: false

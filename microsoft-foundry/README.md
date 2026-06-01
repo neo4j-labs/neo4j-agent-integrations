@@ -23,9 +23,12 @@ The MCP path is shared infrastructure: deploy once, attach from Foundry, Copilot
 ## Quick Start
 
 ```bash
+git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
+cd neo4j-agent-integrations
+azd config set auth.useAzCliAuth true    # one-time: let azd reuse az's session
 az login
 cd microsoft-foundry/infra
-./deploy.sh                    # answer "Y" at the Foundry provisioning prompt
+./deploy.sh
 ./test-mcp.sh "$(azd env get-value mcpEndpoint)"
 ```
 

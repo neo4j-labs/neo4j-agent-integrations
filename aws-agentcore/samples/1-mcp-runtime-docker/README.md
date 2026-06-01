@@ -43,6 +43,27 @@ cp .env.sample .env
 1. Go to the [AWS Marketplace](https://aws.amazon.com/marketplace) and search for **"Neo4j MCP Server"**
 2. Subscribe to the listing and follow the instructions to get the container image URI
 
+### Set Up the .env File
+
+The `.env` file holds two kinds of values: ones baked into the deployed runtime at CDK deploy time, and ones used only when running the demo client locally.
+
+```bash
+# .env
+
+# Deploy-time: baked into the AgentCore Runtime as container env vars
+NEO4J_URI=neo4j+s://demo.neo4jlabs.com:7687
+NEO4J_DATABASE=companies
+NEO4J_MCP_CONTAINER_URI=<marketplace-container-image-uri>
+
+# Run-time: used by the demo client, sent per-request via custom auth header
+NEO4J_USERNAME=companies
+NEO4J_PASSWORD=companies
+```
+
+**Deploy-time values.** `deploy.sh` reads `NEO4J_URI`, `NEO4J_DATABASE`, and `NEO4J_MCP_CONTAINER_URI` and passes them to CDK as context. The stack injects the URI and database name into the `CfnRuntime` as container environment variables, and the container URI tells AgentCore which image to pull. Changing any of these requires redeploying the stack.
+
+**Run-time values.** The demo client reads `NEO4J_USERNAME` and `NEO4J_PASSWORD` locally, base64-encodes them, and sends them on each request in the `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Authorization` header. They never reach CDK or the deployed runtime. AgentCore forwards the header to the Neo4j MCP server, which uses it to authenticate against the database. This keeps credentials out of CloudFormation state and lets different clients hit the same runtime with different Neo4j credentials.
+
 ### Configure Environment
 
 Set `NEO4J_MCP_CONTAINER_URI` in your `.env` to the image URI from the Marketplace:
