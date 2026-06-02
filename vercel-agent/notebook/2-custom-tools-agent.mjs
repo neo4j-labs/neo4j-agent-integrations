@@ -14,6 +14,9 @@
  *   node 2-custom-tools-agent.mjs
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import neo4j from 'neo4j-driver';

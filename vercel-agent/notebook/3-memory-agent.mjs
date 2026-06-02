@@ -29,6 +29,9 @@
  *   node 3-memory-agent.mjs
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { generateText, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { MemoryClient } from '@neo4j-labs/agent-memory';
