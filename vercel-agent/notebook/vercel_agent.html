@@ -92,13 +92,13 @@ Three patterns for building AI agents over a Neo4j graph database, running live 
   });
 
   main.variable(observer("aiPkg")).define("aiPkg", async function () {
-    return import("https://esm.sh/ai@4");
+    return import("https://esm.sh/ai@6");
   });
 
   main.variable(observer("openaiPkg")).define(
     "openaiPkg", ["openaiKey"],
     async function (openaiKey) {
-      const { createOpenAI } = await import("https://esm.sh/@ai-sdk/openai@1");
+      const { createOpenAI } = await import("https://esm.sh/@ai-sdk/openai@3");
       return createOpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
     }
   );
@@ -168,7 +168,7 @@ No AI — uses \`neo4j-driver\` directly. Verifies connectivity and shows the to
     return md`---
 ## 1. Custom Tools Agent
 
-A \`getInvestments\` tool is defined with \`tool()\` + \`inputSchema: jsonSchema()\` (no Zod in AI SDK v4+), then passed to \`generateText\`. The LLM decides when to call it.
+A \`getInvestments\` tool is defined with \`tool()\` + \`inputSchema: jsonSchema()\` (no Zod required in AI SDK v6), then passed to \`generateText\`. The LLM decides when to call it.
 
 > Enter your OpenAI API key in the configuration above before running.`;
   });
@@ -198,7 +198,7 @@ A \`getInvestments\` tool is defined with \`tool()\` + \`inputSchema: jsonSchema
     ["runCustom", "aiPkg", "openaiPkg", "aiModel", "customQuery", "driver"],
     async function (_, aiPkg, openai, model, query, driver) {
       if (!_) return null;
-      const { generateText, tool, jsonSchema } = aiPkg;
+      const { generateText, tool, jsonSchema, stepCountIs } = aiPkg;
 
       const getInvestments = tool({
         description: "Returns the investments made by a company.",
@@ -228,7 +228,7 @@ A \`getInvestments\` tool is defined with \`tool()\` + \`inputSchema: jsonSchema
         system: "You are a helpful graph analyst with access to a Neo4j companies knowledge graph. Use the available tools to answer questions accurately.",
         prompt: query,
         tools: { getInvestments },
-        maxSteps: 5,
+        stopWhen: stepCountIs(5),
       });
       return {
         text: result.text,
@@ -380,18 +380,18 @@ The two-turn demo shows memory in action: Turn 2 correctly resolves *"the compan
     ["runMemory", "aiPkg", "openaiPkg", "aiModel", "memTurn1", "memTurn2", "storeMessage", "getRecentMessages"],
     async function (_, aiPkg, openai, model, turn1, turn2, storeMessage, getRecentMessages) {
       if (!_) return null;
-      const { generateText } = aiPkg;
+      const { generateText, stepCountIs } = aiPkg;
       const SYSTEM = "You are a helpful graph analyst with access to a Neo4j companies knowledge graph.";
       const out = [];
 
-      const r1 = await generateText({ model: openai(model), system: SYSTEM, prompt: turn1, maxSteps: 1 });
+      const r1 = await generateText({ model: openai(model), system: SYSTEM, prompt: turn1, stopWhen: stepCountIs(1) });
       out.push({ turn: 1, query: turn1, response: r1.text });
       await storeMessage("user", turn1);
       await storeMessage("assistant", r1.text);
 
       const history = await getRecentMessages();
       const ctxWithHistory = `${SYSTEM}\n\n--- CONVERSATION HISTORY ---\n${history.join("\n")}\n----------------------------`;
-      const r2 = await generateText({ model: openai(model), system: ctxWithHistory, prompt: turn2, maxSteps: 1 });
+      const r2 = await generateText({ model: openai(model), system: ctxWithHistory, prompt: turn2, stopWhen: stepCountIs(1) });
       out.push({ turn: 2, query: turn2, response: r2.text });
       await storeMessage("user", turn2);
       await storeMessage("assistant", r2.text);
