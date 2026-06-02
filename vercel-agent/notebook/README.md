@@ -267,7 +267,7 @@ async function runWithMemory(query) {
 }
 ```
 
-**Transports:** The SDK defaults to REST with `MEMORY_API_KEY`. You can also connect via the NAMS MCP endpoint using Basic auth — set `MEMORY_TRANSPORT=mcp` and provide `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
+**Transports:** The SDK defaults to REST with `MEMORY_API_KEY`. You can also connect via the NAMS MCP endpoint using Basic auth and provide `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
 
 **Full example:** [`vercel_agent_demo/`](vercel_agent_demo/) — a Next.js chat UI wired to NAMS, with Neo4j graph-query tools, session management, and support for both SDK and MCP transports. **This is a local demo only — see the [Chat App Demo](#chat-app-demo-local-only) section below.**
 
