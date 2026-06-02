@@ -11,6 +11,7 @@
     "@ai-sdk/openai":           "^3.0.53",
     "@neo4j-labs/agent-memory": "^0.4.0",
     "ai":                       "^6.0.168",
+    "dotenv":                   "^16.0.0",
     "neo4j-driver":             "^6.0.1"
   },
   "optionalDependencies": {

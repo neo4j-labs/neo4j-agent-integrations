@@ -13,6 +13,9 @@
  *   node 1-mcp-agent.mjs
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { generateText, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { getModel } from './providers.mjs';
