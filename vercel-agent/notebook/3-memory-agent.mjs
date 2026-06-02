@@ -45,11 +45,17 @@ const creds  = Buffer.from(
 ).toString('base64');
 
 const MEMORY_API_KEY = process.env.MEMORY_API_KEY;
+const MEMORY_WORKSPACE_ID = process.env.MEMORY_WORKSPACE_ID;
 const MEMORY_ENDPOINT = process.env.MEMORY_ENDPOINT; // optional: override default NAMS endpoint
 const DEMO_USER_ID   = process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
 
 if (!MEMORY_API_KEY) {
   console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
+  process.exit(1);
+}
+
+if (!MEMORY_WORKSPACE_ID) {
+  console.error('ERROR: MEMORY_WORKSPACE_ID is not set. Get it from https://memory.neo4jlabs.com/workspaces');
   process.exit(1);
 }
 
@@ -59,7 +65,7 @@ const memoryClient = new MemoryClient(
 );
 
 // Create a new conversation session for this run
-const conv = await memoryClient.shortTerm.createConversation({ userId: DEMO_USER_ID });
+const conv = await memoryClient.shortTerm.createConversation({ workspace_id: MEMORY_WORKSPACE_ID, userId: DEMO_USER_ID });
 const convId = conv.id;
 console.log(`Memory session: ${convId}`);
 
