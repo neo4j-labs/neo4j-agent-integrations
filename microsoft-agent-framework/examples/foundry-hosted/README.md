@@ -44,6 +44,8 @@ cd microsoft-foundry/infra && ./deploy.sh    # if needed; provides the Foundry p
 
 ### Run locally with the hosted-agent runtime
 
+Use a short workspace outside this repo. On Windows, prefer a short path to avoid long-path issues.
+
 ```bash
 repo_root="$(git rev-parse --show-toplevel)"
 manifest_path="$repo_root/microsoft-agent-framework/examples/foundry-hosted/agent.manifest.yaml"
@@ -55,8 +57,8 @@ manifest_path="$repo_root/microsoft-agent-framework/examples/foundry-hosted/agen
 PROJECT_ID="${FOUNDRY_PROJECT_ID:-/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$FOUNDRY_RESOURCE_GROUP/providers/Microsoft.CognitiveServices/accounts/$FOUNDRY_ACCOUNT_NAME/projects/$FOUNDRY_PROJECT_NAME}"
 MODEL_DEPLOYMENT_NAME="$FOUNDRY_MODEL_DEPLOYMENT_NAME"
 
-cd "$repo_root/microsoft-agent-framework/examples"
-mkdir -p azd-workspace/foundry-hosted && cd azd-workspace/foundry-hosted
+workspace_root="$HOME/my-research-agent"
+mkdir -p "$workspace_root" && cd "$workspace_root"
 
 # 1. Scaffold the hosted-agent azd project against the existing Foundry
 #    project + model.
@@ -103,9 +105,11 @@ If you want a managed endpoint in Foundry after validating the demo locally, run
 azd up
 ```
 
-from `microsoft-agent-framework/examples/azd-workspace/foundry-hosted/neo4j-research-agent-framework`.
+from `~/my-research-agent/neo4j-research-agent-framework`.
 
 This provisions the hosting resources for the sample, builds and pushes the container image, and registers a hosted agent version in the selected Foundry project.
+
+> **If `azd ai agent init` fails with `fatal: pathspec '*' did not match any files`**, move the workspace to a short directory outside this repo.
 
 Test the hosted agent from the CLI with a longer timeout:
 
@@ -128,7 +132,7 @@ azd ai agent monitor --follow
 
 ```bash
 # Remove the local scaffold created by this README.
-rm -rf microsoft-agent-framework/examples/azd-workspace/foundry-hosted/neo4j-research-agent-framework
+rm -rf ~/my-research-agent/neo4j-research-agent-framework
 ```
 
 This example reuses the shared Foundry project from `microsoft-foundry/infra/`. Do not run `azd down` from the scaffold unless you have reviewed the deletion plan and intend to remove the listed shared resources. For Azure cleanup, delete only the hosted agent/version or sample-specific resources you created.
