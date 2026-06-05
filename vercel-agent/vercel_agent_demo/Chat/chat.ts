@@ -21,7 +21,20 @@ export async function runWithMcpTracker<T>(
 }
 
 const DEFAULT_SDK_ENDPOINT = 'https://memory.neo4jlabs.com/v1';
-const GOOD_MATCH_THRESHOLD = 0.75;
+const GOOD_MATCH_THRESHOLD = 0.5;
+
+// Logging
+
+function preview(text: string, maxLen = 80): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > maxLen ? clean.slice(0, maxLen) + '…' : clean;
+}
+
+function tag(label: string): string {
+  return `[Memory:${label}]`;
+}
+
+// SDK client
 
 let _sdkClient: MemoryClient | null = null;
 
@@ -36,6 +49,7 @@ function getSdkClient(): MemoryClient {
     const workspaceId = process.env.MEMORY_WORKSPACE_ID?.trim();
     if (workspaceId) headers['X-Workspace-ID'] = workspaceId;
     _sdkClient = new MemoryClient({ endpoint, apiKey, headers });
+    console.log(`${tag('Init')} Connected to ${endpoint}${workspaceId ? ` (workspace: ${workspaceId})` : ''}`);
   }
   return _sdkClient;
 }
@@ -44,7 +58,7 @@ export function getMemoryClient(): MemoryClient {
   return getSdkClient();
 }
 
-// ── MCP Tools 
+// ── MCP Tools
 
 let _mcpClientPromise: Promise<MCPClient> | null = null;
 
@@ -104,36 +118,77 @@ export async function getNeo4jMcpTools(): Promise<Record<string, unknown>> {
   );
 }
 
+// Conversation lifecycle
 
 export async function ensureConversation(
   sessionId: string,
   existingConversationId?: string,
 ): Promise<string> {
-  if (existingConversationId) return existingConversationId;
+  if (existingConversationId) {
+    console.log(`${tag('Conversation')} Reusing existing conversation: ${existingConversationId}`);
+    return existingConversationId;
+  }
   try {
+    console.log(`${tag('Conversation')} Creating new conversation for user/session: ${sessionId}`);
+    const t0 = Date.now();
     const conv = await getSdkClient().shortTerm.createConversation({ userId: sessionId });
+    console.log(`${tag('Conversation')} Created → id: ${conv.id} (${Date.now() - t0}ms)`);
     return conv.id;
   } catch (err) {
-    console.error('[chat] Failed to create conversation for session', sessionId, err);
+    console.error(`${tag('Conversation')} Failed to create conversation for session ${sessionId}:`, err);
     throw err;
   }
 }
+
+// Context retrieval
 
 export async function getConversationContext(conversationId: string): Promise<{
   recentMessages: Array<{ role: string; content: string }>;
   reflections: Array<{ content: string }>;
   observations: Array<{ content: string }>;
 }> {
-  return getSdkClient().shortTerm.getContext(conversationId) as any;
+  console.log(`${tag('Context')} Fetching context for conversation: ${conversationId}`);
+  const t0 = Date.now();
+  const ctx = await getSdkClient().shortTerm.getContext(conversationId) as any;
+  const msgCount = ctx.recentMessages?.length ?? 0;
+  const refCount = ctx.reflections?.length ?? 0;
+  const obsCount = ctx.observations?.length ?? 0;
+  console.log(
+    `${tag('Context')} Retrieved in ${Date.now() - t0}ms → ` +
+    `${msgCount} recent message(s), ${refCount} reflection(s), ${obsCount} observation(s)`,
+  );
+  if (msgCount > 0) {
+    (ctx.recentMessages as Array<{ role: string; content: string }>).forEach((m, i) => {
+      console.log(`${tag('Context')}   [${i + 1}] ${m.role}: "${preview(m.content)}"`);
+    });
+  }
+  if (refCount > 0) {
+    (ctx.reflections as Array<{ content: string }>).forEach((r, i) => {
+      console.log(`${tag('Context')}   [reflection ${i + 1}] "${preview(r.content)}"`);
+    });
+  }
+  if (obsCount > 0) {
+    (ctx.observations as Array<{ content: string }>).forEach((o, i) => {
+      console.log(`${tag('Context')}   [observation ${i + 1}] "${preview(o.content)}"`);
+    });
+  }
+  return ctx;
 }
+
+// Message persistence
 
 export async function addMessage(
   conversationId: string,
   role: 'user' | 'assistant',
   content: string,
 ): Promise<void> {
+  console.log(`${tag('Store')} Persisting ${role} message to conversation ${conversationId}: "${preview(content)}"`);
+  const t0 = Date.now();
   await getSdkClient().shortTerm.addMessage(conversationId, role, content);
+  console.log(`${tag('Store')} ✓ ${role} message stored (${Date.now() - t0}ms)`);
 }
+
+//Semantic search
 
 export async function searchMemoryContext(
   conversationId: string,
@@ -141,15 +196,23 @@ export async function searchMemoryContext(
   limit = 5,
 ): Promise<string[]> {
   if (!query.trim()) return [];
+  console.log(
+    `${tag('Search')} Searching current conversation (${conversationId}) for: "${preview(query)}" ` +
+    `[threshold: ${GOOD_MATCH_THRESHOLD}, limit: ${limit}]`,
+  );
+  const t0 = Date.now();
   try {
     const results = await getSdkClient().shortTerm.searchMessages(query, {
       sessionId: conversationId,
       limit,
       threshold: GOOD_MATCH_THRESHOLD,
     });
-    return results.map((m) => m.content).filter(Boolean);
+    const hits = results.map((m) => m.content).filter(Boolean);
+    console.log(`${tag('Search')} Current conversation → ${hits.length} hit(s) (${Date.now() - t0}ms)`);
+    hits.forEach((h, i) => console.log(`${tag('Search')}   [${i + 1}] "${preview(h)}"`));
+    return hits;
   } catch (err) {
-    console.warn('[chat] searchMessages failed:', err);
+    console.warn(`${tag('Search')} searchMessages failed (${Date.now() - t0}ms):`, err);
     return [];
   }
 }
@@ -160,28 +223,38 @@ export async function searchUserMemoryContext(
   limit = 3,
 ): Promise<string[]> {
   if (!query.trim()) return [];
-  const apiKey = process.env.MEMORY_API_KEY?.trim();
-  if (!apiKey) return [];
-
+  console.log(`${tag('UserSearch')} Searching all conversations for user "${userId}": "${preview(query)}"`);
+  const t0 = Date.now();
   try {
-    const restBase = process.env.MEMORY_ENDPOINT?.trim() || DEFAULT_SDK_ENDPOINT;
-    const url = `${restBase}/short-term/search?user_id=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=${limit}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!res.ok) {
-      console.warn(`[chat] REST user search failed with ${res.status}:`, await res.text());
-      return [];
+    const conversations = await getSdkClient().shortTerm.listConversations({ userId, limit: 20 });
+    console.log(`${tag('UserSearch')} Found ${conversations.length} conversation(s) for user`);
+    const seen = new Set<string>();
+    const results: string[] = [];
+    for (const conv of conversations) {
+      if (results.length >= limit) break;
+      try {
+        const matches = await getSdkClient().shortTerm.searchMessages(query, {
+          sessionId: conv.id,
+          limit: 2,
+          threshold: GOOD_MATCH_THRESHOLD,
+        });
+        const newHits = matches
+          .map((m) => m.content)
+          .filter((c): c is string => !!c && !seen.has(c));
+        for (const h of newHits) {
+          if (results.length >= limit) break;
+          results.push(h);
+          seen.add(h);
+          console.log(`${tag('UserSearch')}   hit from conv ${conv.id}: "${preview(h)}"`);
+        }
+      } catch (err: unknown) {
+        console.warn(`${tag('UserSearch')} Search failed for conversation ${conv.id}:`, err);
+      }
     }
-    const data = await res.json();
-    const results: unknown[] = Array.isArray(data) ? data : (data.messages ?? data.results ?? []);
-    return results
-      .map((m: any) => m.content ?? m.text ?? (typeof m === 'string' ? m : null))
-      .filter(Boolean)
-      .slice(0, limit);
-  } catch (err) {
-    console.warn('[chat] searchUserMemoryContext failed:', err);
+    console.log(`${tag('UserSearch')} Total user-level hits: ${results.length} (${Date.now() - t0}ms)`);
+    return results;
+  } catch (err: unknown) {
+    console.warn(`${tag('UserSearch')} Failed to list conversations for user ${userId} (${Date.now() - t0}ms):`, err);
     return [];
   }
 }
@@ -192,7 +265,10 @@ export async function searchPreviousConversations(
   limit = 3,
 ): Promise<string[]> {
   if (!query.trim() || !conversationIds.length) return [];
-
+  console.log(
+    `${tag('PrevSearch')} Searching ${conversationIds.length} previous conversation(s) for: "${preview(query)}"`,
+  );
+  const t0 = Date.now();
   const results: string[] = [];
   const seen = new Set<string>();
 
@@ -207,18 +283,22 @@ export async function searchPreviousConversations(
         }
       }
     } catch (err) {
-      console.warn(`[chat] Failed to search conversation ${convId}:`, err);
+      console.warn(`${tag('PrevSearch')} Failed to search conversation ${convId}:`, err);
     }
   }
+  console.log(`${tag('PrevSearch')} Total previous-conversation hits: ${results.length} (${Date.now() - t0}ms)`);
   return results;
 }
 
+//Conversation deletion
+
 export async function deleteConversation(conversationId: string): Promise<void> {
+  console.log(`${tag('Delete')} Deleting conversation: ${conversationId}`);
   try {
     await getSdkClient().shortTerm.deleteConversation(conversationId);
-    console.log(`[chat] Successfully deleted conversation ${conversationId}`);
+    console.log(`${tag('Delete')} ✓ Conversation ${conversationId} deleted`);
   } catch (err) {
-    console.error(`[chat] Error deleting conversation ${conversationId}:`, err);
+    console.error(`${tag('Delete')} Failed to delete conversation ${conversationId}:`, err);
     throw err;
   }
 }
