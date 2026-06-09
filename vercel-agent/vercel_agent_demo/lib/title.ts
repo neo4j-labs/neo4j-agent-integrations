@@ -14,7 +14,7 @@ Here is the first message:
 ${firstMessage}`;
 
   const result = await generateText({
-    model: openai('gpt-4o-mini'),
+    model: openai('gpt-5.4-mini'),
     prompt,
     maxOutputTokens: 30,
   });

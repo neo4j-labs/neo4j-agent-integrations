@@ -27,6 +27,14 @@ interface McpToolRecord {
   ok: boolean;
 }
 
+interface ReasoningStep {
+  id: string;
+  reasoning: string;
+  actionTaken: string;
+  result?: string;
+  createdAt: string;
+}
+
 interface MemoryContextData {
   semanticMatches: number;
   reflections: number;
@@ -87,6 +95,9 @@ export default function ChatComponent({
   const [copyError, setCopyError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [msgMemoryContexts, setMsgMemoryContexts] = useState<Record<string, MemoryContextData>>({});
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
+  const [msgReasoningSteps, setMsgReasoningSteps] = useState<Record<string, ReasoningStep[]>>({});
+  const prevStepCountRef = useRef<number>(0);
   const {
     messages,
     setMessages,
@@ -111,6 +122,22 @@ export default function ChatComponent({
           const memCtx = pendingMemoryContextRef.current;
           pendingMemoryContextRef.current = null;
           setMsgMemoryContexts(prev => ({ ...prev, [message.id]: memCtx }));
+        }
+        const convId = conversationIdRef.current;
+        if (convId) {
+          const msgId = message.id;
+          const prevCount = prevStepCountRef.current;
+          fetch(`/api/reasoning?conversationId=${encodeURIComponent(convId)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then((trace: { steps?: ReasoningStep[] } | null) => {
+              const steps = trace?.steps ?? [];
+              const newSteps = steps.slice(prevCount);
+              prevStepCountRef.current = steps.length;
+              if (newSteps.length > 0) {
+                setMsgReasoningSteps(prev => ({ ...prev, [msgId]: newSteps }));
+              }
+            })
+            .catch(() => {});
         }
       }
     },
@@ -402,65 +429,142 @@ export default function ChatComponent({
                             )}
                           </div>
                         )}
-                        {/* Tool calls made by the model for this response */}
-                        {msg.parts
-                          .filter((p): p is DynamicToolUIPart => p.type === 'dynamic-tool')
-                          .map((part) => {
-                            const isRunning = part.state === 'input-streaming' || part.state === 'input-available';
-                            const isDone = part.state === 'output-available';
-                            const isError = (part as any).state === 'output-error';
-                            const query = (!isRunning && (part.input as any)?.query) || null;
-                            const rawOutput = isDone ? (part as any).output : null;
-                            const outputText =
-                              rawOutput == null ? null
-                              : typeof rawOutput === 'string' ? rawOutput
-                              : JSON.stringify(rawOutput);
-                            const displayOutput =
-                              outputText === '[]' ? 'No results found.'
-                              : outputText != null ? outputText.slice(0, 800)
-                              : null;
-                            return (
+                        {/* Reasoning Trace — collapsible, mirrors Agent Memory style */}
+                        {(() => {
+                          const streamingParts = msg.parts.filter((p): p is DynamicToolUIPart => p.type === 'dynamic-tool');
+                          const completedSteps = msgReasoningSteps[msg.id] ?? [];
+                          if (streamingParts.length === 0 && completedSteps.length === 0) return null;
+
+                          const isExpanded = expandedReasoning[msg.id] ?? false;
+                          const stepCount = completedSteps.length || streamingParts.length;
+
+                          return (
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--theme-color-neutral-border-weak)',
+                                backgroundColor: 'var(--theme-color-neutral-bg-default)',
+                              }}
+                            >
+                              {/* Header row */}
                               <div
-                                key={part.toolCallId}
-                                style={{
-                                  fontSize: '12px',
-                                  fontFamily: 'monospace',
-                                  padding: '8px 10px',
-                                  borderRadius: '8px',
-                                  border: '1px solid var(--theme-color-neutral-border-weak)',
-                                  backgroundColor: 'var(--theme-color-neutral-bg-default)',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '4px',
-                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}
+                                onClick={() => setExpandedReasoning(prev => ({ ...prev, [msg.id]: !isExpanded }))}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontWeight: 600, color: 'var(--theme-color-primary-text)' }}>
-                                    🔧 {part.title ?? part.toolName}
+                                <Typography
+                                  variant="body-small"
+                                  style={{ fontWeight: 600, color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'nowrap' }}
+                                >
+                                  🔍 Reasoning Trace
+                                </Typography>
+                                <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-info-bg-weak)', color: 'var(--theme-color-info-text)' }}>
+                                  {stepCount} {stepCount === 1 ? 'step' : 'steps'}
+                                </span>
+                                {streamingParts.length > 0 && completedSteps.length === 0 && (
+                                  <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: 'var(--theme-color-warning-bg-weak)', color: 'var(--theme-color-warning-text)' }}>
+                                    running…
                                   </span>
-                                  {isRunning && <span style={{ opacity: 0.6, fontSize: '11px' }}>running…</span>}
-                                  {isDone && <span style={{ color: 'var(--theme-color-success-text)', fontSize: '11px' }}>✓ done</span>}
-                                  {isError && <span style={{ color: 'var(--theme-color-danger-text)', fontSize: '11px' }}>✗ error</span>}
-                                </div>
-                                {query && (
-                                  <div style={{ color: 'var(--theme-color-neutral-text-weaker)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                    {query}
-                                  </div>
                                 )}
-                                {displayOutput && (
-                                  <div style={{ color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderTop: '1px solid var(--theme-color-neutral-border-weak)', paddingTop: '4px', marginTop: '2px' }}>
-                                    {displayOutput}
-                                  </div>
-                                )}
-                                {isError && (
-                                  <div style={{ color: 'var(--theme-color-danger-text)' }}>
-                                    {(part as any).errorText}
-                                  </div>
-                                )}
+                                <span style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.5 }}>
+                                  {isExpanded ? '▲' : '▼'}
+                                </span>
                               </div>
-                            );
-                          })
-                        }
+
+                              {/* Expanded content */}
+                              {isExpanded && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '4px', borderTop: '1px solid var(--theme-color-neutral-border-weak)' }}>
+                                  {/* Completed steps from /api/reasoning */}
+                                  {completedSteps.map((step, i) => (
+                                    <div
+                                      key={step.id}
+                                      style={{
+                                        fontSize: '12px',
+                                        padding: '8px 10px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--theme-color-neutral-border-weak)',
+                                        backgroundColor: 'var(--theme-color-neutral-bg-weak)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 600, fontSize: '11px', color: 'var(--theme-color-neutral-text-weaker)' }}>
+                                        STEP {i + 1}
+                                      </div>
+                                      {step.reasoning && (
+                                        <div>
+                                          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--theme-color-neutral-text-weaker)', marginBottom: '2px', letterSpacing: '0.05em' }}>REASONING</div>
+                                          <div style={{ color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{step.reasoning}</div>
+                                        </div>
+                                      )}
+                                      {step.actionTaken && (
+                                        <div>
+                                          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--theme-color-neutral-text-weaker)', marginBottom: '2px', letterSpacing: '0.05em' }}>ACTION</div>
+                                          <div style={{ color: 'var(--theme-color-neutral-text-default)', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{step.actionTaken}</div>
+                                        </div>
+                                      )}
+                                      {step.result && (
+                                        <div style={{ borderTop: '1px solid var(--theme-color-neutral-border-weak)', paddingTop: '4px' }}>
+                                          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--theme-color-neutral-text-weaker)', marginBottom: '2px', letterSpacing: '0.05em' }}>RESULT</div>
+                                          <div style={{ color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{step.result.slice(0, 600)}</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {/* Streaming tool calls (shown while response is in-flight) */}
+                                  {completedSteps.length === 0 && streamingParts.map((part) => {
+                                    const isRunning = part.state === 'input-streaming' || part.state === 'input-available';
+                                    const isDone = part.state === 'output-available';
+                                    const isError = (part as any).state === 'output-error';
+                                    const query = (!isRunning && (part.input as any)?.query) || null;
+                                    const rawOutput = isDone ? (part as any).output : null;
+                                    const outputText = rawOutput == null ? null : typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
+                                    const displayOutput = outputText === '[]' ? 'No results found.' : outputText != null ? outputText.slice(0, 600) : null;
+                                    return (
+                                      <div
+                                        key={part.toolCallId}
+                                        style={{
+                                          fontSize: '12px',
+                                          fontFamily: 'monospace',
+                                          padding: '8px 10px',
+                                          borderRadius: '8px',
+                                          border: '1px solid var(--theme-color-neutral-border-weak)',
+                                          backgroundColor: 'var(--theme-color-neutral-bg-weak)',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '4px',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <span style={{ fontWeight: 600, color: 'var(--theme-color-primary-text)' }}>
+                                            🔧 {part.title ?? part.toolName}
+                                          </span>
+                                          {isRunning && <span style={{ opacity: 0.6, fontSize: '11px' }}>running…</span>}
+                                          {isDone && <span style={{ color: 'var(--theme-color-success-text)', fontSize: '11px' }}>✓ done</span>}
+                                          {isError && <span style={{ color: 'var(--theme-color-danger-text)', fontSize: '11px' }}>✗ error</span>}
+                                        </div>
+                                        {query && (
+                                          <div style={{ color: 'var(--theme-color-neutral-text-weaker)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{query}</div>
+                                        )}
+                                        {displayOutput && (
+                                          <div style={{ color: 'var(--theme-color-neutral-text-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderTop: '1px solid var(--theme-color-neutral-border-weak)', paddingTop: '4px', marginTop: '2px' }}>{displayOutput}</div>
+                                        )}
+                                        {isError && (
+                                          <div style={{ color: 'var(--theme-color-danger-text)' }}>{(part as any).errorText}</div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <Response
                           isAnimating={
                             isStreaming && idx === messages.length - 1
