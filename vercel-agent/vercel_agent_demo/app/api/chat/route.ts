@@ -17,6 +17,7 @@ import {
   deleteConversation,
   runWithMcpTracker,
   getNeo4jMcpTools,
+  recordConversationReasoningSteps,
   type McpToolRecord,
 } from '@/Chat/chat';
 import { BASE_SYSTEM_PROMPT } from '@/lib/constants';
@@ -276,15 +277,14 @@ export async function POST(req: Request) {
 
         const memoryContextStr =
           systemContextItems.length > 0
-            ? `\n\n[UserContext]: ${systemContextItems.join(' | ')}\n\nINSTRUCTION: ${
-                hasStrongMemory
-                  ? 'STRONGLY PREFER using [UserContext] to answer. Only call tools if the user explicitly asks for a live query, or if the context is clearly outdated or contradicted.'
-                  : 'ALWAYS check [UserContext] AND the conversation history before calling any tool. If the answer or sufficient context is present, use it directly without a DB query. Only call tools when the answer genuinely requires new data not present in the context or history.'
-              }`
+            ? `\n\n[UserContext]: ${systemContextItems.join(' | ')}\n\nINSTRUCTION: ${hasStrongMemory
+              ? 'STRONGLY PREFER using [UserContext] to answer. Only call tools if the user explicitly asks for a live query, or if the context is clearly outdated or contradicted.'
+              : 'ALWAYS check [UserContext] AND the conversation history before calling any tool. If the answer or sufficient context is present, use it directly without a DB query. Only call tools when the answer genuinely requires new data not present in the context or history.'
+            }`
             : '\n\nINSTRUCTION: ALWAYS check the conversation history before calling any tool. If the answer or sufficient context is already in the conversation, use it directly without a DB query.';
 
         console.log(
-          `[chat/POST] ⑤ Agent loop starting | model: gpt-5.4-mini | maxSteps: ${MAX_TOOL_STEPS} | hasStrongMemory: ${hasStrongMemory}`,
+          `Agent loop starting | model: gpt-5.4-mini | maxSteps: ${MAX_TOOL_STEPS} | hasStrongMemory: ${hasStrongMemory}`,
         );
 
         const result = streamText({
@@ -294,16 +294,22 @@ export async function POST(req: Request) {
           tools: neo4jTools,
           stopWhen: stepCountIs(MAX_TOOL_STEPS),
           onFinish: async ({ text, steps }) => {
-            console.log(`[chat/POST] ⑥ Agent finished in ${steps.length} step(s)`);
+            console.log(`Agent finished in ${steps.length} step(s)`);
             if (text) {
               //6: store assistant response
-              console.log(`[chat/POST] ⑥ Storing assistant response to memory…`);
+              console.log(`Storing assistant response to memory…`);
               await addMessage(conversationId, 'assistant', text).catch((err: unknown) =>
-                console.error('[chat/POST] ⑥ Failed to persist assistant message:', err),
+                console.error('Failed to persist assistant message:', err),
               );
-              console.log(`[chat/POST] ⑥ ✓ Assistant response stored. Memory flow complete.`);
+              console.log(`[Assistant response stored. Memory flow complete.`);
             } else {
-              console.log(`[chat/POST] ⑥ No text to store (tool-only response or empty).`);
+              console.log(`No text to store (tool-only response or empty).`);
+            }
+            // Record reasoning steps
+            if (steps.length > 0) {
+              recordConversationReasoningSteps(conversationId, steps).catch((err: unknown) =>
+                console.error('Failed to record reasoning steps:', err),
+              );
             }
           },
         });

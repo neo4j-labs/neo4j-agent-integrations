@@ -290,6 +290,106 @@ export async function searchPreviousConversations(
   return results;
 }
 
+export async function getConversationReasoning(conversationId: string) {
+  console.log(`${tag('Reasoning')} Fetching trace for conversation: ${conversationId}`);
+  const t0 = Date.now();
+  const trace = await getSdkClient().reasoning.getTraceByConversation(conversationId);
+  console.log(`${tag('Reasoning')} Retrieved in ${Date.now() - t0}ms → ${(trace as any).steps?.length ?? 0} step(s)`);
+  return trace;
+}
+
+export async function recordConversationReasoningSteps(
+  conversationId: string,
+  steps: Array<{
+    text: string;
+    toolCalls: Array<{ toolName: string; input: unknown }>;
+    toolResults: Array<{ toolCallId: string; toolName: string; output: unknown }>;
+  }>,
+): Promise<void> {
+  console.log(`${tag('Reasoning')} Recording ${steps.length} step(s) for conversation: ${conversationId}`);
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const hasTools = step.toolCalls.length > 0;
+    const stepLabel = `step ${i + 1}/${steps.length}`;
+
+    console.log(
+      `${tag('Reasoning')} [${stepLabel}] hasTools=${hasTools} | toolCalls=${step.toolCalls.length} | toolResults=${step.toolResults.length} | textLen=${step.text.length}`,
+    );
+
+    if (hasTools) {
+      console.log(
+        `${tag('Reasoning')} [${stepLabel}] tools: ${step.toolCalls.map((t) => t.toolName).join(', ')}`,
+      );
+      step.toolCalls.forEach((t) => {
+        console.log(`${tag('Reasoning')} [${stepLabel}]   call  → ${t.toolName}: ${JSON.stringify(t.input ?? {}).slice(0, 200)}`);
+      });
+      step.toolResults.forEach((r) => {
+        const out = typeof r.output === 'string' ? r.output : JSON.stringify(r.output);
+        console.log(`${tag('Reasoning')} [${stepLabel}]   result← ${r.toolName}: "${preview(out)}"`);
+      });
+
+      const actionTaken = step.toolCalls
+        .map((t) => `${t.toolName}(${JSON.stringify(t.input ?? {}).slice(0, 200)})`)
+        .join('; ');
+      const result = step.toolResults
+        .map((r) => {
+          const out = typeof r.output === 'string' ? r.output : JSON.stringify(r.output);
+          return `${r.toolName}: ${out.slice(0, 300)}`;
+        })
+        .join(' | ')
+        .slice(0, 800) || undefined;
+
+      const t0 = Date.now();
+      const recorded = await getSdkClient().reasoning.recordStep({
+        conversationId,
+        reasoning: `Using tools: ${step.toolCalls.map((t) => t.toolName).join(', ')}`,
+        actionTaken,
+        result,
+      }).catch((err) => {
+        console.warn(`${tag('Reasoning')} [${stepLabel}] ✗ Failed to record tool step:`, err);
+        return null;
+      });
+      if (recorded) {
+        const stepId = (recorded as any).id as string;
+        console.log(`${tag('Reasoning')} [${stepLabel}] ✓ Tool step recorded → id: ${stepId} (${Date.now() - t0}ms)`);
+        for (const call of step.toolCalls) {
+          const resultRecord = step.toolResults.find((r) => r.toolName === call.toolName);
+          const rawOut = resultRecord?.output;
+          const resultStr = rawOut == null ? undefined : typeof rawOut === 'string' ? rawOut : JSON.stringify(rawOut);
+          await getSdkClient().reasoning.recordToolCall(
+            stepId,
+            call.toolName,
+            (call.input ?? {}) as Record<string, unknown>,
+            { result: resultStr, status: 'success' },
+          ).catch((err) => {
+            console.warn(`${tag('Reasoning')} [${stepLabel}] ✗ Failed to record tool call ${call.toolName}:`, err);
+          });
+        }
+      }
+    } else if (step.text) {
+      console.log(`${tag('Reasoning')} [${stepLabel}] text step: "${preview(step.text)}"`);
+
+      const t0 = Date.now();
+      const recorded = await getSdkClient().reasoning.recordStep({
+        conversationId,
+        reasoning: step.text.slice(0, 1000),
+        actionTaken: 'generate_response',
+      }).catch((err) => {
+        console.warn(`${tag('Reasoning')} [${stepLabel}] ✗ Failed to record text step:`, err);
+        return null;
+      });
+      if (recorded) {
+        console.log(`${tag('Reasoning')} [${stepLabel}] ✓ Text step recorded → id: ${(recorded as any).id} (${Date.now() - t0}ms)`);
+      }
+    } else {
+      console.log(`${tag('Reasoning')} [${stepLabel}] skipped (no tools and no text)`);
+    }
+  }
+
+  console.log(`${tag('Reasoning')} ✓ Finished recording steps for conversation: ${conversationId}`);
+}
+
 //Conversation deletion
 
 export async function deleteConversation(conversationId: string): Promise<void> {

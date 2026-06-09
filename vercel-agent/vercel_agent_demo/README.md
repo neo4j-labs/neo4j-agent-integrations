@@ -11,6 +11,7 @@ Built with [Next.js 14](https://nextjs.org/) and the [Vercel AI SDK](https://sdk
 - Multi-session chat with a collapsible sidebar and auto-generated titles
 - Persistent memory across sessions via NAMS (semantic search, reflections, observations)
 - Per-message `🧠 Agent Memory` badge showing what context was injected
+- **Reasoning trace recording** — every agentic step (tool calls + text generation) is persisted to NAMS and queryable via `GET /api/reasoning`
 - Optional live Neo4j graph querying via MCP tools (`read-cypher`, `get-schema`, etc.)
 - Dark/light theme toggle, persisted in a browser cookie
 - Streaming responses with tool-call display and thinking indicator
@@ -30,7 +31,8 @@ Browser (React + NDL)
   │
   ├─ GET  /api/chat       — load conversation history from NAMS
   ├─ POST /api/chat       — send a message → stream a response
-  └─ DELETE /api/chat     — delete a conversation from NAMS
+  ├─ DELETE /api/chat     — delete a conversation from NAMS
+  └─ GET  /api/reasoning  — fetch the NAMS reasoning trace for a conversation
 ```
 
 ### Request lifecycle (POST /api/chat)
@@ -42,7 +44,7 @@ Browser (React + NDL)
      a. getConversationContext()       — recent messages + reflections + observations
      b. searchMemoryContext()          — semantic search within current conversation
      c. searchPreviousConversations()  — semantic search across previous sessions (if provided)
-     d. searchUserMemoryContext()      — user-level search across all their conversations (fallback)
+     d. searchUserMemoryContext()      — user-level search: lists all conversations via SDK, then searches each (fallback)
      e. Inject stored recent messages not yet in the UI (e.g. after page refresh)
 ④ Persist user message to NAMS (fire-and-forget)
 ⑤ getNeo4jMcpTools() — lazily connect to MCP server (if MCP_URL is set)
@@ -53,6 +55,7 @@ Browser (React + NDL)
      - tools:    Neo4j MCP tools (if available)
      - stopWhen: stepCountIs(5) — max 5 agentic loop iterations
 ⑥ onFinish: persist assistant reply to NAMS
+   Record reasoning steps (tool calls + text generation) to NAMS Reasoning API (async)
    If first message: generateTitle() → emit data-session-title event
    Stream response back via createUIMessageStreamResponse
 ```
@@ -61,9 +64,10 @@ Browser (React + NDL)
 
 | File | Purpose |
 |---|---|
-| [Chat/chat.ts](Chat/chat.ts) | Memory client, MCP client, all NAMS operations |
-| [Chat/chatComponent.tsx](Chat/chatComponent.tsx) | React chat UI — messages, memory badges, tool call display |
+| [Chat/chat.ts](Chat/chat.ts) | Memory client, MCP client, all NAMS operations, reasoning tracking |
+| [Chat/chatComponent.tsx](Chat/chatComponent.tsx) | React chat UI — messages, memory badges, tool call display, reasoning viewer |
 | [app/api/chat/route.ts](app/api/chat/route.ts) | Next.js route: GET/POST/DELETE for chat |
+| [app/api/reasoning/route.ts](app/api/reasoning/route.ts) | Next.js route: GET — fetch NAMS reasoning trace for a conversation |
 | [app/api/sessions/route.ts](app/api/sessions/route.ts) | Next.js route: GET/POST/PATCH/DELETE for sessions |
 | [app/page.tsx](app/page.tsx) | Root page — sidebar, session management, theme |
 | [lib/constants.ts](lib/constants.ts) | `BASE_SYSTEM_PROMPT` — graph schema and Cypher guidelines |
@@ -78,8 +82,8 @@ Browser (React + NDL)
 - **NAMS API key** — Neo4j Agent Memory Service key (`nams_…`)
 - **MEMORY_WORKSPACE_ID** — to scope memory to a specific workspace
 - **MCP server URL** (optional) — to enable live Neo4j graph querying
-- **MCP_NEO4J_USERNAME** (optional) — credentials
-- **MCP_NEO4J_PASSWORD** (optional) — credentials
+- **MCP_NEO4J_USERNAME** (optional) — MCP server credentials (fallback: `NEO4J_USERNAME`)
+- **MCP_NEO4J_PASSWORD** (optional) — MCP server credentials (fallback: `NEO4J_PASSWORD`)
 
 ---
 
@@ -161,11 +165,21 @@ The similarity threshold is set to **`0.5`** (in `Chat/chat.ts` → `GOOD_MATCH_
 
 ### Model instruction
 
-The system prompt always includes an explicit memory instruction:
+The system prompt always includes an explicit memory instruction. `semanticHits` is computed as `semanticMatches + reflections + observations` — so a NAMS-generated reflection alone triggers the "strong memory" path:
 
-- **Strong memory** (semantic hits ≥ 1): model is instructed to strongly prefer retrieved context and skip DB tool calls unless explicitly asked for live data.
+- **Strong memory** (`semanticHits` ≥ 1): model is instructed to strongly prefer retrieved context and skip DB tool calls unless explicitly asked for live data.
 - **No semantic hits, but `[UserContext]` present**: model is told to check context and conversation history before calling any tool.
 - **No context at all**: model is told to check conversation history before calling any tool.
+
+### Reasoning traces
+
+After each response the server calls `recordConversationReasoningSteps()`. This persists every agentic step — tool name, input, output, and final text — to the NAMS Reasoning API. Retrieve the full trace for any conversation:
+
+```
+GET /api/reasoning?conversationId=<id>
+```
+
+The trace is also surfaced in the chat UI as an expandable reasoning step viewer per message.
 
 ---
 
@@ -275,6 +289,7 @@ With `npm run dev`, the terminal prints a numbered trace of the full memory flow
 | `Memory service unavailable` (503) | NAMS unreachable or wrong key | Verify the key and `MEMORY_ENDPOINT` (defaults to `https://memory.neo4jlabs.com/v1`) |
 | Memory badge never appears | No prior history for this user | Send a few messages; badges appear once NAMS has stored context |
 | `0 conversation matches` in logs | Semantic similarity below threshold | Lower `GOOD_MATCH_THRESHOLD` in `Chat/chat.ts` (currently `0.5`); check that messages were stored in the previous turn |
+| Reasoning trace empty or `500` from `/api/reasoning` | NAMS Reasoning API not enabled for workspace | Verify that the NAMS workspace has Reasoning enabled; check server logs for `[Memory:Reasoning]` errors |
 | History does not reload after refresh | Wrong `conversationId` in the session cookie | Clear cookies for `localhost` and retry |
 | `recent-from-memory` always 0 | UI already carries all messages | Expected — the injection only fires when the UI is missing stored messages (e.g. first load of an existing conversation) |
 | MCP tools not available | `MCP_URL` not set or server unreachable | Check `MCP_URL`, `MCP_NEO4J_USERNAME`, `MCP_NEO4J_PASSWORD` |
