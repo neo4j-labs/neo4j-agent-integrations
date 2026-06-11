@@ -1,0 +1,14 @@
+# Environment files (contain secrets — never commit)
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Generated / cache files
+next-env.d.ts
+tsconfig.tsbuildinfo

@@ -1,0 +1,31 @@
+{
+  "name": "neo4j-vercel-ai-chat",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp": "^1.0.44",
+    "@ai-sdk/openai": "^3.0.53",
+    "@ai-sdk/react": "^3.0.179",
+    "@neo4j-labs/agent-memory": "^0.3.0",
+    "@neo4j-ndl/base": "^4.12.4",
+    "@neo4j-ndl/react": "^4.12.5",
+    "@tanstack/react-table": "^8.21.3",
+    "ai": "^6.0.177",
+    "neo4j-driver": "^6.0.1",
+    "next": "^14.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5"
+  }
+}

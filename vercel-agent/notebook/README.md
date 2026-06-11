@@ -211,6 +211,97 @@ Connected to Neo4j MCP ✓
 
 ---
 
+### 4. NAMS — Hosted Agent Memory
+
+[NAMS (Neo4j Agent Memory Service)](https://neo4j.com/docs/agent-memory/) is a **managed, graph-native REST service** that gives AI agents persistent memory across conversations — no database to run or maintain. It provides three interconnected memory layers stored in a single hosted knowledge graph:
+
+| Layer | What it stores |
+|-------|---------------|
+| **Short-term** | Conversation history and session state; supports semantic search |
+| **Long-term** | Extracted facts, user preferences, and entities (Person, Org, Location, …) across sessions |
+| **Reasoning** | Tool-use traces and decision records for future self-improvement |
+
+Get an API key at the [NAMS console](https://console.neo4j.io/agent-memory), then:
+
+```bash
+npm install @neo4j-labs/agent-memory
+```
+
+```js
+import { MemoryClient } from '@neo4j-labs/agent-memory';
+import { generateText, stepCountIs } from 'ai';
+
+const memory = new MemoryClient({
+  endpoint: 'https://memory.neo4jlabs.com/v1',
+  apiKey:   process.env.MEMORY_API_KEY,
+});
+
+// Create (or resume) a conversation scoped to this user
+const { id: conversationId } = await memory.shortTerm.createConversation({ userId: 'user-123' });
+
+async function runWithMemory(query) {
+  // BEFORE: inject short-term context + semantic matches into system prompt
+  const ctx     = await memory.shortTerm.getContext(conversationId);
+  const matches = await memory.shortTerm.searchMessages(query, {
+    sessionId: conversationId, limit: 5, threshold: 0.75,
+  });
+  const injected = [
+    ...matches.map(m  => `[relevant] ${m.content}`),
+    ...ctx.reflections.map(r => `[reflection] ${r.content}`),
+    ...[...ctx.recentMessages].reverse().slice(-8)
+      .map(m => `${m.role.toUpperCase()}: ${m.content}`),
+  ].join('\n');
+
+  const { text } = await generateText({
+    model,
+    system:   injected ? `${BASE_SYSTEM_PROMPT}\n\n${injected}` : BASE_SYSTEM_PROMPT,
+    prompt:   query,
+    tools:    mcpTools,
+    stopWhen: stepCountIs(10),
+  });
+
+  // AFTER: persist the exchange
+  await memory.shortTerm.addMessage(conversationId, 'user',      query);
+  await memory.shortTerm.addMessage(conversationId, 'assistant', text);
+  return text;
+}
+```
+
+**Transports:** The SDK defaults to REST with `MEMORY_API_KEY`. You can also connect via the NAMS MCP endpoint using Basic auth and provide `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
+
+**Full example:** [`vercel_agent_demo/`](vercel_agent_demo/) — a Next.js chat UI wired to NAMS, with Neo4j graph-query tools, session management, and support for both SDK and MCP transports. **This is a local demo only — see the [Chat App Demo](#chat-app-demo-local-only) section below.**
+
+**When to use:** Conversational agents that need out-of-the-box personalization, entity tracking, and reasoning traces across sessions — without managing your own Neo4j instance.
+
+---
+
+---
+
+## Chat App Demo (Local Only)
+
+> **This is boilerplate demo code.**
+> Run it locally to explore.
+
+[`vercel_agent_demo/`](vercel_agent_demo/) is a minimal Next.js chat UI that wires together Neo4j MCP tools and NAMS memory into a browser-based chat interface. Its purpose is to show — concretely and interactively — how the agent patterns from the `notebook/` scripts translate to a real UI.
+
+**What it is:**
+- A local-only reference implementation / starting point
+- A Next.js App Router project you run with `npm run dev`
+- Pre-wired to the same `.env` variables used by the notebook scripts
+
+**To run locally:**
+
+```bash
+cd vercel_agent_demo
+cp ../.env .env.local   # reuse the same env vars
+npm install
+npm run dev             # starts at http://localhost:3000
+```
+
+> If you want to build on top of this, treat it as a starting point and add authentication, error boundaries, and rate limiting before any public deployment.
+
+---
+
 ## MCP Authentication
 
 ✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
