@@ -398,7 +398,7 @@ export async function deleteConversation(conversationId: string): Promise<void> 
     await getSdkClient().shortTerm.deleteConversation(conversationId);
     console.log(`${tag('Delete')} ✓ Conversation ${conversationId} deleted`);
   } catch (err) {
-    console.error(`${tag('Delete')} Failed to delete conversation ${conversationId}:`, err);
+    console.error(`${tag('Delete')} Failed to delete conversation %s:`, conversationId, err);
     throw err;
   }
 }
