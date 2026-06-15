@@ -1,16 +1,17 @@
 """Optional MCP (Model Context Protocol) client for the DataRobot agent.
 
 When MCP_SERVER_URL is set, the agent fetches tools dynamically from the MCP
-server and adds them alongside the built-in Neo4j tools.  If the `mcp` package
-is not installed or the env var is absent, this module is a silent no-op.
+server and adds them alongside the built-in Neo4j tools.
 
 Supported transports:
-  - HTTP / SSE  (http:// or https://)
-  - stdio       (any other string, treated as a shell command)
+  - HTTP / SSE  (url starting with http:// or https://)
+  - stdio       (any other string treated as a shell command)
+
+The MCP library uses anyio internally — we run it with anyio.run() to avoid
+the "unhandled errors in a TaskGroup" error that occurs with asyncio.run().
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -23,6 +24,7 @@ try:
     from mcp import ClientSession  # type: ignore[import]
     from mcp.client.sse import sse_client  # type: ignore[import]
     from mcp.client.stdio import StdioServerParameters, stdio_client  # type: ignore[import]
+    import anyio  # type: ignore[import]
     _HAS_MCP = True
 except ImportError:
     _HAS_MCP = False
@@ -32,12 +34,24 @@ def is_enabled() -> bool:
     return _HAS_MCP and bool(os.environ.get("MCP_SERVER_URL"))
 
 
-def _server_url() -> str:
-    return os.environ.get("MCP_SERVER_URL", "")
-
-
 def _is_http(url: str) -> bool:
     return url.startswith("http://") or url.startswith("https://")
+
+
+def _parse_tool(t: Any) -> dict[str, Any]:
+    return {
+        "name": t.name,
+        "description": t.description or "",
+        "inputSchema": t.inputSchema if hasattr(t, "inputSchema") else {},
+    }
+
+
+def _parse_content(content: list[Any]) -> Any:
+    if not content:
+        return {}
+    if len(content) == 1:
+        return content[0].text if hasattr(content[0], "text") else str(content[0])
+    return [c.text if hasattr(c, "text") else str(c) for c in content]
 
 
 async def _list_tools_async(url: str) -> list[dict[str, Any]]:
@@ -46,14 +60,7 @@ async def _list_tools_async(url: str) -> list[dict[str, Any]]:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [
-                    {
-                        "name": t.name,
-                        "description": t.description or "",
-                        "inputSchema": t.inputSchema if hasattr(t, "inputSchema") else {},
-                    }
-                    for t in result.tools
-                ]
+                return [_parse_tool(t) for t in result.tools]
     else:
         parts = shlex.split(url)
         params = StdioServerParameters(command=parts[0], args=parts[1:])
@@ -61,14 +68,7 @@ async def _list_tools_async(url: str) -> list[dict[str, Any]]:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [
-                    {
-                        "name": t.name,
-                        "description": t.description or "",
-                        "inputSchema": t.inputSchema if hasattr(t, "inputSchema") else {},
-                    }
-                    for t in result.tools
-                ]
+                return [_parse_tool(t) for t in result.tools]
 
 
 async def _call_tool_async(url: str, name: str, arguments: dict[str, Any]) -> Any:
@@ -77,44 +77,37 @@ async def _call_tool_async(url: str, name: str, arguments: dict[str, Any]) -> An
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(name, arguments)
-                parts = result.content
-                if not parts:
-                    return {}
-                if len(parts) == 1:
-                    return parts[0].text if hasattr(parts[0], "text") else str(parts[0])
-                return [p.text if hasattr(p, "text") else str(p) for p in parts]
+                return _parse_content(result.content)
     else:
-        parts_cmd = shlex.split(url)
-        params = StdioServerParameters(command=parts_cmd[0], args=parts_cmd[1:])
+        parts = shlex.split(url)
+        params = StdioServerParameters(command=parts[0], args=parts[1:])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(name, arguments)
-                content = result.content
-                if not content:
-                    return {}
-                if len(content) == 1:
-                    return content[0].text if hasattr(content[0], "text") else str(content[0])
-                return [c.text if hasattr(c, "text") else str(c) for c in content]
+                return _parse_content(result.content)
 
 
 def list_tools() -> list[dict[str, Any]]:
     """Fetch tool definitions from the MCP server. Returns [] on any error."""
     if not is_enabled():
         return []
-    url = _server_url()
+    url = os.environ["MCP_SERVER_URL"]
     try:
-        return asyncio.run(_list_tools_async(url))
+        # Use anyio.run() — MCP library uses anyio TaskGroups internally
+        return anyio.run(_list_tools_async, url)
     except Exception as exc:
         logger.warning("MCP list_tools failed (non-fatal): %s", exc)
         return []
 
 
 def call_tool(name: str, arguments: dict[str, Any]) -> Any:
-    """Call a tool on the MCP server. Returns error dict on failure."""
-    url = _server_url()
+    """Call a tool on the MCP server. Returns error string on failure."""
+    if not is_enabled():
+        return {"error": "MCP not configured"}
+    url = os.environ["MCP_SERVER_URL"]
     try:
-        return asyncio.run(_call_tool_async(url, name, arguments))
+        return anyio.run(_call_tool_async, url, name, arguments)
     except Exception as exc:
         logger.warning("MCP call_tool '%s' failed: %s", name, exc)
         return {"error": str(exc)}

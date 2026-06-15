@@ -1,6 +1,11 @@
 # DataRobot + Neo4j Integration Plan
 
-**Prepared:** May 2026  
+**Prepared:** May 2026
+
+> **Implementation Note (updated June 2026):** The original plan explored LangGraph and CrewAI as agent frameworks.
+> The final implementation uses the **direct OpenAI SDK** approach (Pattern A) — simpler, no LangGraph dependency,
+> fewer moving parts, and fully portable across DataRobot environments. LangGraph-specific sections below are
+> retained for reference only.  
 **Repo:** neo4j-agent-integrations  
 **Folder:** `datarobot/`
 

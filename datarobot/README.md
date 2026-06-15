@@ -171,10 +171,12 @@ python infra/agent.py validate
 ```
 
 **Upload steps:**
-1. DataRobot → Registry → Custom Models → Create Custom Model
-2. Upload `dist/neo4j_datarobot_agent.zip`
-3. Target Type = `Agentic Workflow`
+1. DataRobot → **Workshop** → **Custom Models** → **Add custom model** → Upload files
+   *(In some DataRobot versions the path is: **Model Registry** → **Custom Models** → **Create custom model**)*
+2. Upload all files from `dist/neo4j_datarobot_agent.zip` (or upload the ZIP directly)
+3. Set **Target Type** = `Agentic Workflow`
 4. Set runtime parameters (table below)
+5. Click **Test** to verify, then **Register model** → **Deploy**
 
 ---
 
