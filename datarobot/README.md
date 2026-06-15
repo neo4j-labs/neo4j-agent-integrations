@@ -18,43 +18,49 @@ It supports three optional extensions — all non-blocking if not configured:
 flowchart TD
     User(["👤 User / DataRobot Playground / API Client"])
 
-    subgraph DR["DataRobot Platform"]
-        DRUM["DRUM Runtime\n(custom model)"]
-        ENTRY["custom.py\nload_model() · chat()"]
+    subgraph DR["DataRobot Platform (DRUM)"]
+        RP["RuntimeParameters\nOpenAI key · Neo4j creds\nMEMORY_API_KEY · MEMORY_WORKSPACE_ID\nMCP_SERVER_URL · MCP_AUTH_TOKEN"]
+        ENTRY["custom.py\nload_model()  ·  chat()"]
     end
 
-    subgraph Agent["Neo4j Research Agent (agent.py)"]
-        LOOP["OpenAI Tool-Calling Loop"]
-        BUILTIN["10 Built-in Neo4j Tools\nsearch_companies · query_company\nanalyze_relationships · search_news\npeople_at_company · …"]
-        MCPTOOLS["MCP Tools (dynamic)\nloaded from MCP server at startup"]
+    subgraph Agent["Neo4j Research Agent  (agent.py)"]
+        LOOP["OpenAI Tool-Calling Loop\ngpt-4o-mini / configurable"]
+        BUILTIN["10 Built-in Neo4j Tools\nsearch_companies · query_company\nanalyze_relationships · search_news\npeople_at_company · list_industries · …"]
+        MCPTOOLS["MCP Tools  (dynamic)\ndiscovered from MCP server at startup"]
     end
 
-    subgraph MCP["MCP Layer (mcp_client.py) — optional"]
-        MCPSRV["Any MCP Server\n(Neo4j MCP · NAMS MCP · custom)"]
+    subgraph MCP["MCP Layer  (mcp_client.py) — optional"]
+        TRANSPORT["Transport auto-detect\nStreamable HTTP → SSE fallback\nstdio for local servers"]
+        AUTH["Auth auto-detect\nBearer token  MCP_AUTH_TOKEN\nBasic  NEO4J_USERNAME:PASSWORD\nno-auth  open servers"]
+        MCPSRV["MCP Server\nNeo4j MCP · NAMS MCP · custom"]
     end
 
-    subgraph Memory["Neo4j Agent Memory (memory.py) — optional"]
-        STM["Short-Term Memory\nConversation history"]
+    subgraph Memory["Neo4j Agent Memory  (memory.py) — optional"]
+        WS["Workspace scoping\nMEMORY_WORKSPACE_ID → X-Workspace-Id"]
+        STM["Short-Term Memory\nConversation history per session"]
         LTM["Long-Term Memory\nEntities · Knowledge Graph"]
     end
 
-    subgraph Neo4j["Neo4j Companies Graph"]
+    subgraph Neo4j["Neo4j Graph DB"]
         KG["Organizations · People\nArticles · Industries"]
     end
 
-    User -->|"POST /chat"| DRUM --> ENTRY
+    User -->|"POST /chat\n{messages:[…]}"| ENTRY
+    RP -->|"inject secrets"| ENTRY
 
-    ENTRY -->|"1 · get_context()"| Memory
-    Memory -->|"past context"| ENTRY
+    ENTRY -->|"1 · get_context()\nsession_id + WORKSPACE_ID"| WS
+    WS --> STM & LTM
+    STM & LTM -->|"past context prepended\nas system message"| ENTRY
 
-    ENTRY -->|"2 · run agent"| LOOP
-    LOOP <-->|"built-in tool calls"| BUILTIN <-->|"Cypher"| KG
-    LOOP <-->|"MCP tool calls"| MCPTOOLS <-->|"call_tool()"| MCPSRV
+    ENTRY -->|"2 · agent.run()"| LOOP
+    LOOP <-->|"Cypher queries"| BUILTIN <-->|"Bolt / neo4j+s"| KG
+    LOOP <-->|"tool calls"| MCPTOOLS <-->|"anyio.run()"| TRANSPORT
+    TRANSPORT <-->|"HTTP POST\nwith auth header"| AUTH --> MCPSRV
 
     LOOP -->|"final answer"| ENTRY
-    ENTRY -->|"3 · save_turn()"| Memory
+    ENTRY -->|"3 · save_turn()\nuser msg + response"| STM
 
-    ENTRY -->|"OpenAI-compatible response"| User
+    ENTRY -->|"OpenAI-format response\n{choices:[…], usage:{…}}"| User
 ```
 
 ---
