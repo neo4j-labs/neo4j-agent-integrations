@@ -22,9 +22,11 @@ except ImportError:
 try:
     from .agent import Neo4jResearchAgent
     from .helpers import to_custom_model_response
+    from . import memory as mem
 except ImportError:
     from agent import Neo4jResearchAgent  # type: ignore[no-redef]
     from helpers import to_custom_model_response  # type: ignore[no-redef]
+    import memory as mem  # type: ignore[no-redef]
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -37,6 +39,7 @@ RUNTIME_PARAMETER_KEYS = (
     "NEO4J_PASSWORD",
     "NEO4J_DATABASE",
     "AGENT_MAX_TOOL_STEPS",
+    "MEMORY_API_KEY",
 )
 
 
@@ -79,12 +82,34 @@ def chat(
         maybe_set_env_from_runtime_parameters(key)
 
     selected_model = model or completion_create_params.get("model") or os.environ.get(
-        "OPENAI_MODEL",
-        "gpt-4o-mini",
+        "OPENAI_MODEL", "gpt-4o-mini",
     )
+
+    # --- agent-memory: derive session id + retrieve past context ---
+    session_id = mem.session_id_from_params(completion_create_params)
+    user_message = next(
+        (m.get("content", "") for m in reversed(completion_create_params.get("messages", []))
+         if isinstance(m, dict) and m.get("role") == "user"),
+        "",
+    )
+    memory_context = mem.get_context(user_message, session_id)
+
+    if memory_context:
+        params_with_memory: dict[str, Any] = dict(completion_create_params)
+        params_with_memory["messages"] = [
+            {"role": "system", "content": f"[Relevant context from prior sessions]\n{memory_context}"},
+            *completion_create_params.get("messages", []),
+        ]
+    else:
+        params_with_memory = completion_create_params
+
     agent = Neo4jResearchAgent(model=selected_model)
     try:
-        result, usage = agent.run(completion_create_params)
+        result, usage = agent.run(params_with_memory)
     finally:
         agent.close()
+
+    # --- agent-memory: persist this turn for future sessions ---
+    mem.save_turn(session_id, user_message, result)
+
     return to_custom_model_response(result, usage, selected_model)

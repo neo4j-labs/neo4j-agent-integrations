@@ -27,3 +27,6 @@ runtimeParameterDefinitions:
   - fieldName: AGENT_MAX_TOOL_STEPS
     defaultValue: "6"
     type: string
+  - fieldName: MEMORY_API_KEY
+    defaultValue: ""
+    type: credential

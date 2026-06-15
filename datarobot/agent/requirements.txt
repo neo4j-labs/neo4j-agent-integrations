@@ -1,3 +1,4 @@
 openai>=1.84.0
 neo4j>=5.23.1
 python-dotenv>=1.0.1
+neo4j-agent-memory>=0.5.0
