@@ -85,7 +85,7 @@ datarobot/
 │   └── requirements.txt    ← deps bundled in DataRobot ZIP
 └── infra/
     ├── __init__.py
-    └── agent.py            ← ZIP packager + DataRobot API validator
+    └── agent.py            ← ZIP packager · DR API validator · automated deploy
 ```
 
 ---
@@ -185,6 +185,26 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 
 ---
 
+## Notebook
+
+`datarobot_agent.ipynb` is a **7-section end-to-end demo notebook**:
+
+| Section | What it covers |
+|---|---|
+| **1. Setup** | Install deps, credential check, DataRobot access indicator |
+| **2. Local smoke test** | Call `chat()` in-process — no DR deployment needed |
+| **3. Deploy** | Run `infra/agent.py deploy` inline to push to DataRobot |
+| **4. Live endpoint test** | Call the deployed Chat completion API |
+| **5. Multi-turn memory** | Two-turn conversation showing NAMS context recall |
+| **6. MCP tools** | Question that triggers MCP + built-in Neo4j tools together |
+| **7. Batch queries** | 4 research questions run end-to-end against the deployment |
+
+Run it locally with `jupyter notebook datarobot_agent.ipynb`, or upload it directly to **DataRobot Notebooks** after deployment to use it there.
+
+> Set `DR_DEPLOYMENT_ID` in `.env` before running sections 4–7 (copy the ID from the deploy output or the DataRobot Deployments UI).
+
+---
+
 ## DataRobot packaging & deployment
 
 ### Option A — Fully automated (recommended)
@@ -264,6 +284,12 @@ Then in the DataRobot UI:
 | `MEMORY_WORKSPACE_ID` | NAMS workspace ID — the segment between the first two underscores in your key: `nams_<WORKSPACE_ID>_...` | _(optional)_ |
 | `MCP_SERVER_URL` | MCP server URL — leave blank to skip MCP | _(optional)_ |
 | `MCP_AUTH_TOKEN` | Bearer token for MCP servers requiring token auth (Basic auth uses `NEO4J_USERNAME`/`NEO4J_PASSWORD` automatically) | _(optional)_ |
+
+**Notebook-only variable** (set in `.env`, not a DR runtime parameter):
+
+| Variable | Purpose |
+|---|---|
+| `DR_DEPLOYMENT_ID` | Deployment ID for the notebook's live endpoint test (sections 4–7) |
 
 ---
 
