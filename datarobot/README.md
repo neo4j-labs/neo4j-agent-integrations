@@ -3,14 +3,12 @@
 ## Overview
 
 This integration packages a **Neo4j-backed research agent** as a DataRobot **Agentic Workflow** custom model.  
-It also integrates **Neo4j Agent Memory (NAMS)** so the agent remembers context across sessions.
+It supports three optional extensions — all non-blocking if not configured:
 
-**What this example demonstrates:**
-- DataRobot custom-model `load_model()` + `chat()` entrypoints
-- 10 Neo4j graph tools exposed to an OpenAI tool-calling loop
-- Persistent cross-session memory via `neo4j-agent-memory` (NAMS)
-- Local CLI runner that mirrors the exact DataRobot execution path
-- ZIP packaging + DataRobot API validation helpers
+| Extension | Purpose | Config var |
+|---|---|---|
+| **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph | `MEMORY_API_KEY` |
+| **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server | `MCP_SERVER_URL` |
 
 ---
 
@@ -18,39 +16,44 @@ It also integrates **Neo4j Agent Memory (NAMS)** so the agent remembers context 
 
 ```mermaid
 flowchart TD
-    User(["👤 User / DataRobot Playground"])
+    User(["👤 User / DataRobot Playground / API Client"])
 
     subgraph DR["DataRobot Platform"]
         DRUM["DRUM Runtime\n(custom model)"]
-        ENTRY["custom.py\nload_model() + chat()"]
+        ENTRY["custom.py\nload_model() · chat()"]
     end
 
-    subgraph Agent["Neo4j Research Agent"]
-        LOOP["OpenAI Tool-Calling Loop\n(agent.py)"]
-        TOOLS["10 Neo4j Tools\nsearch_companies · query_company\nanalyze_relationships · search_news\npeople_at_company · …"]
+    subgraph Agent["Neo4j Research Agent (agent.py)"]
+        LOOP["OpenAI Tool-Calling Loop"]
+        BUILTIN["10 Built-in Neo4j Tools\nsearch_companies · query_company\nanalyze_relationships · search_news\npeople_at_company · …"]
+        MCPTOOLS["MCP Tools (dynamic)\nloaded from MCP server at startup"]
     end
 
-    subgraph Memory["Neo4j Agent Memory (NAMS)"]
+    subgraph MCP["MCP Layer (mcp_client.py) — optional"]
+        MCPSRV["Any MCP Server\n(NAMS MCP · Neo4j MCP · custom)"]
+    end
+
+    subgraph Memory["Neo4j Agent Memory (memory.py) — optional"]
         STM["Short-Term Memory\nConversation history"]
         LTM["Long-Term Memory\nEntities · Knowledge Graph"]
-        CTX["get_context()\nsave_turn()"]
     end
 
     subgraph Neo4j["Neo4j Companies Graph"]
-        KG["Knowledge Graph\nOrganization · Person\nArticle · IndustryCategory"]
+        KG["Organizations · People\nArticles · Industries"]
     end
 
-    User -->|"POST /chat"| DRUM
-    DRUM --> ENTRY
-    ENTRY -->|"session_id + user query"| CTX
-    CTX -->|"relevant past context"| ENTRY
-    ENTRY --> LOOP
-    LOOP <-->|"tool calls"| TOOLS
-    TOOLS <-->|"Cypher queries"| KG
+    User -->|"POST /chat"| DRUM --> ENTRY
+
+    ENTRY -->|"1 · get_context()"| Memory
+    Memory -->|"past context"| ENTRY
+
+    ENTRY -->|"2 · run agent"| LOOP
+    LOOP <-->|"built-in tool calls"| BUILTIN <-->|"Cypher"| KG
+    LOOP <-->|"MCP tool calls"| MCPTOOLS <-->|"call_tool()"| MCPSRV
+
     LOOP -->|"final answer"| ENTRY
-    ENTRY -->|"save_turn()"| CTX
-    CTX --> STM
-    CTX --> LTM
+    ENTRY -->|"3 · save_turn()"| Memory
+
     ENTRY -->|"OpenAI-compatible response"| User
 ```
 
@@ -60,19 +63,20 @@ flowchart TD
 
 ```
 datarobot/
-├── .env.example            ← copy to .env and fill in secrets
+├── .env.example
 ├── README.md
-├── requirements.txt        ← top-level deps for local use
-├── run_local.py            ← CLI test harness (same path as DataRobot)
+├── requirements.txt
+├── run_local.py            ← local CLI test (mirrors DataRobot execution)
 ├── datarobot_agent.ipynb   ← Jupyter demo notebook
 ├── agent/
 │   ├── __init__.py
-│   ├── agent.py            ← Neo4jResearchAgent + 10 tools
-│   ├── custom.py           ← DataRobot entrypoints (load_model / chat)
+│   ├── agent.py            ← Neo4jResearchAgent + 10 tools + MCP tool loader
+│   ├── custom.py           ← DataRobot load_model() + chat() with memory
 │   ├── helpers.py          ← prompt helpers + response formatting
 │   ├── memory.py           ← NAMS integration (graceful no-op if absent)
+│   ├── mcp_client.py       ← MCP client (graceful no-op if absent/unconfigured)
 │   ├── model-metadata.yaml ← DataRobot runtime parameter definitions
-│   └── requirements.txt    ← deps bundled into the DataRobot ZIP
+│   └── requirements.txt    ← deps bundled in DataRobot ZIP
 └── infra/
     ├── __init__.py
     └── agent.py            ← ZIP packager + DataRobot API validator
@@ -87,38 +91,58 @@ cd datarobot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# fill in OPENAI_API_KEY, and optionally MEMORY_API_KEY
+# fill in OPENAI_API_KEY; optionally MEMORY_API_KEY and MCP_SERVER_URL
 python run_local.py "Give me a competitive snapshot of Google"
 ```
 
-### With memory enabled
+---
+
+## Neo4j Agent Memory (NAMS)
 
 ```bash
-# Get a free NAMS key at https://memory.neo4jlabs.com
-echo "MEMORY_API_KEY=nams_..." >> .env
-python run_local.py "Tell me about Apple"
-python run_local.py "How does it compare to the company we discussed?"  # agent remembers Apple
+# Get a free key at https://memory.neo4jlabs.com
+MEMORY_API_KEY=nams_... python run_local.py "Tell me about Apple"
+# Next session will have context from the first one
 ```
 
----
+How it works in `custom.py`:
 
-## Agent Memory integration
-
-The agent uses [`neo4j-agent-memory`](https://pypi.org/project/neo4j-agent-memory/) (Python SDK).  
-Memory is **optional and non-blocking**: if the package is absent or `MEMORY_API_KEY` is not set, every call silently no-ops and the agent works normally.
-
-| Step | What happens |
+| Step | Action |
 |---|---|
-| Request arrives | `session_id` derived from `user` field or a hash of the first user message |
+| Request arrives | `session_id` derived from `user` field or hash of first message |
 | Pre-run | `memory.get_context()` fetches relevant past-session context from NAMS |
-| Context found | Prepended as a `system` message so the LLM is aware of prior interactions |
-| Post-run | `memory.save_turn()` persists the user message + assistant response to NAMS short-term memory |
+| Context found | Prepended as a `system` message so the LLM knows prior interactions |
+| Post-run | `memory.save_turn()` persists user message + response to NAMS |
 
-`memory.py` wraps all async NAMS calls in `asyncio.run()` so the synchronous DataRobot `chat()` interface works without changes.
+Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op.
 
 ---
 
-## Neo4j tools
+## MCP Integration
+
+When `MCP_SERVER_URL` is set, the agent **discovers tools dynamically** from the MCP server at startup and makes them available to the LLM alongside the built-in Neo4j tools.
+
+```bash
+# Example: connect to NAMS MCP server (16 memory tools)
+uvx "neo4j-agent-memory[mcp]" mcp serve --password <neo4j-password> &
+MCP_SERVER_URL=http://localhost:8080/sse python run_local.py "What do you know about me?"
+
+# Example: HTTP/SSE MCP server
+MCP_SERVER_URL=http://localhost:3001/sse python run_local.py "..."
+
+# Example: stdio MCP server
+MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
+```
+
+Supported transports:
+- **HTTP / SSE** — any URL starting with `http://` or `https://`
+- **stdio** — any other string treated as a shell command
+
+MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
+
+---
+
+## Built-in Neo4j tools
 
 | Tool | Description |
 |---|---|
@@ -127,7 +151,7 @@ Memory is **optional and non-blocking**: if the package is absent or `MEMORY_API
 | `companies_in_industry` | Companies in a specific industry |
 | `query_company` | Company profile — summary, industries, locations, leadership |
 | `analyze_relationships` | Org-to-org graph traversal (depth 1–4) |
-| `people_at_company` | Executives and board members by company_id |
+| `people_at_company` | Executives and board members |
 | `search_news` | Semantic news search (vector similarity) |
 | `articles_in_month` | Articles published in a given month |
 | `get_article` | Full article body by article_id |
@@ -137,27 +161,20 @@ Memory is **optional and non-blocking**: if the package is absent or `MEMORY_API
 
 ## DataRobot packaging & deployment
 
-### 1. Package
-
 ```bash
+# Package
 python infra/agent.py package
-# → datarobot/dist/neo4j_datarobot_agent.zip
-```
+# → dist/neo4j_datarobot_agent.zip  (includes memory.py + mcp_client.py)
 
-### 2. Upload to DataRobot
-
-1. Open **DataRobot → Registry → Custom Models → Create Custom Model**
-2. Upload `dist/neo4j_datarobot_agent.zip`
-3. Set **Target Type** = `Agentic Workflow`
-4. Add runtime parameters from `agent/model-metadata.yaml` (see table below)
-
-### 3. Validate access
-
-```bash
+# Validate API access
 python infra/agent.py validate
 ```
 
-> In Zscaler / corporate-proxy environments this returns HTTP 403 before reaching DataRobot. Run from a network-open machine.
+**Upload steps:**
+1. DataRobot → Registry → Custom Models → Create Custom Model
+2. Upload `dist/neo4j_datarobot_agent.zip`
+3. Target Type = `Agentic Workflow`
+4. Set runtime parameters (table below)
 
 ---
 
@@ -167,17 +184,19 @@ python infra/agent.py validate
 |---|---|---|
 | `OPENAI_API_KEY` | OpenAI API key | _(required)_ |
 | `OPENAI_MODEL` | Chat model | `gpt-4o-mini` |
-| `OPENAI_EMBEDDING_MODEL` | Embedding model for semantic search | `text-embedding-3-small` |
+| `OPENAI_EMBEDDING_MODEL` | Embedding model | `text-embedding-3-small` |
 | `NEO4J_URI` | Neo4j connection string | `neo4j+s://demo.neo4jlabs.com:7687` |
 | `NEO4J_USERNAME` | Neo4j username | `companies` |
 | `NEO4J_PASSWORD` | Neo4j password | _(required)_ |
-| `NEO4J_DATABASE` | Neo4j database name | `companies` |
-| `MEMORY_API_KEY` | NAMS API key — leave blank to disable memory | _(optional)_ |
-| `AGENT_MAX_TOOL_STEPS` | Max tool-call iterations per request | `6` |
+| `NEO4J_DATABASE` | Neo4j database | `companies` |
+| `MEMORY_API_KEY` | NAMS key — leave blank to disable memory | _(optional)_ |
+| `MCP_SERVER_URL` | MCP server URL — leave blank to skip MCP | _(optional)_ |
+| `AGENT_MAX_TOOL_STEPS` | Max tool-call iterations | `6` |
 
 ---
 
 ## Notes
 
-- Secrets are loaded from DataRobot runtime parameters first; `.env` is only used for local development.
-- The NAMS Python SDK requires **Python ≥ 3.10**. DataRobot's runtime satisfies this. For local testing on Python 3.9, memory will silently disable itself.
+- Secrets are loaded from DataRobot runtime parameters first; `.env` is for local development only.
+- `neo4j-agent-memory` and `mcp` both require Python ≥ 3.10. DataRobot's runtime satisfies this. On Python 3.9 locally both features silently disable themselves.
+- `infra/agent.py validate` requires direct access to `app.datarobot.com`. Corporate proxies (Zscaler) return HTTP 403 — run from a network-open machine.

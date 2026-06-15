@@ -30,3 +30,6 @@ runtimeParameterDefinitions:
   - fieldName: MEMORY_API_KEY
     defaultValue: ""
     type: credential
+  - fieldName: MCP_SERVER_URL
+    defaultValue: ""
+    type: string

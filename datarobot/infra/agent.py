@@ -32,6 +32,8 @@ def package_agent() -> Path:
         "agent.py",
         "custom.py",
         "helpers.py",
+        "memory.py",
+        "mcp_client.py",
         "model-metadata.yaml",
         "requirements.txt",
     ]

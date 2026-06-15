@@ -10,8 +10,10 @@ from openai import OpenAI
 
 try:
     from .helpers import build_agent_messages, empty_usage, merge_usage
+    from . import mcp_client
 except ImportError:
     from helpers import build_agent_messages, empty_usage, merge_usage  # type: ignore[no-redef]
+    import mcp_client  # type: ignore[no-redef]
 
 SYSTEM_PROMPT = """You are a DataRobot-hosted industry research agent with access to a Neo4j company news knowledge graph.
 
@@ -55,6 +57,7 @@ class Neo4jResearchAgent:
             auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
         )
         self.tools = self._build_tools()
+        self._load_mcp_tools()
         self.tool_index = {tool.name: tool for tool in self.tools}
 
     def close(self) -> None:
@@ -226,6 +229,37 @@ class Neo4jResearchAgent:
             """,
             article_id=article_id,
         )
+
+    @staticmethod
+    def _make_mcp_func(tool_name: str) -> Callable[..., Any]:
+        def _call(**kwargs: Any) -> Any:
+            return mcp_client.call_tool(tool_name, kwargs)
+        return _call
+
+    def _load_mcp_tools(self) -> None:
+        """Fetch tools from MCP server (if MCP_SERVER_URL is set) and append them."""
+        self._mcp_tool_names: set[str] = set()
+        mcp_tool_defs = mcp_client.list_tools()
+        for t in mcp_tool_defs:
+            name = t.get("name", "")
+            if not name or name in self.tool_index:
+                continue
+            schema = t.get("inputSchema") or {}
+            self.tools.append(ToolDefinition(
+                name=name,
+                description=t.get("description", ""),
+                parameters=schema,
+                func=self._make_mcp_func(name),
+            ))
+            self._mcp_tool_names.add(name)
+        if self._mcp_tool_names:
+            import logging as _log
+            _log.getLogger(__name__).info(
+                "Loaded %d MCP tools from %s: %s",
+                len(self._mcp_tool_names),
+                os.environ.get("MCP_SERVER_URL", ""),
+                ", ".join(sorted(self._mcp_tool_names)),
+            )
 
     def _build_tools(self) -> list[ToolDefinition]:
         return [
@@ -399,9 +433,12 @@ class Neo4jResearchAgent:
 
             for tool_call in message.tool_calls:
                 tool_name = tool_call.function.name
-                tool = self.tool_index[tool_name]
                 arguments = json.loads(tool_call.function.arguments or "{}")
-                result = tool.func(**arguments)
+                if tool_name in self._mcp_tool_names:
+                    result = mcp_client.call_tool(tool_name, arguments)
+                else:
+                    tool = self.tool_index[tool_name]
+                    result = tool.func(**arguments)
                 messages.append(
                     {
                         "role": "tool",
