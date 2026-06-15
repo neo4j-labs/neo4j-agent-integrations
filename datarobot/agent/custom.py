@@ -82,7 +82,7 @@ def chat(
     for key in RUNTIME_PARAMETER_KEYS:
         maybe_set_env_from_runtime_parameters(key)
 
-    selected_model = model or completion_create_params.get("model") or os.environ.get(
+    selected_model = completion_create_params.get("model") or os.environ.get(
         "OPENAI_MODEL", "gpt-4o-mini",
     )
 
