@@ -172,13 +172,16 @@ python infra/agent.py package
 python infra/agent.py validate
 ```
 
-**Upload steps:**
-1. DataRobot → **Workshop** → **Custom Models** → **Add custom model** → Upload files
-   *(In some DataRobot versions the path is: **Model Registry** → **Custom Models** → **Create custom model**)*
-2. Upload all files from `dist/neo4j_datarobot_agent.zip` (or upload the ZIP directly)
-3. Set **Target Type** = `Agentic Workflow`
-4. Set runtime parameters (table below)
-5. Click **Test** to verify, then **Register model** → **Deploy**
+**Upload & deploy steps:**
+
+1. In DataRobot, navigate to **Registry** → **Workshop**
+2. Click the **Agentic workflows** tab, then click **+ Add a workflow**
+3. Enter a **Model name** (e.g. `Neo4j Research Agent`). **Target type** is pre-set to **Agentic Workflow** — leave it as-is. Click **Add model**.
+4. On the **Assemble** tab → **Files** section, click **+ Add files** and upload all files extracted from `dist/neo4j_datarobot_agent.zip` (upload each file individually, or drag-and-drop all at once)
+5. On the **Assemble** tab → **Runtime parameters** section, add each parameter from the table below
+6. (Optional) Click **Test workflow** to send a test message and verify the agent responds correctly
+7. Click **Register a workflow** → **Create a new registered workflow** → fill in a name → click **Register a workflow**
+8. Once registered, go to **Registry** → **Models** → find your workflow → click **Deploy**
 
 ---
 
