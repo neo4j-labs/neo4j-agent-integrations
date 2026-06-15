@@ -1,0 +1,5 @@
+-r agent/requirements.txt
+python-dotenv>=1.0.1
+requests>=2.32.3
+PyYAML>=6.0.2
+notebook>=7.2.2
