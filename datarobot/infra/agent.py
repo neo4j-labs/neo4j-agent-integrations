@@ -73,11 +73,15 @@ def print_manual_upload_steps(package_path: Path) -> None:
     print("Package created:", package_path)
     print("")
     print("Manual DataRobot upload steps:")
-    print("1. Open DataRobot > Registry > Custom Models > Create Custom Model.")
-    print("2. Upload the ZIP package shown above.")
-    print("3. Ensure the target type is Agentic Workflow.")
-    print("4. Set runtime parameters from agent/model-metadata.yaml.")
-    print("5. Create a deployment and test it with the prompt samples in datarobot_agent.ipynb.")
+    print("1. In DataRobot, click 'Registry' in the top nav, then 'Workshop' in the LEFT sidebar.")
+    print("   (Workshop is a sidebar item — not the same as the 'Data' or 'Models' sections)")
+    print("2. Click the 'Agentic workflows' tab, then '+ Add a workflow'.")
+    print("3. Enter a model name, confirm Target type = Agentic Workflow, click 'Add model'.")
+    print("4. On the Assemble tab > Files section, upload all files from the ZIP package above.")
+    print("5. On the Assemble tab > Runtime parameters, add all keys from agent/model-metadata.yaml.")
+    print("6. (Optional) Click 'Test workflow' to verify the agent responds.")
+    print("7. Click 'Register a workflow' > name it > 'Register a workflow'.")
+    print("8. Go to Registry > Models > find your workflow > Deploy.")
 
 
 def main() -> int:
