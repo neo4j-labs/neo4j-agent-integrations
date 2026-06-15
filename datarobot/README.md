@@ -7,7 +7,7 @@ It supports three optional extensions — all non-blocking if not configured:
 
 | Extension | Purpose | Config var |
 |---|---|---|
-| **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph | `MEMORY_API_KEY` |
+| **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph | `MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID` |
 | **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server | `MCP_SERVER_URL` |
 
 ---
@@ -101,7 +101,7 @@ python run_local.py "Give me a competitive snapshot of Google"
 
 ```bash
 # Get a free key at https://memory.neo4jlabs.com
-MEMORY_API_KEY=nams_... python run_local.py "Tell me about Apple"
+MEMORY_API_KEY=nams_... MEMORY_WORKSPACE_ID=<workspace-id> python run_local.py "Tell me about Apple"
 # Next session will have context from the first one
 ```
 
@@ -115,6 +115,8 @@ How it works in `custom.py`:
 | Post-run | `memory.save_turn()` persists user message + response to NAMS |
 
 Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op.
+
+> **`MEMORY_WORKSPACE_ID`** — set this to the workspace ID portion of your NAMS key (e.g. `nams_<WORKSPACE_ID>_<secret>`). The NAMS SDK reads it from the `MEMORY_WORKSPACE_ID` env var and sends it as the `X-Workspace-Id` header to scope all memory to your workspace.
 
 ---
 
@@ -192,6 +194,7 @@ python infra/agent.py validate
 | `NEO4J_PASSWORD` | Neo4j password | _(required)_ |
 | `NEO4J_DATABASE` | Neo4j database | `companies` |
 | `MEMORY_API_KEY` | NAMS key — leave blank to disable memory | _(optional)_ |
+| `MEMORY_WORKSPACE_ID` | NAMS workspace ID (the segment between the first two underscores in your key: `nams_<WORKSPACE_ID>_...`) — required when using NAMS | _(optional)_ |
 | `MCP_SERVER_URL` | MCP server URL — leave blank to skip MCP | _(optional)_ |
 | `AGENT_MAX_TOOL_STEPS` | Max tool-call iterations | `6` |
 
