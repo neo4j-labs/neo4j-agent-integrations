@@ -5,10 +5,10 @@
 This integration packages a **Neo4j-backed research agent** as a DataRobot **Agentic Workflow** custom model.  
 It supports three optional extensions — all non-blocking if not configured:
 
-| Extension | Purpose | Config var |
+| Extension | Purpose | Config var(s) |
 |---|---|---|
 | **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph | `MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID` |
-| **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server | `MCP_SERVER_URL` |
+| **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server | `MCP_SERVER_URL`, `MCP_AUTH_TOKEN` _(optional)_ |
 
 ---
 
@@ -30,7 +30,7 @@ flowchart TD
     end
 
     subgraph MCP["MCP Layer (mcp_client.py) — optional"]
-        MCPSRV["Any MCP Server\n(NAMS MCP · Neo4j MCP · custom)"]
+        MCPSRV["Any MCP Server\n(Neo4j MCP · NAMS MCP · custom)"]
     end
 
     subgraph Memory["Neo4j Agent Memory (memory.py) — optional"]
@@ -91,7 +91,7 @@ cd datarobot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# fill in OPENAI_API_KEY; optionally MEMORY_API_KEY and MCP_SERVER_URL
+# fill in OPENAI_API_KEY; optionally MEMORY_API_KEY, MEMORY_WORKSPACE_ID, MCP_SERVER_URL
 python run_local.py "Give me a competitive snapshot of Google"
 ```
 
@@ -101,6 +101,8 @@ python run_local.py "Give me a competitive snapshot of Google"
 
 ```bash
 # Get a free key at https://memory.neo4jlabs.com
+# MEMORY_WORKSPACE_ID is the segment between the first two underscores in your key:
+#   e.g. nams_<WORKSPACE_ID>_<secret>
 MEMORY_API_KEY=nams_... MEMORY_WORKSPACE_ID=<workspace-id> python run_local.py "Tell me about Apple"
 # Next session will have context from the first one
 ```
@@ -116,7 +118,7 @@ How it works in `custom.py`:
 
 Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op.
 
-> **`MEMORY_WORKSPACE_ID`** — set this to the workspace ID portion of your NAMS key (e.g. `nams_<WORKSPACE_ID>_<secret>`). The NAMS SDK reads it from the `MEMORY_WORKSPACE_ID` env var and sends it as the `X-Workspace-Id` header to scope all memory to your workspace.
+> **`MEMORY_WORKSPACE_ID`** — required when using NAMS. Set it to the workspace ID portion of your key (`nams_<WORKSPACE_ID>_<secret>`). The SDK sends it as the `X-Workspace-Id` header to scope all memory to your workspace.
 
 ---
 
@@ -125,20 +127,36 @@ Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is n
 When `MCP_SERVER_URL` is set, the agent **discovers tools dynamically** from the MCP server at startup and makes them available to the LLM alongside the built-in Neo4j tools.
 
 ```bash
-# Example: connect to NAMS MCP server (16 memory tools)
+# Neo4j MCP official server (uses NEO4J_USERNAME/PASSWORD for Basic auth automatically)
+MCP_SERVER_URL=https://neo4j-mcp-official-1008050579172.us-central1.run.app/mcp \
+  python run_local.py "What schema does my Neo4j database have?"
+
+# NAMS MCP server (16 memory tools — run locally)
 uvx "neo4j-agent-memory[mcp]" mcp serve --password <neo4j-password> &
 MCP_SERVER_URL=http://localhost:8080/sse python run_local.py "What do you know about me?"
 
-# Example: HTTP/SSE MCP server
-MCP_SERVER_URL=http://localhost:3001/sse python run_local.py "..."
+# Any HTTP MCP server with Bearer token auth
+MCP_AUTH_TOKEN=my-bearer-token \
+MCP_SERVER_URL=https://my-mcp-server.example.com/mcp \
+  python run_local.py "..."
 
-# Example: stdio MCP server
+# stdio MCP server
 MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
 ```
 
-Supported transports:
-- **HTTP / SSE** — any URL starting with `http://` or `https://`
+**Supported transports** (auto-detected):
+- **Streamable HTTP** (`http://` or `https://`) — tried first (modern MCP servers)
+- **SSE** — fallback for `http://` or `https://` servers that don't support streamable HTTP
 - **stdio** — any other string treated as a shell command
+
+**Authentication** (auto-detected from env vars):
+| Priority | Condition | Header sent |
+|---|---|---|
+| 1 | `MCP_AUTH_TOKEN` is set | `Authorization: Bearer <token>` |
+| 2 | `NEO4J_USERNAME` + `NEO4J_PASSWORD` are set | `Authorization: Basic <b64(user:pass)>` |
+| 3 | Neither | No auth header (open servers) |
+
+> The neo4j-mcp-official server uses Neo4j Basic auth — no extra config needed, it reuses the existing `NEO4J_USERNAME`/`NEO4J_PASSWORD`.
 
 MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
 
@@ -164,22 +182,23 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 ## DataRobot packaging & deployment
 
 ```bash
-# Package
+# Package all agent files into a ZIP
 python infra/agent.py package
-# → dist/neo4j_datarobot_agent.zip  (includes memory.py + mcp_client.py)
+# → dist/neo4j_datarobot_agent.zip
 
-# Validate API access
+# Validate DataRobot API access (requires direct internet access)
 python infra/agent.py validate
 ```
 
 **Upload & deploy steps:**
 
-1. In DataRobot, click **Registry** in the top navigation bar, then click **Workshop** in the **left sidebar** (not the Data/Models sections — Workshop is a separate sidebar item)
+1. In DataRobot, click **Registry** in the top navigation bar, then click **Workshop** in the **left sidebar**
+   > ⚠️ Workshop is a **left sidebar item** — not the Data/AI Catalog section. Look for it below "Models" in the left nav.
 2. Click the **Agentic workflows** tab, then click **+ Add a workflow**
 3. Enter a **Model name** (e.g. `Neo4j Research Agent`). **Target type** is pre-set to **Agentic Workflow** — leave it as-is. Click **Add model**.
-4. On the **Assemble** tab → **Files** section, click **+ Add files** and upload all files extracted from `dist/neo4j_datarobot_agent.zip` (upload each file individually, or drag-and-drop all at once)
+4. On the **Assemble** tab → **Files** section, click **+ Add files** and upload all files extracted from `dist/neo4j_datarobot_agent.zip`
 5. On the **Assemble** tab → **Runtime parameters** section, add each parameter from the table below
-6. (Optional) Click **Test workflow** to send a test message and verify the agent responds correctly
+6. _(Optional)_ Click **Test workflow** to send a test message and verify the agent responds correctly
 7. Click **Register a workflow** → **Create a new registered workflow** → fill in a name → click **Register a workflow**
 8. Once registered, go to **Registry** → **Models** → find your workflow → click **Deploy**
 
@@ -196,15 +215,16 @@ python infra/agent.py validate
 | `NEO4J_USERNAME` | Neo4j username | `companies` |
 | `NEO4J_PASSWORD` | Neo4j password | _(required)_ |
 | `NEO4J_DATABASE` | Neo4j database | `companies` |
-| `MEMORY_API_KEY` | NAMS key — leave blank to disable memory | _(optional)_ |
-| `MEMORY_WORKSPACE_ID` | NAMS workspace ID (the segment between the first two underscores in your key: `nams_<WORKSPACE_ID>_...`) — required when using NAMS | _(optional)_ |
-| `MCP_SERVER_URL` | MCP server URL — leave blank to skip MCP | _(optional)_ |
 | `AGENT_MAX_TOOL_STEPS` | Max tool-call iterations | `6` |
+| `MEMORY_API_KEY` | NAMS key — leave blank to disable memory | _(optional)_ |
+| `MEMORY_WORKSPACE_ID` | NAMS workspace ID — the segment between the first two underscores in your key: `nams_<WORKSPACE_ID>_...` | _(optional)_ |
+| `MCP_SERVER_URL` | MCP server URL — leave blank to skip MCP | _(optional)_ |
+| `MCP_AUTH_TOKEN` | Bearer token for MCP servers requiring token auth (Basic auth uses `NEO4J_USERNAME`/`NEO4J_PASSWORD` automatically) | _(optional)_ |
 
 ---
 
 ## Notes
 
 - Secrets are loaded from DataRobot runtime parameters first; `.env` is for local development only.
-- `neo4j-agent-memory` and `mcp` both require Python ≥ 3.10. DataRobot's runtime satisfies this. On Python 3.9 locally both features silently disable themselves.
+- `neo4j-agent-memory` and `mcp` both require Python ≥ 3.10. DataRobot's runtime satisfies this. On Python 3.9 locally, both features silently disable themselves.
 - `infra/agent.py validate` requires direct access to `app.datarobot.com`. Corporate proxies (Zscaler) return HTTP 403 — run from a network-open machine.
