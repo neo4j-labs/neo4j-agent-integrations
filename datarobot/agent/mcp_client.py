@@ -8,6 +8,11 @@ Supported transports (auto-detected by URL prefix):
   - SSE legacy       (older MCP servers, tried as fallback for http/https)
   - stdio            (any other string treated as a shell command)
 
+Authentication:
+  - If MCP_AUTH_TOKEN is set, passed as "Authorization: Bearer <token>"
+  - Otherwise if NEO4J_USERNAME + NEO4J_PASSWORD are set, passed as Basic auth
+    (matches the neo4j-mcp-official server convention)
+
 Error handling:
   - anyio TaskGroup wraps connection errors in an ExceptionGroup; we unwrap
     it to log the real cause instead of the cryptic "unhandled errors in a
@@ -17,6 +22,7 @@ Error handling:
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import shlex
@@ -30,9 +36,9 @@ try:
     from mcp.client.stdio import StdioServerParameters, stdio_client  # type: ignore[import]
     import anyio  # type: ignore[import]
     _HAS_MCP = True
-    # streamable_http is available in mcp >= 1.2.0
     try:
         from mcp.client.streamable_http import streamable_http_client  # type: ignore[import]
+        import httpx as _httpx  # type: ignore[import]
         _HAS_STREAMABLE = True
     except ImportError:
         _HAS_STREAMABLE = False
@@ -49,9 +55,27 @@ def _is_http(url: str) -> bool:
     return url.startswith("http://") or url.startswith("https://")
 
 
+def _auth_headers() -> dict[str, str]:
+    """Build auth headers from env vars.
+
+    Priority:
+    1. MCP_AUTH_TOKEN  → Bearer token
+    2. NEO4J_USERNAME + NEO4J_PASSWORD → Basic auth (neo4j-mcp-official convention)
+    3. No auth headers
+    """
+    token = os.environ.get("MCP_AUTH_TOKEN")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    user = os.environ.get("NEO4J_USERNAME")
+    password = os.environ.get("NEO4J_PASSWORD")
+    if user and password:
+        encoded = base64.b64encode(f"{user}:{password}".encode()).decode()
+        return {"Authorization": f"Basic {encoded}"}
+    return {}
+
+
 def _unwrap_exception(exc: BaseException) -> str:
     """Extract the real error from an anyio ExceptionGroup / BaseExceptionGroup."""
-    # Python 3.11+ raises BaseExceptionGroup; anyio wraps earlier versions too
     if hasattr(exc, "exceptions") and exc.exceptions:  # type: ignore[union-attr]
         inner = exc.exceptions[0]  # type: ignore[union-attr]
         return f"{type(inner).__name__}: {inner}"
@@ -76,9 +100,11 @@ def _parse_content(content: list[Any]) -> Any:
 
 async def _list_tools_http(url: str) -> list[dict[str, Any]]:
     """Try streamable HTTP first, fall back to SSE."""
+    headers = _auth_headers()
     if _HAS_STREAMABLE:
         try:
-            async with streamable_http_client(url) as (read, write):
+            http_client = _httpx.AsyncClient(headers=headers)
+            async with streamable_http_client(url, http_client=http_client) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.list_tools()
@@ -86,8 +112,7 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
         except Exception as exc:
             logger.debug("StreamableHTTP failed, trying SSE: %s", _unwrap_exception(exc))
 
-    # SSE fallback
-    async with sse_client(url) as (read, write):
+    async with sse_client(url, headers=headers) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.list_tools()
@@ -96,9 +121,11 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
 
 async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any:
     """Try streamable HTTP first, fall back to SSE."""
+    headers = _auth_headers()
     if _HAS_STREAMABLE:
         try:
-            async with streamable_http_client(url) as (read, write):
+            http_client = _httpx.AsyncClient(headers=headers)
+            async with streamable_http_client(url, http_client=http_client) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
@@ -106,7 +133,7 @@ async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any
         except Exception as exc:
             logger.debug("StreamableHTTP failed for call_tool, trying SSE: %s", _unwrap_exception(exc))
 
-    async with sse_client(url) as (read, write):
+    async with sse_client(url, headers=headers) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool(name, arguments)

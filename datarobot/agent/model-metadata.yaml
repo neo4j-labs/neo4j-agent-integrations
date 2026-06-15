@@ -36,3 +36,6 @@ runtimeParameterDefinitions:
   - fieldName: MCP_SERVER_URL
     defaultValue: ""
     type: string
+  - fieldName: MCP_AUTH_TOKEN
+    defaultValue: ""
+    type: credential
