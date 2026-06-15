@@ -187,26 +187,64 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 
 ## DataRobot packaging & deployment
 
-```bash
-# Package all agent files into a ZIP
-python infra/agent.py package
-# → dist/neo4j_datarobot_agent.zip
+### Option A — Fully automated (recommended)
 
-# Validate DataRobot API access (requires direct internet access)
+Set the required variables in `.env` (copy from `.env.example`) then run:
+
+```bash
+python infra/agent.py deploy
+```
+
+This single command:
+1. Packages all agent files into `dist/neo4j_datarobot_agent.zip`
+2. Authenticates with your DataRobot instance
+3. Creates a custom model with `targetType: agenticWorkflow`
+4. Uploads all files using the Python 3 drop-in environment
+5. Waits for the container build to succeed
+6. Registers the version in the Model Registry
+7. Creates a deployment and prints the Chat completion endpoint URL
+
+After deployment, open it in the DataRobot UI and set the **Runtime Parameters** (credentials must be set via the UI — see table below).
+
+```bash
+# Dry-run: package + validate only, no API mutations
+python infra/agent.py deploy --dry-run
+
+# Package to ZIP only (for manual upload)
+python infra/agent.py package
+
+# Validate DataRobot API credentials only
 python infra/agent.py validate
 ```
 
-**Upload & deploy steps:**
+Required `.env` variables for automated deploy:
 
-1. In DataRobot, click **Registry** in the top navigation bar, then click **Workshop** in the **left sidebar**
+```
+DATAROBOT_ENDPOINT=https://app.datarobot.com
+DATAROBOT_API_TOKEN=your-token-here
+DR_MODEL_NAME=Neo4j DataRobot Agent   # optional, this is the default
+```
+
+---
+
+### Option B — Manual upload
+
+```bash
+python infra/agent.py package
+# → dist/neo4j_datarobot_agent.zip
+```
+
+Then in the DataRobot UI:
+
+1. Click **Registry** in the top nav → **Workshop** in the **left sidebar**
    > ⚠️ Workshop is a **left sidebar item** — not the Data/AI Catalog section. Look for it below "Models" in the left nav.
-2. Click the **Agentic workflows** tab, then click **+ Add a workflow**
-3. Enter a **Model name** (e.g. `Neo4j Research Agent`). **Target type** is pre-set to **Agentic Workflow** — leave it as-is. Click **Add model**.
-4. On the **Assemble** tab → **Files** section, click **+ Add files** and upload all files extracted from `dist/neo4j_datarobot_agent.zip`
-5. On the **Assemble** tab → **Runtime parameters** section, add each parameter from the table below
-6. _(Optional)_ Click **Test workflow** to send a test message and verify the agent responds correctly
-7. Click **Register a workflow** → **Create a new registered workflow** → fill in a name → click **Register a workflow**
-8. Once registered, go to **Registry** → **Models** → find your workflow → click **Deploy**
+2. Click the **Agentic workflows** tab → **+ Add a workflow**
+3. Enter a **Model name**, confirm **Target type = Agentic Workflow**, click **Add model**
+4. **Assemble** tab → **Files** section → **+ Add files** → upload all files from `dist/neo4j_datarobot_agent.zip`
+5. **Assemble** tab → **Runtime parameters** → add each key from the table below
+6. _(Optional)_ Click **Test workflow** to verify the agent responds
+7. Click **Register a workflow** → fill in a name → **Register a workflow**
+8. Go to **Registry** → **Models** → find your workflow → click **Deploy**
 
 ---
 
