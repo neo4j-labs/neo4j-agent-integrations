@@ -275,6 +275,7 @@ Then in the DataRobot UI:
 | `OPENAI_API_KEY` | OpenAI API key | _(required)_ |
 | `OPENAI_MODEL` | Chat model | `gpt-4o-mini` |
 | `OPENAI_EMBEDDING_MODEL` | Embedding model | `text-embedding-3-small` |
+| `OPENAI_BASE_URL` | _(optional)_ Override OpenAI base URL — point to DataRobot's LLM proxy, Azure OpenAI, or any OpenAI-compatible endpoint | _(optional, blank = OpenAI)_ |
 | `NEO4J_URI` | Neo4j connection string | `neo4j+s://demo.neo4jlabs.com:7687` |
 | `NEO4J_USERNAME` | Neo4j username | `companies` |
 | `NEO4J_PASSWORD` | Neo4j password | _(required)_ |

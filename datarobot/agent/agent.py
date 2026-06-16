@@ -15,7 +15,7 @@ except ImportError:
     from helpers import build_agent_messages, empty_usage, merge_usage  # type: ignore[no-redef]
     import mcp_client  # type: ignore[no-redef]
 
-SYSTEM_PROMPT = """You are a DataRobot-hosted industry research agent with access to a Neo4j company news knowledge graph.
+SYSTEM_PROMPT = """You are an industry research agent with access to a Neo4j company news knowledge graph.
 
 Use the available tools whenever you need facts about companies, industries, relationships, people, and recent articles.
 Ground every answer in tool results from this session. When useful, produce concise Markdown with sections such as:
@@ -51,7 +51,13 @@ class Neo4jResearchAgent:
         self.max_steps = max_steps or int(os.environ.get("AGENT_MAX_TOOL_STEPS", "6"))
         self.database = os.environ.get("NEO4J_DATABASE", "companies")
 
-        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        # OPENAI_BASE_URL lets this agent run against any OpenAI-compatible endpoint
+        # (e.g. DataRobot's own LLM proxy, Azure OpenAI, local servers).
+        openai_kwargs: dict = {"api_key": os.environ["OPENAI_API_KEY"]}
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        if base_url:
+            openai_kwargs["base_url"] = base_url
+        self.client = OpenAI(**openai_kwargs)
         self.driver = GraphDatabase.driver(
             os.environ["NEO4J_URI"],
             auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),

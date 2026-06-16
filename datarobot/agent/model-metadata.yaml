@@ -12,6 +12,9 @@ runtimeParameterDefinitions:
   - fieldName: OPENAI_EMBEDDING_MODEL
     defaultValue: text-embedding-3-small
     type: string
+  - fieldName: OPENAI_BASE_URL
+    defaultValue: ""
+    type: string
   - fieldName: NEO4J_URI
     defaultValue: neo4j+s://demo.neo4jlabs.com:7687
     type: string
