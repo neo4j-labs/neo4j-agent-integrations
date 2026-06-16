@@ -1,6 +1,76 @@
 # NAMS Chat — Vercel AI SDK + Neo4j Agent Memory System
 
-A Next.js chat application that wires **NAMS (Neo4j Agent Memory System)** into the **Vercel AI SDK** as a pair of tools (`query_memory` / `store_memory`). Every conversation is stored in a Neo4j graph; the agent retrieves relevant context before answering and persists new knowledge after each reply — across sessions.
+A production-ready Next.js chat application demonstrating **NAMS (Neo4j Agent Memory System)** integrated with the **Vercel AI SDK**. This repository serves as both a working example and a reusable template for building stateful AI agents that remember conversation context across sessions.
+
+**Key features:**
+- **Two integration modes**: Use NAMS as a custom provider (automatic memory) or custom tools (model-driven memory)
+- **Persistent memory**: Long-term facts, user preferences, and interaction history stored in Neo4j
+- **Cross-session retrieval**: Agents recall information from previous conversations
+- **Production patterns**: Session management, error handling, streaming responses, reasoning traces
+- **Extensible**: Easily customize memory schemas, retrieval strategies, and storage logic
+
+---
+
+## Quick Start (5 minutes)
+
+Choose your integration mode and get up and running:
+
+### Option A: Provider Mode (Recommended for beginners)
+Automatic memory handling — NAMS is transparent to your model.
+
+```bash
+# 1. Clone and install
+git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
+cd neo4j-agent-integrations/vercel-agent/vercel_Nams
+npm install
+
+# 2. Set environment
+cp .env.local.example .env.local
+# Edit .env.local: set MEMORY_API_KEY, OPENAI_API_KEY, NAMS_MODE=provider
+
+# 3. Run
+npm run dev
+# Open http://localhost:3000
+```
+
+**In your code:**
+```typescript
+import { createNams } from '@/lib/nams';
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
+const model = nams.wrap(openai('gpt-4o-mini'), { userId: 'user-123' });
+
+const result = streamText({ model, messages });
+```
+
+### Option B: Tools Mode (For fine-grained control)
+Model-driven memory — LLM decides when to query and store.
+
+```bash
+# Same setup, but set: NAMS_MODE=tools
+export NAMS_MODE=tools
+npm run dev
+```
+
+**In your code:**
+```typescript
+import { createNams } from '@/lib/nams';
+import { streamText, stepCountIs } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
+const tools = nams.tools({ userId: 'user-123' });
+
+const result = streamText({
+  model: openai('gpt-4o-mini'),
+  messages,
+  tools,
+  system: SYSTEM_PROMPT,  // Must instruct: query → answer → store
+  stopWhen: stepCountIs(10),
+});
+```
 
 ---
 
@@ -26,451 +96,758 @@ A Next.js chat application that wires **NAMS (Neo4j Agent Memory System)** into 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │  HTTP (streaming NDJSON)
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Next.js API Routes (Node.js)                        │
-│                                                                             │
-│  POST /api/chat                          GET /api/reasoning                 │
-│  ─────────────────────────────────────   ─────────────────────────────      │
-│  1. Parse UIMessages + session IDs       1. Look up userId → convId         │
-│  2. getOrCreateConversation (NAMS)       2. client.reasoning.listSteps()    │
-│  3. addMessage (user turn)               3. Return step array as JSON       │
-│  4. createNamsMemoryTools()                                                  │
-│  5. streamText (OpenAI model)                                                │
-│     ├─ system prompt: mandatory          ┌──────────────────────────────┐   │
-│     │  query → answer → store cycle      │  NAMS Memory Tools (Vercel)  │   │
-│     └─ tools ──────────────────────────▶│  query_memory / store_memory │   │
-│  6. onFinish:                            └──────────────┬───────────────┘   │
-│     ├─ addMessage (assistant turn)                      │                   │
-│     └─ recordStep (reasoning trace)                     │                   │
-└─────────────────────────────────────────────────────────┼───────────────────┘
-                                                          │  HTTPS REST
-                                                          ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    NAMS  —  https://memory.neo4jlabs.com/v1                 │
-│                    (@neo4j-labs/agent-memory SDK)                           │
-│                                                                             │
-│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐  │
-│  │   Short-Term Memory  │  │   Long-Term Memory   │  │  Reasoning Trace │  │
-│  │  (conversation msgs) │  │  (graph entities)    │  │  (step records)  │  │
-│  │                      │  │                      │  │                  │  │
-│  │ • scoped per convId  │  │ • facts              │  │ • reasoning text │  │
-│  │ • vector search      │  │ • user_preferences   │  │ • actionTaken    │  │
-│  │ • cross-session scan │  │ • patterns           │  │ • result summary │  │
-│  └──────────────────────┘  └──────────────────────┘  └──────────────────┘  │
-│                                                                             │
-│                    Backed by a Neo4j AuraDB graph                           │
-└─────────────────────────────────────────────────────────────────────────────┘
+                                                                ▼
+                                                                ┌─────────────────────────────────────────────────────────────────────────────┐
+                                                                │                         Next.js API Routes (Node.js)                        │
+                                                                │                                                                             │
+                                                                │  POST /api/chat                          GET /api/reasoning                 │
+                                                                │  ─────────────────────────────────────   ─────────────────────────────      │
+                                                                │  1. Parse UIMessages + session IDs       1. Look up userId → convId         │
+                                                                │  2. getOrCreateConversation (NAMS)       2. client.reasoning.listSteps()    │
+                                                                │  3. addMessage (user turn)               3. Return step array as JSON       │
+                                                                │  4. createNamsMemoryTools()                                                  │
+                                                                │  5. streamText (OpenAI model)                                                │
+                                                                │     ├─ system prompt: mandatory          ┌──────────────────────────────┐   │
+                                                                │     │  query → answer → store cycle      │  NAMS Memory Tools (Vercel)  │   │
+                                                                │     └─ tools ──────────────────────────▶│  query_memory / store_memory │   │
+                                                                │  6. onFinish:                            └──────────────┬───────────────┘   │
+                                                                │     ├─ addMessage (assistant turn)                      │                   │
+                                                                │     └─ recordStep (reasoning trace)                     │                   │
+                                                                └─────────────────────────────────────────────────────────┼───────────────────┘
+                                                                                                                          │  HTTPS REST
+                                                                                                                                                                                    ▼
+                                                                                                                                                                                    ┌─────────────────────────────────────────────────────────────────────────────┐
+                                                                                                                                                                                    │                    NAMS  —  https://memory.neo4jlabs.com/v1                 │
+                                                                                                                                                                                    │                    (@neo4j-labs/agent-memory SDK)                           │
+                                                                                                                                                                                    │                                                                             │
+                                                                                                                                                                                    │  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐  │
+                                                                                                                                                                                    │  │   Short-Term Memory  │  │   Long-Term Memory   │  │  Reasoning Trace │  │
+                                                                                                                                                                                    │  │  (conversation msgs) │  │  (graph entities)    │  │  (step records)  │  │
+                                                                                                                                                                                    │  │                      │  │                      │  │                  │  │
+                                                                                                                                                                                    │  │ • scoped per convId  │  │ • facts              │  │ • reasoning text │  │
+                                                                                                                                                                                    │  │ • vector search      │  │ • user_preferences   │  │ • actionTaken    │  │
+                                                                                                                                                                                    │  │ • cross-session scan │  │ • patterns           │  │ • result summary │  │
+                                                                                                                                                                                    │  └──────────────────────┘  └──────────────────────┘  └──────────────────┘  │
+                                                                                                                                                                                    │                                                                             │
+                                                                                                                                                                                    │                    Backed by a Neo4j AuraDB graph                           │
+                                                                                                                                                                                    └─────────────────────────────────────────────────────────────────────────────┘
+                                                                                                                                                                                    ```
+
+                                                                                                                                                                                    ### Memory flow per turn
+
+                                                                                                                                                                                    ```
+                                                                                                                                                                                    User sends message
+                                                                                                                                                                                           │
+                                                                                                                                                                                                  ▼
+                                                                                                                                                                                                   [tool] query_memory ──────────────────────────────────────────┐
+                                                                                                                                                                                                          │  searches:                                             │
+                                                                                                                                                                                                                 │  • current conversation (short-term, vector)          │
+                                                                                                                                                                                                                        │  • past conversations for this userId (cross-session) │
+                                                                                                                                                                                                                               │  • long-term graph entities                           │
+                                                                                                                                                                                                                                      │  • prior reasoning steps                              │
+                                                                                                                                                                                                                                             │◀──────────── returns ranked MemoryHit[] ──────────────┘
+                                                                                                                                                                                                                                                    │
+                                                                                                                                                                                                                                                           ▼
+                                                                                                                                                                                                                                                            LLM composes answer  (personalised with retrieved context)
+                                                                                                                                                                                                                                                                   │
+                                                                                                                                                                                                                                                                          ▼
+                                                                                                                                                                                                                                                                           [tool] store_memory
+                                                                                                                                                                                                                                                                                  │  persists:
+                                                                                                                                                                                                                                                                                         │  • interaction  → short-term conversation thread
+                                                                                                                                                                                                                                                                                                │  • fact         → long-term graph entity
+                                                                                                                                                                                                                                                                                                       │  • user_preference → long-term graph entity
+                                                                                                                                                                                                                                                                                                              │  • pattern      → long-term graph entity
+                                                                                                                                                                                                                                                                                                                     │
+                                                                                                                                                                                                                                                                                                                            ▼
+                                                                                                                                                                                                                                                                                                                             onFinish callback
+                                                                                                                                                                                                                                                                                                                                    │  • addMessage (assistant turn) → short-term
+                                                                                                                                                                                                                                                                                                                                           │  • recordStep (reasoning)      → reasoning trace
+                                                                                                                                                                                                                                                                                                                                                  ▼
+                                                                                                                                                                                                                                                                                                                                                   Response streams to browser
+                                                                                                                                                                                                                                                                                                                                                   ```
+
+                                                                                                                                                                                                                                                                                                                                                   ---
+
+## Integration Modes — Choose One
+
+NAMS provides **two independent integration modes** with the Vercel AI SDK. Both use the same Neo4j backend and memory architecture, but differ in control flow:
+
+| Mode | Style | When to use | Pattern |
+|------|-------|------------|---------|
+| **Provider** | Automatic, model-agnostic | Fastest integration, memory always active | Mem0 / Letta |
+| **Custom Tools** | Model-driven, explicit | Fine-grained control, visible tool traces | Supermemory / OpenAI Assistants |
+
+### Environment configuration
+
+```env
+# .env.local
+NAMS_MODE=provider        # (default) Automatic memory via model wrapping
+# NAMS_MODE=tools         # Custom tools — model calls query_memory / store_memory
 ```
 
-### Memory flow per turn
+**Key difference**: 
+- **Provider**: Memory retrieval/storage happens automatically on every request. Simple, deterministic.
+- **Custom Tools**: Model decides when to call `query_memory` and `store_memory`. Visible in reasoning traces, more flexible.
 
-```
-User sends message
-       │
-       ▼
- [tool] query_memory ──────────────────────────────────────────┐
-       │  searches:                                             │
-       │  • current conversation (short-term, vector)          │
-       │  • past conversations for this userId (cross-session) │
-       │  • long-term graph entities                           │
-       │  • prior reasoning steps                              │
-       │◀──────────── returns ranked MemoryHit[] ──────────────┘
-       │
-       ▼
- LLM composes answer  (personalised with retrieved context)
-       │
-       ▼
- [tool] store_memory
-       │  persists:
-       │  • interaction  → short-term conversation thread
-       │  • fact         → long-term graph entity
-       │  • user_preference → long-term graph entity
-       │  • pattern      → long-term graph entity
-       │
-       ▼
- onFinish callback
-       │  • addMessage (assistant turn) → short-term
-       │  • recordStep (reasoning)      → reasoning trace
-       ▼
- Response streams to browser
-```
+                                                                                                                                                                                                                                                                                                                                                   ---
 
----
+### Mode 1 — Provider (Automatic Memory)
 
-## Using NAMS as a Vercel AI SDK Memory Provider
+Use `createNams().wrap()` to wrap your LLM. Memory is retrieved and stored transparently before and after each call.
 
-NAMS ships a `NamsMemoryProvider` class that follows the same pattern as [Mem0](https://mem0.ai), [Letta](https://letta.com), and [Supermemory](https://supermemory.ai) — the providers listed in the [Vercel AI SDK memory docs](https://ai-sdk.dev/docs/agents/memory).
-
-### Minimal integration (3 lines)
+**Setup:**
 
 ```typescript
-import { NamsMemoryProvider } from '@/lib/nams-memory-provider';
+// Once at module level (e.g., lib/nams-singleton.ts)
+import { createNams } from '@/lib/nams';
+
+export const nams = createNams({
+  apiKey: process.env.MEMORY_API_KEY!,
+  workspaceId: process.env.MEMORY_WORKSPACE_ID, // optional
+});
+```
+
+**Per-request usage:**
+
+```typescript
+// In app/api/chat/route.ts (or anywhere you call streamText)
+import { nams } from '@/lib/nams-singleton';
 import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
-// 1. Create a shared provider instance (once at module level)
-const memory = new NamsMemoryProvider({
-  apiKey: process.env.MEMORY_API_KEY!,
-  userId: 'default',                       // overridden per-request with forUser()
-});
-
-// 2. Scope it to the current user and pass tools to streamText
-const result = streamText({
-  model:    openai('gpt-4o-mini'),
-  system:   SYSTEM_PROMPT,
-  messages,
-  tools:    memory.forUser(userId).tools(),   // ← drops in alongside any other tools
-});
+export async function POST(req: Request) {
+  const { messages, userId, conversationId } = await req.json();
+  
+  // Wrap the model — memory is handled automatically
+  const model = nams.wrap(openai('gpt-4o-mini'), {
+    userId,
+    conversationId, // optional: pin to specific conversation
+  });
+  
+  // No tools needed — memory is transparent
+  const result = streamText({
+    model,
+    messages,
+    system: 'You are a helpful assistant.',
+  });
+  
+  return result.toUIMessageStreamResponse();
+}
 ```
 
-`forUser(userId, conversationId?)` returns a new provider scoped to that user — safe to call on every request with no shared state between users.
+**What happens automatically:**
+1. On each request, NAMS retrieves memories relevant to the user's message
+2. Memories are injected into the system prompt as context
+3. After the model responds, the interaction is stored in short-term memory
+4. Long-term facts are extracted and persisted to the Neo4j graph
 
-### Provider API surface
+**Memory scoping:**
+- `userId` — Required. Groups all memories for this user
+- `conversationId` — Optional. Pin to a specific conversation thread; if omitted, a new one is created
+
+**API surface:**
 
 ```typescript
-// lib/nams-memory-provider.ts
-
-class NamsMemoryProvider {
-  constructor(opts: {
-    apiKey:        string;
-    userId:        string;
-    workspaceId?:  string;
-    endpoint?:     string;
-    conversationId?: string;
-  })
-
-  /** Scope to a specific user per-request (returns a new provider, no mutation). */
-  forUser(userId: string, conversationId?: string): NamsMemoryProvider
-
-  /** Returns { query_memory, store_memory } ready to pass to streamText. */
-  tools(): { query_memory: Tool; store_memory: Tool }
+interface Nams {
+  /**
+   * Wrap an LLM with automatic memory. Memory retrieval + storage happens
+   * transparently before and after each call.
+   */
+  wrap<T extends LanguageModel>(
+    model: T,
+    scope: { userId: string; conversationId?: string }
+  ): LanguageModel;
+  
+  /**
+   * Alternative: get query_memory + store_memory tools for manual control.
+   */
+  tools(scope: { userId: string; conversationId?: string }): {
+    query_memory: Tool;
+    store_memory: Tool;
+  };
 }
 ```
 
 ---
 
-## Memory Design
+### Mode 2 — Custom Tools (Model-Driven Memory)
 
-### Approach — Hybrid "Custom Tools + Memory Provider"
+Get `query_memory` and `store_memory` as Vercel AI SDK tools. The model decides when to call them, giving you visibility into the memory process.
 
-The [Vercel AI SDK memory docs](https://ai-sdk.dev/docs/agents/memory) describe three implementation strategies:
-
-| Strategy | Description |
-|----------|-------------|
-| **Provider-defined tools** | Provider ships the tool interface; you supply `execute` |
-| **Memory Provider** | Third-party service (Mem0, Letta, Supermemory) handles storage transparently |
-| **Custom Tool** | You own the full schema, execute logic, and storage backend |
-
-NAMS implements the **Memory Provider** strategy: `NamsMemoryProvider` ships the complete tool interface (schema + execute logic + storage backend). Drop `memory.forUser(userId).tools()` into any `streamText` call and NAMS handles the rest.
-
-- **Storage** — [`@neo4j-labs/agent-memory`](https://www.npmjs.com/package/@neo4j-labs/agent-memory) (NAMS) persists everything to a managed Neo4j AuraDB graph.
-- **Tools** — two Vercel AI SDK `tool` objects (`query_memory` / `store_memory`) with hand-crafted schemas. The LLM is instructed to call them on every turn via `SYSTEM_PROMPT`.
-
-This gives the agent **full control over what gets stored and at what confidence level**, while offloading the storage infrastructure to NAMS.
-
----
-
-### Three Memory Layers
-
-The implementation maps to three cognitive memory types:
-
-| Layer | Cognitive type | Storage | Retrieval |
-|-------|---------------|---------|-----------|
-| **Short-term** | Episodic | Per-conversation message thread in NAMS | Vector similarity search (`threshold ≥ 0.4`) |
-| **Long-term** | Semantic | Neo4j graph entities (facts, preferences, patterns) | Graph entity search |
-| **Reasoning trace** | Procedural | Per-step records (reasoning text + action taken + result) | Listed per conversation |
-
-Cross-session retrieval bridges short-term and long-term: `query_memory` also scans all past conversations for the same `userId`, so facts told in a previous session are available in the next one without being explicitly promoted to the long-term graph.
-
----
-
-### Mandatory Memory Cycle
-
-The agent is constrained by `SYSTEM_PROMPT` (`lib/constants.ts`) to follow this sequence on every single turn — no exceptions:
-
-```
-STEP 1  query_memory   → retrieve context BEFORE answering
-STEP 2  answer         → respond using retrieved memories as grounding
-STEP 3  store_memory   → persist new facts/preferences/interactions AFTER answering
-```
-
-This is an **agent-directed** (not automatic) memory pattern: the LLM decides what is worth storing, what confidence to assign, and how to classify the content (`fact` / `user_preference` / `interaction` / `pattern`).
-
----
-
-### Transport — REST API, Not Direct Neo4j
-
-The `MemoryClient` from `@neo4j-labs/agent-memory` is a thin **HTTPS REST client**. It does not connect directly to Neo4j. Every operation becomes a `POST` to the NAMS cloud API:
-
-```
-App  ──HTTPS POST──▶  https://memory.neo4jlabs.com/v1/<method>  ──▶  Neo4j AuraDB
-```
-
-Authentication is via the `MEMORY_API_KEY` header. The `makeClient` helper in [lib/nams-memory-provider.ts](lib/nams-memory-provider.ts) constructs this client:
+**Per-request usage:**
 
 ```typescript
-new MemoryClient({
-  endpoint: 'https://memory.neo4jlabs.com/v1',
-  apiKey:   process.env.MEMORY_API_KEY,
-  headers:  { 'X-Workspace-ID': process.env.MEMORY_WORKSPACE_ID },
+// In app/api/chat/route.ts
+import { createNams } from '@/lib/nams';
+import { streamText, stepCountIs } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+export async function POST(req: Request) {
+  const { messages, userId, conversationId } = await req.json();
+  
+  const nams = createNams({
+    apiKey: process.env.MEMORY_API_KEY!,
+    workspaceId: process.env.MEMORY_WORKSPACE_ID,
+  });
+  
+  // Get memory tools — model decides when to call them
+  const tools = nams.tools({
+    userId,
+    conversationId,
+  });
+  
+  const result = streamText({
+    model: openai('gpt-4o-mini'),
+    messages,
+    tools,
+    system: SYSTEM_PROMPT,  // Must instruct the model to use memory
+    stopWhen: stepCountIs(10),
+  });
+  
+  return result.toUIMessageStreamResponse();
+}
+```
+
+**System prompt (required):**
+
+The model must be told when to use memory. Include these instructions:
+
+```
+You MUST follow this pattern on EVERY response:
+
+1. FIRST: Call query_memory to retrieve relevant context about the user
+2. THEN: Provide your answer using the retrieved memories
+3. FINALLY: Call store_memory to save any new facts or preferences
+
+Important: Always use memory tools, never skip any step.
+```
+
+See [lib/constants.ts](lib/constants.ts) for a complete example.
+
+**Tool signatures:**
+
+```typescript
+// query_memory — Retrieve memories
+tool<QueryInput, QueryOutput>({
+  description: 'Search NAMS for context relevant to the current message. Call this FIRST every turn.',
+  inputSchema: zodSchema({
+    query: z.string().describe('Keywords or phrase to search'),
+    limit: z.number().int().min(1).max(20).default(5),
+  }),
+  execute: async ({ query, limit }) => {
+    // Returns: { found: boolean; count?: number; memories: MemoryHit[] }
+  }
+})
+
+// store_memory — Persist information
+tool<StoreInput, StoreOutput>({
+  description: 'Persist important info to NAMS. Call this AFTER your response.',
+  inputSchema: zodSchema({
+    content: z.string().min(1).max(2000),
+    type: z.enum(['fact', 'interaction', 'pattern', 'user_preference']),
+    confidence: z.number().min(0).max(1).default(0.7),
+    tags: z.array(z.string().max(40)).max(10).default([]),
+  }),
+  execute: async ({ content, type, confidence, tags }) => {
+    // Returns: { stored: boolean; type: string; preview: string; message: string }
+  }
 })
 ```
 
-Each `client.shortTerm.*`, `client.longTerm.*`, and `client.reasoning.*` call translates to a separate REST request.
+**When to use custom tools:**
+- You want to see memory operations in the reasoning trace
+- You need to customize tool schemas or behavior
+- You want fine-grained control over when memory is accessed
+- You're integrating NAMS with agentic frameworks
+
+---
+
+                                                                                                                                                                                                                                                                                                                                                                                                               ## Memory Design
+
+### Three Memory Layers
+
+NAMS organizes memories across three cognitive types:
+
+| Layer | Type | Storage | Search |
+|-------|------|---------|--------|
+| **Short-term** | Episodic (current conversation) | Per-conversation message thread | Vector + keyword search |
+| **Long-term** | Semantic (extracted facts) | Neo4j graph entities (facts, preferences, patterns) | Graph traversal + entity search |
+| **Reasoning** | Procedural (how decisions were made) | Per-step records (reasoning text, action, result) | List by conversation |
+
+### Cross-Session Memory Retrieval
+
+A key feature is **retrieving memories from previous conversations**. This requires passing a list of previous conversation IDs:
+
+```typescript
+// On first request, no previous conversations exist
+const tools = nams.tools({ userId });
+
+// After establishing a conversation, pass previousConversationIds
+const tools = nams.tools({ 
+  userId,
+  conversationId: 'current-conv-123',
+  previousConversationIds: ['prev-conv-1', 'prev-conv-2'], // from sidebar/session list
+});
+```
+
+When `query_memory` is called, it searches in this order:
+1. **Current conversation** (exact match)
+2. **Previous conversations** (user-provided list)
+3. **Long-term graph** (Neo4j facts, regardless of conversation)
+
+This enables:
+- ✅ "You told me last week you prefer coffee" — retrieved from previous conversation
+- ✅ "You are a data scientist" — stored as a long-term fact across all conversations
+- ✅ Cross-user isolation — each `userId` has separate memory space
+
+                                                                                                                                                                                                                                                                                                                                                                                                               ### Memory Cycle (Model-Driven Mode)
+
+When using **Custom Tools mode**, the system prompt enforces this sequence on every turn:
+
+                                                                                                                                                                                                                                                                                                                                                                                                               ```
+                                                                                                                                                                                                                                                                                                                                                                                                               STEP 1: query_memory   → retrieve context BEFORE answering
+                                                                                                                                                                                                                                                                                                                                                                                                               STEP 2: answer         → respond using retrieved memories as grounding
+                                                                                                                                                                                                                                                                                                                                                                                                               STEP 3: store_memory   → persist facts/preferences/interactions AFTER answering
+                                                                                                                                                                                                                                                                                                                                                                                                               ```
+
+This is **agent-directed** (not automatic): the LLM decides what's worth storing, assigns confidence levels, and classifies content (`fact` / `user_preference` / `interaction` / `pattern`).
+
+**Note:** In **Provider mode**, this cycle happens transparently — no system prompt modifications needed.
+
+                                                                                                                                                                                                                                                                                                                                                                                                               ---
+
+---
+
+### Transport Layer — REST API
+
+NAMS doesn't connect directly to Neo4j. The [`@neo4j-labs/agent-memory`](https://www.npmjs.com/package/@neo4j-labs/agent-memory) SDK is a thin HTTPS REST client:
+
+```
+Your App  ──HTTPS POST──▶  https://memory.neo4jlabs.com/v1/<method>  ──▶  Neo4j AuraDB
+                            (with MEMORY_API_KEY header)
+```
+
+This means:
+- ✅ No direct database credentials in your app
+- ✅ No local Neo4j setup required
+- ✅ Managed infrastructure (automatic backups, scaling)
+- ✅ Enterprise support available
+
+Each operation (`query`, `store`, `list`) becomes a separate REST request. The client handles retries and error handling.
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ---
 
 ---
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Node.js | ≥ 18 | Required for `crypto.randomUUID` and `fetch` |
-| npm | ≥ 9 | Bundled with Node 18+ |
-| NAMS API key | — | Free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
-| OpenAI API key | — | Used for the LLM (`gpt-4o-mini` by default) |
+| Requirement | Version | Get it |
+|-------------|---------|--------|
+| **Node.js** | ≥ 18 | [nodejs.org](https://nodejs.org) |
+| **npm** | ≥ 9 | Bundled with Node 18+ |
+| **NAMS API key** | — | Free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
+| **OpenAI API key** | — | Create at [platform.openai.com](https://platform.openai.com) |
 
----
+**Why Node 18?**
+- Required for `crypto.randomUUID()` (native)
+- Required for `fetch` (native, no polyfill needed)
+- Full ES2022 module support
 
-## Setup
+No local Neo4j setup required — NAMS is a managed service.
 
-### 1. Clone and install dependencies
+                                                                                                                                                                                                                                                                                                                                                                                                                     ---
 
-```bash
-git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
-cd neo4j-agent-integrations/vercel-agent/vercel_Nams
-npm install
-```
+                                                                                                                                                                                                                                                                                                                                                                                                                     ## Setup
 
-### 2. Configure environment variables
+                                                                                                                                                                                                                                                                                                                                                                                                                     ### 1. Clone and install dependencies
 
-Copy the example file and fill in your keys:
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```bash
+                                                                                                                                                                                                                                                                                                                                                                                                                     git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
+                                                                                                                                                                                                                                                                                                                                                                                                                     cd neo4j-agent-integrations/vercel-agent/vercel_Nams
+                                                                                                                                                                                                                                                                                                                                                                                                                     npm install
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
 
-```bash
+                                                                                                                                                                                                                                                                                                                                                                                                                     ### 2. Configure environment variables
+
+Copy the example and fill in your secrets:
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```bash
 cp .env.local.example .env.local
-```
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
 
 Edit `.env.local`:
 
-```env
-# Required — get a free key at https://memory.neo4jlabs.com
-MEMORY_API_KEY=your-nams-api-key
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```env
+# REQUIRED
 
-# Optional — pin to a specific NAMS workspace (leave blank for default)
-MEMORY_WORKSPACE_ID=
+Your NAMS API key (free account at https://memory.neo4jlabs.com)
+MEMORY_API_KEY=sk-nams-...
 
-# Optional — override the NAMS endpoint
-# MEMORY_ENDPOINT=https://memory.neo4jlabs.com/v1
+Your OpenAI API key (https://platform.openai.com)
+OPENAI_API_KEY=sk-proj-...
 
-# Required — your OpenAI API key
-OPENAI_API_KEY=sk-...
+# OPTIONAL
 
-# Optional — override the model (default: gpt-4o-mini)
-# OPENAI_MODEL=gpt-4o
-```
+Which integration mode? "provider" (recommended) or "tools"
+NAMS_MODE=provider
 
----
+Pin to a specific NAMS workspace (omit for default)
+MEMORY_WORKSPACE_ID=workspace-123
 
-## Running
+Override NAMS endpoint (rarely needed)
+MEMORY_ENDPOINT=https://memory.neo4jlabs.com/v1
+
+Which OpenAI model? (default: gpt-4o-mini)
+OPENAI_MODEL=gpt-4o
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ---
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ## Running
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```bash
+                                                                                                                                                                                                                                                                                                                                                                                                                     npm run dev
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     Open [http://localhost:3000](http://localhost:3000).
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     The app starts with four built-in suggestion prompts to illustrate the memory cycle. Click one or type your own message.
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ### Production build
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```bash
+                                                                                                                                                                                                                                                                                                                                                                                                                     npm run build
+                                                                                                                                                                                                                                                                                                                                                                                                                     npm start
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ---
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ## Project structure
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
+                                                                                                                                                                                                                                                                                                                                                                                                                     vercel_Nams/
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── app/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   ├── api/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   │   ├── chat/route.ts          # POST /api/chat — main agent endpoint
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   │   └── reasoning/route.ts     # GET  /api/reasoning — fetch stored steps
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   ├── globals.css
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   ├── layout.tsx
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   └── page.tsx                   # Root page — wires AppHeader + ChatComponent
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── components/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   ├── AppHeader.tsx              # Top bar with dark/light toggle
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   └── chat/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │       ├── ChatComponent.tsx      # Chat UI — useChat, tool-call display, panels
+                                                                                                                                                                                                                                                                                                                                                                                                                     │       ├── MemoryPanel.tsx        # Collapsible panel: recent / observations / reasoning tabs
+                                                                                                                                                                                                                                                                                                                                                                                                                     │       ├── ReasoningPanel.tsx     # Per-message reasoning step trace
+                                                                                                                                                                                                                                                                                                                                                                                                                     │       └── styles.ts              # Shared inline style helpers
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── lib/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   ├── constants.ts               # SYSTEM_PROMPT (mandatory query→answer→store)
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   └── nams-memory-provider.ts    # NAMS client, tools, conversation helpers
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── types/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   └── index.ts                   # Shared TypeScript types (MemoryHit, ReasoningStep, …)
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── utils/
+                                                                                                                                                                                                                                                                                                                                                                                                                     │   └── message.ts                 # getMsgText, parseMemory, formatErrorMessage helpers
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── constants.ts                   # DEFAULT_SUGGESTIONS, SESSION_STORAGE_KEY
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── declarations.d.ts              # Module augmentations / ambient declarations
+                                                                                                                                                                                                                                                                                                                                                                                                                     ├── .env.local.example
+                                                                                                                                                                                                                                                                                                                                                                                                                     └── package.json
+                                                                                                                                                                                                                                                                                                                                                                                                                     ```
+
+                                                                                                                                                                                                                                                                                                                                                                                                                     ---
+
+### 3. Run the dev server
 
 ```bash
 npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-The app starts with four built-in suggestion prompts to illustrate the memory cycle. Click one or type your own message.
-
-### Production build
-
-```bash
-npm run build
-npm start
+# Server runs on http://localhost:3000
 ```
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 vercel_Nams/
-├── app/
-│   ├── api/
-│   │   ├── chat/route.ts          # POST /api/chat — main agent endpoint
-│   │   └── reasoning/route.ts     # GET  /api/reasoning — fetch stored steps
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx                   # Root page — wires AppHeader + ChatComponent
-├── components/
-│   ├── AppHeader.tsx              # Top bar with dark/light toggle
-│   └── chat/
-│       ├── ChatComponent.tsx      # Chat UI — useChat, tool-call display, panels
-│       ├── MemoryPanel.tsx        # Collapsible panel: recent / observations / reasoning tabs
-│       ├── ReasoningPanel.tsx     # Per-message reasoning step trace
-│       └── styles.ts              # Shared inline style helpers
+│
+├── lib/nams/                    # NAMS integration (reusable)
+│   ├── index.ts                 # createNams() entry point
+│   ├── provider.ts              # Provider mode (wrap models)
+│   ├── tools.ts                 # Tools mode (query/store functions)
+│   ├── client.ts                # NAMS API client helpers
+│   └── extract.ts               # Graph extraction logic
+│
 ├── lib/
-│   ├── constants.ts               # SYSTEM_PROMPT (mandatory query→answer→store)
-│   └── nams-memory-provider.ts    # NAMS client, tools, conversation helpers
+│   ├── nams-memory-provider.ts  # Legacy compatibility (imports from lib/nams)
+│   ├── nams-provider.ts         # High-level wrapper
+│   └── constants.ts             # SYSTEM_PROMPT, defaults
+│
+├── app/api/chat/route.ts        # Agentic chat endpoint
+├── app/page.tsx                 # UI entry point
+│
+├── components/
+│   ├── chat/
+│   │   ├── ChatComponent.tsx    # Main chat UI (uses useChat)
+│   │   ├── MemoryPanel.tsx      # Display retrieved memories
+│   │   └── ReasoningPanel.tsx   # Show tool calls & reasoning
+│   └── ... (other UI components)
+│
 ├── types/
-│   └── index.ts                   # Shared TypeScript types (MemoryHit, ReasoningStep, …)
-├── utils/
-│   └── message.ts                 # getMsgText, parseMemory, formatErrorMessage helpers
-├── constants.ts                   # DEFAULT_SUGGESTIONS, SESSION_STORAGE_KEY
-├── declarations.d.ts              # Module augmentations / ambient declarations
+│   └── *.ts                     # TypeScript types (MemoryHit, etc.)
+│
 ├── .env.local.example
-└── package.json
+├── package.json
+└── README.md
 ```
 
 ---
 
-## Key files explained
+## Extracting NAMS for Your Project
 
-### `lib/nams-memory-provider.ts`
+### Copy these files
 
-The core integration layer. Exports:
-
-| Export | Purpose |
-|--------|---------|
-| `getOrCreateConversation(opts)` | Resolves (or creates) a NAMS conversation for a userId. Caches the result in-process. |
-| `findExistingConversation(opts)` | Read-only lookup — never creates. Used by the reasoning endpoint. |
-| `createNamsMemoryTools(opts)` | Returns `{ query_memory, store_memory }` — Vercel AI SDK `tool` objects ready to pass to `streamText`. |
-
-**`query_memory`** — searches four sources in parallel:
-- Short-term messages in the current conversation (vector similarity ≥ 0.4)
-- Past conversations for the same userId (cross-session, threshold 0.45)
-- Long-term graph entities
-- Prior reasoning steps
-
-**`store_memory`** — routes by `type`:
-- `interaction` → `client.shortTerm.addMessage` (conversation thread)
-- `fact` / `user_preference` / `pattern` → `client.longTerm.addEntity` (graph node)
-
-### `app/api/chat/route.ts`
-
-The POST handler that runs the agentic loop:
-
-1. Parses `messages`, `sessionId`, `userId`, `conversationId` from the request body.
-2. Calls `getOrCreateConversation` to get a stable NAMS `convId`.
-3. Ingests the user message to short-term memory (fire-and-forget).
-4. Passes `createNamsMemoryTools(...)` to `streamText` with up to 10 agentic steps.
-5. In `onFinish`: persists the assistant reply and records each reasoning step to NAMS.
-6. Sends the NAMS `convId` back to the client via a custom `data-conversation-id` stream event.
-
-### `lib/constants.ts`
-
-Defines `SYSTEM_PROMPT`, which enforces the mandatory three-step cycle every turn:
-
-```
-STEP 1  query_memory   (always before answering)
-STEP 2  answer the user
-STEP 3  store_memory   (always after answering)
-```
-
-### `components/chat/ChatComponent.tsx`
-
-React component built on `useChat` (`@ai-sdk/react`) with `DefaultChatTransport` (`ai`). Sends `sessionId` and the resolved `conversationId` on every request. Reads the `data-conversation-id` stream event to pin subsequent requests to the same NAMS conversation. Renders:
-
-- **Agent Memory panel** (`MemoryPanel.tsx`) — collapsible, tabbed view of what NAMS returned (`recent` / `observations` / `reasoning`).
-- **Reasoning Trace panel** (`ReasoningPanel.tsx`) — steps fetched from `/api/reasoning` after each reply, showing reasoning text, action taken, and result summary.
-- Live tool-call status while streaming.
-
----
-
-## Testing
-
-### Manual smoke test (recommended first run)
-
-1. Start the dev server: `npm run dev`
-2. Open [http://localhost:3000](http://localhost:3000)
-3. Click **"Hi! I'm Alex, a data scientist at TechCorp."**
-   - The Agent Memory panel should show `0 recent` on the first message (no prior memories yet).
-   - After the reply, expand the Reasoning Trace to see the stored step.
-4. Click **"What do you remember about me?"**
-   - The Agent Memory panel should now show recalled facts about you from the previous turn.
-   - This confirms the store → retrieve cycle is working end-to-end.
-
-### Verifying memory persistence across sessions
-
-1. Send a few messages, then close the browser tab.
-2. Reopen [http://localhost:3000](http://localhost:3000) in a new tab.
-3. Ask **"What do you remember about me?"**
-   - The agent should recall information from the previous session via cross-session search.
-   - Your `userId` is persisted in `localStorage` under the key `nams-session-id`.
-
-### Server-side logs
-
-The server logs a detailed trace for every request. Watch the terminal for:
-
-```
-══════════════════════════════════════════════
-[chat] ① POST /api/chat
-[chat]   session: <id> | userId: <id> | existingConv: none
-[chat]   query: "Hi! I'm Alex..."
-[NAMS] New conversation → <convId> for userId=<id> (42ms)
-[chat] ② Conversation resolved: <convId>
-[chat] ③ Agent | model: gpt-4o-mini | maxSteps: 10
-[NAMS:query] "Hi Alex data scientist TechCorp" (limit=5)
-[NAMS:query] ✓ 0 current + 0 cross-session + 0 long-term + 0 reasoning (130ms)
-[NAMS:store] fact (conf=0.85): "User is named Alex, works as a data scientist..."
-[NAMS:store] ✓ long-term "User is named Alex, works as a data scientist..." (90ms)
-[chat] ④ Done | steps: 3 | 🔍 ×1 | 💾 ×1 | 1240ms
-[chat]   tokens: input=412 output=87
-```
-
-### API endpoints
+To use NAMS in another Next.js project, copy the `lib/nams/` folder:
 
 ```bash
-# Health-check: fetch reasoning steps for a userId
-curl "http://localhost:3000/api/reasoning?userId=<your-nams-session-id>"
+# From neo4j-agent-integrations/vercel-agent/vercel_Nams
+cp -r lib/nams /path/to/your-project/lib/
+```
 
-# Expected response (no steps yet):
-# {"steps":[]}
+### Install dependencies
+
+```bash
+npm install @neo4j-labs/agent-memory ai zod
+```
+
+### Use in your API route
+
+```typescript
+// your-project/app/api/chat/route.ts
+import { createNams } from '@/lib/nams';
+import { streamText, stepCountIs } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+export async function POST(req: Request) {
+  const { messages, userId } = await req.json();
+  
+  const nams = createNams({
+    apiKey: process.env.MEMORY_API_KEY!,
+  });
+  
+  // Choose your mode
+  const mode = process.env.NAMS_MODE || 'provider';
+  
+  if (mode === 'provider') {
+    const model = nams.wrap(openai('gpt-4o-mini'), { userId });
+    return streamText({ model, messages }).toUIMessageStreamResponse();
+  } else {
+    const tools = nams.tools({ userId });
+    return streamText({
+      model: openai('gpt-4o-mini'),
+      messages,
+      tools,
+      system: 'Query memory first, then answer, then store.',
+      stopWhen: stepCountIs(10),
+    }).toUIMessageStreamResponse();
+  }
+}
 ```
 
 ---
 
-## Environment variables reference
+## Core Files Explained
+
+### `lib/nams/index.ts`
+
+Entry point. Exports `createNams(config)` which returns an object with:
+- `wrap(model, scope)` — Provider mode (automatic memory)
+- `tools(scope)` — Tools mode (model-driven memory)
+
+### `lib/nams/provider.ts`
+
+Implements the Provider mode using `wrapLanguageModel` middleware. Automatically:
+1. Retrieves memories before each call
+2. Injects them into the system prompt
+3. Stores the turn after each call
+
+### `lib/nams/tools.ts`
+
+Implements the Tools mode. Returns `{ query_memory, store_memory }` as Vercel AI SDK `tool()` objects:
+- **query_memory**: Searches 4 sources in parallel
+- **store_memory**: Routes by type to short-term or long-term storage
+
+### `lib/nams/client.ts`
+
+Low-level NAMS API helpers:
+- `makeClient()` — Creates a MemoryClient instance
+- `resolveConversation()` — Gets or creates conversation ID
+- `retrieveMemories()` — Multi-source memory search
+- `storeMemory()` — Persist facts/interactions
+
+### `lib/nams/extract.ts`
+
+Graph extraction using an LLM:
+- Takes stored memories
+- Extracts entities (facts, preferences, patterns)
+- Stores to Neo4j as graph nodes
+
+---
+
+## Environment Variables Reference
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MEMORY_API_KEY` | Yes | — | NAMS API key from [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
-| `MEMORY_WORKSPACE_ID` | No | _(default workspace)_ | Pin to a specific NAMS workspace |
-| `MEMORY_ENDPOINT` | No | `https://memory.neo4jlabs.com/v1` | Override the NAMS API base URL |
-| `OPENAI_API_KEY` | Yes | — | OpenAI API key |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` | Model ID passed to `openai()` |
+| `MEMORY_API_KEY` | ✅ Yes | — | API key from [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
+| `OPENAI_API_KEY` | ✅ Yes | — | OpenAI API key |
+| `NAMS_MODE` | No | `provider` | Integration mode: `provider` or `tools` |
+| `MEMORY_WORKSPACE_ID` | No | _(default)_ | Pin to a specific NAMS workspace |
+| `MEMORY_ENDPOINT` | No | `https://memory.neo4jlabs.com/v1` | Override NAMS API URL |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | LLM model ID |
 
----
+                                                                                                                                                                                                                                                                                                                                                                                                                                       ---
 
-## Dependencies
+                                                                                                                                                                                                                                                                                                                                                                                                                                       ## Dependencies
 
-| Package | Role |
-|---------|------|
-| `ai` (Vercel AI SDK) | `streamText`, `tool`, `useChat`, `createUIMessageStream` |
-| `@ai-sdk/openai` | OpenAI provider for the Vercel AI SDK |
-| `@ai-sdk/react` | `useChat` React hook |
-| `@neo4j-labs/agent-memory` | NAMS `MemoryClient` — short-term, long-term, reasoning APIs |
-| `@neo4j-ndl/react` | Neo4j Design Language UI components |
-| `zod` | Input schema validation for the memory tools |
-| `next` | App framework and API routes |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | Package | Role |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       |---------|------|
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `ai` (Vercel AI SDK) | `streamText`, `tool`, `useChat`, `createUIMessageStream` |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `@ai-sdk/openai` | OpenAI provider for the Vercel AI SDK |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `@ai-sdk/react` | `useChat` React hook |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `@neo4j-labs/agent-memory` | NAMS `MemoryClient` — short-term, long-term, reasoning APIs |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `@neo4j-ndl/react` | Neo4j Design Language UI components |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `zod` | Input schema validation for the memory tools |
+                                                                                                                                                                                                                                                                                                                                                                                                                                       | `next` | App framework and API routes |
 
----
+                                                                                                                                                                                                                                                                                                                                                                                                                                       ---
 
-## How NAMS is used as a tool
+## How to Use NAMS in Your Projects
 
-NAMS is not called directly by the application logic — it is exposed to the LLM as two Vercel AI SDK `tool` objects. The model decides when to call them, guided by `SYSTEM_PROMPT`.
+### With Provider Mode
+
+This is the **simplest approach** — memory is automatic.
 
 ```typescript
-// lib/nams-memory-provider.ts
-export function createNamsMemoryTools(options: NamsMemoryOptions) {
-  // ...
-  const query_memory = tool({ description: '...', inputSchema: zodSchema(querySchema), execute: async ({ query, limit }) => { /* searches NAMS */ } });
-  const store_memory = tool({ description: '...', inputSchema: zodSchema(storeSchema), execute: async ({ content, type, confidence }) => { /* writes to NAMS */ } });
-  return { query_memory, store_memory };
-}
+// 1. Create once (e.g., lib/nams.ts)
+import { createNams } from '@ai-sdk/generative';
+export const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
 
-// app/api/chat/route.ts
-const tools = createNamsMemoryTools(memoryOptions);
-const result = streamText({ model: openai(model), system: SYSTEM_PROMPT, messages, tools, stopWhen: stepCountIs(10) });
+// 2. Use in API route (app/api/chat/route.ts)
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { nams } from '@/lib/nams';
+
+export async function POST(req: Request) {
+  const { messages, userId } = await req.json();
+  
+  // Wrap the model — NAMS handles memory automatically
+  const model = nams.wrap(openai('gpt-4o-mini'), { userId });
+  
+  return streamText({ model, messages }).toUIMessageStreamResponse();
+}
 ```
 
-This pattern keeps NAMS entirely in the tool layer — the model orchestrates when memory is read and written, while the application code only defines the interface.
+### With Custom Tools Mode
+
+Use this when you want **fine-grained control** over memory operations.
+
+```typescript
+// In your API route (app/api/chat/route.ts)
+import { streamText, stepCountIs } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { createNams } from '@ai-sdk/generative';
+import { SYSTEM_PROMPT } from '@/lib/constants';
+
+export async function POST(req: Request) {
+  const { messages, userId, conversationId } = await req.json();
+  
+  const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
+  const tools = nams.tools({ userId, conversationId });
+  
+  return streamText({
+    model: openai('gpt-4o-mini'),
+    messages,
+    tools,
+    system: SYSTEM_PROMPT,
+    stopWhen: stepCountIs(10),
+  }).toUIMessageStreamResponse();
+}
+```
+
+**Key differences:**
+- **Provider**: No system prompt changes needed, no tool traces visible
+- **Tools**: Requires system prompt, tool calls visible in logs/UI
+
+---
+
+## Troubleshooting
+
+### Memory not persisting
+
+**Problem:** Facts from one conversation don't appear in the next session.
+
+**Solutions:**
+1. Check `.env.local` has `MEMORY_API_KEY` and `OPENAI_API_KEY`
+2. Verify `userId` stays consistent across sessions (check browser localStorage `nams-session-id`)
+3. In **tools mode**: ensure system prompt includes all 3 steps (query → answer → store)
+4. Check server logs for `[NAMS:store]` messages confirming facts are saved
+5. Test with `/api/reasoning?userId=<id>` endpoint to see stored reasoning
+
+### Model never calls memory tools (tools mode)
+
+**Problem:** Model ignores `query_memory` and `store_memory` tools.
+
+**Solutions:**
+1. Verify `NAMS_MODE=tools` in `.env.local`
+2. Check `SYSTEM_PROMPT` contains clear instructions: "FIRST call query_memory, THEN answer, THEN call store_memory"
+3. Increase token budget: use `gpt-4-turbo` instead of `gpt-4o-mini`
+4. Check server logs to confirm tools are registered
+
+### Errors connecting to NAMS API
+
+**Problem:** "MEMORY_API_KEY is not set" or HTTP 503 errors.
+
+**Solutions:**
+1. Generate a free API key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com)
+2. Copy it to `.env.local`: `MEMORY_API_KEY=sk-nams-...`
+3. Restart dev server: `npm run dev`
+
+---
+
+## Best Practices
+
+### 1. Use Provider Mode by Default
+- Simpler, no system prompt needed
+- Automatically handles memory every turn
+- Switch to Tools mode only if you need visible memory traces
+
+### 2. Scope Users Correctly
+```typescript
+// Good: each user gets separate memory
+nams.wrap(model, { userId: req.user.id })
+
+// Bad: everyone shares the same memory
+nams.wrap(model, { userId: 'default' })
+```
+
+### 3. Handle Long Conversations
+Memory accumulates! Consider:
+- Archive old conversations after X days
+- Summarize long conversations into facts
+- Manually prune old memories via NAMS API
+
+### 4. Monitor API Costs
+- Each `query_memory` → 1 REST call
+- Each `store_memory` → 1 REST call
+- Use `stopWhen: stepCountIs(10)` to prevent runaway loops
+
+---
+
+## Resources
+
+- **NAMS API**: [memory.neo4jlabs.com](https://memory.neo4jlabs.com)
+- **Vercel AI SDK**: [ai-sdk.dev/docs/agents/memory](https://ai-sdk.dev/docs/agents/memory)
+- **This repo**: [github.com/neo4j-labs/neo4j-agent-integrations](https://github.com/neo4j-labs/neo4j-agent-integrations)
+
+---
+
+**Next steps**: Copy `lib/nams/` to your project and start building! 🚀
+                                                                                                                                                                                                                                                                                                                                                                                                                                       

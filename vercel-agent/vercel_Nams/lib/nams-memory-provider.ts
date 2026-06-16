@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { MemoryHit } from '@/types';
 
 const DEFAULT_ENDPOINT = 'https://memory.neo4jlabs.com/v1';
+const MAX_REASONING_STEPS = 15;
 
 export interface NamsMemoryOptions {
   apiKey: string;
@@ -13,15 +14,26 @@ export interface NamsMemoryOptions {
   endpoint?: string;
 }
 
+// Cache helpers
+
+const convCache = new Map<string, string>();
+
+/** Composite key so multi-tenant deployments (different workspaceIds) never collide. */
+function cacheKey(userId: string, workspaceId?: string): string {
+  return workspaceId ? `${workspaceId}:${userId}` : userId;
+}
+
+// Public conversation helpers
+
 export async function getOrCreateConversation(
   opts: NamsMemoryOptions,
 ): Promise<{ client: MemoryClient; convId: string }> {
   const client = makeClient(opts);
   if (opts.conversationId) {
-    convCache.set(opts.userId, opts.conversationId);
+    convCache.set(cacheKey(opts.userId, opts.workspaceId), opts.conversationId);
     return { client, convId: opts.conversationId };
   }
-  const convId = await resolveConversationId(client, opts.userId);
+  const convId = await resolveConversationId(client, opts.userId, opts.workspaceId);
   return { client, convId };
 }
 
@@ -30,13 +42,13 @@ export async function findExistingConversation(
 ): Promise<{ client: MemoryClient; convId: string } | null> {
   const client = makeClient(opts);
   if (opts.conversationId) return { client, convId: opts.conversationId };
-  const cached = convCache.get(opts.userId);
+  const cached = convCache.get(cacheKey(opts.userId, opts.workspaceId));
   if (cached) return { client, convId: cached };
   try {
     const convs = await client.shortTerm.listConversations({ userId: opts.userId, limit: 1 });
     if (convs.length === 0) return null;
     const convId = convs[0].id;
-    convCache.set(opts.userId, convId);
+    convCache.set(cacheKey(opts.userId, opts.workspaceId), convId);
     console.log(`[NAMS] Found existing conversation ${convId} for userId=${opts.userId}`);
     return { client, convId };
   } catch {
@@ -44,24 +56,41 @@ export async function findExistingConversation(
   }
 }
 
+// ─── Internal helpers
+
 function makeClient(opts: Omit<NamsMemoryOptions, 'userId'>): MemoryClient {
   const headers: Record<string, string> = {};
   if (opts.workspaceId) headers['X-Workspace-ID'] = opts.workspaceId;
   return new MemoryClient({
     endpoint: opts.endpoint ?? DEFAULT_ENDPOINT,
-    apiKey:   opts.apiKey,
+    apiKey: opts.apiKey,
     headers,
   });
 }
 
-const convCache = new Map<string, string>();
-
-async function resolveConversationId(client: MemoryClient, userId: string): Promise<string> {
-  const cached = convCache.get(userId);
+/** List existing conversations first; only create when none exist. */
+async function resolveConversationId(
+  client: MemoryClient,
+  userId: string,
+  workspaceId?: string,
+): Promise<string> {
+  const key = cacheKey(userId, workspaceId);
+  const cached = convCache.get(key);
   if (cached) return cached;
-  const t0   = Date.now();
+
+  try {
+    const convs = await client.shortTerm.listConversations({ userId, limit: 1 });
+    if (convs.length > 0) {
+      const convId = convs[0].id;
+      convCache.set(key, convId);
+      console.log(`[NAMS] Resumed conversation ${convId} for userId=${userId}`);
+      return convId;
+    }
+  } catch { /* fall through to create */ }
+
+  const t0 = Date.now();
   const conv = await client.shortTerm.createConversation({ userId });
-  convCache.set(userId, conv.id);
+  convCache.set(key, conv.id);
   console.log(`[NAMS] New conversation → ${conv.id} for userId=${userId} (${Date.now() - t0}ms)`);
   return conv.id;
 }
@@ -71,7 +100,17 @@ function trim(text: string, maxLen = 80): string {
   return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
 }
 
+/**
+ * Derive a stable, meaningful entity name from free-form content.
+ * Strips common sentence-starter phrases so the name isn't a truncated sentence.
+ */
+function deriveEntityName(content: string): string {
+  const first = content.split(/[.!?]/)[0].trim();
+  const name = first.replace(/^(the user|i am|i'm)\s+/i, '').trim() || first;
+  return name.length <= 80 ? name : name.slice(0, 79) + '…';
+}
 
+// ─── Zod schemas
 
 const querySchema = z.object({
   query: z.string().describe('Keywords or phrase to search in memory'),
@@ -90,15 +129,13 @@ const storeSchema = z.object({
   tags: z.array(z.string().max(40)).max(10).default([]),
 });
 
-type QueryInput  = z.infer<typeof querySchema>;
-type StoreInput  = z.infer<typeof storeSchema>;
-type QueryOutput = { found: boolean; count?: number; message?: string; memories: MemoryHit[] };
-type StoreOutput = { stored: boolean; type: string; preview: string; message: string };
+export type QueryInput = z.infer<typeof querySchema>;
+export type StoreInput = z.infer<typeof storeSchema>;
+export type QueryOutput = { found: boolean; count?: number; message?: string; memories: MemoryHit[] };
+export type StoreOutput = { stored: boolean; type: string; preview: string; message: string };
 
-/**
- * Returns `{ query_memory, store_memory }`to pass to `streamText`
- */
-// Search across all past conversations for a userId (cross-session retrieval)
+// ─── Cross-session search
+
 async function searchUserConversations(
   client: MemoryClient,
   userId: string,
@@ -113,45 +150,51 @@ async function searchUserConversations(
 
     console.log(`[NAMS:query] Searching ${pastConvs.length} past conversation(s) for userId=${userId}`);
     const seen = new Set<string>();
-    const hits: MemoryHit[] = [];
+    const hits: (MemoryHit & { score: number })[] = [];
 
-    // Search messages and reasoning steps from every past conversation
     await Promise.all(pastConvs.map(async (conv) => {
       try {
         const [messages, steps] = await Promise.all([
           client.shortTerm.searchMessages(query, {
             sessionId: conv.id,
             limit: 4,
-            threshold: 0.35,
+            threshold: 0.4,
           }).catch(() => []),
           client.reasoning.listSteps(conv.id).catch(() => []),
         ]);
 
-        for (const m of messages) {
+        // NAMS returns messages ordered by descending similarity; use position as proxy score
+        messages.forEach((m, i) => {
           if (m.content && !seen.has(m.content)) {
             seen.add(m.content);
-            hits.push({ content: m.content, source: 'conversation', type: 'cross-session' });
+            hits.push({
+              content: m.content,
+              source: 'conversation',
+              type: 'cross-session',
+              score: 1 - i / Math.max(messages.length, 1),
+            });
           }
-        }
+        });
 
         for (const s of steps) {
-          // Only keep actual AI response steps — skip tool-call steps (they contain JSON noise)
           if (s.actionTaken !== 'direct response') continue;
           if (s.reasoning && !seen.has(s.reasoning)) {
             seen.add(s.reasoning);
-            hits.push({ content: s.reasoning, source: 'reasoning', type: 'cross-session-step' });
+            hits.push({ content: s.reasoning, source: 'reasoning', type: 'cross-session-step', score: 0.3 });
           }
         }
       } catch { /* skip failed conv */ }
     }));
 
-    const sorted = hits.slice(0, limit);
-
-    return sorted;
+    return hits
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   } catch {
     return [];
   }
 }
+
+// ─── Core query / store logic
 
 /**
  * NamsMemoryProvider — Vercel AI SDK memory provider backed by Neo4j.
@@ -185,13 +228,127 @@ export class NamsMemoryProvider {
   }
 }
 
+/** Core query logic — callable by both tool() wrappers and the provider middleware. */
+export async function executeQueryMemory(
+  client: MemoryClient,
+  userId: string,
+  convId: string,
+  { query, limit = 5 }: QueryInput,
+): Promise<QueryOutput> {
+  console.log(`[NAMS:query] "${trim(query)}" (limit=${limit})`);
+  const t0 = Date.now();
+
+  const [shortHits, longHits, reasoningSteps, crossSessionHits] = await Promise.all([
+    client.shortTerm
+      .searchMessages(query, { sessionId: convId, limit, threshold: 0.4 })
+      .catch(() => []),
+    client.longTerm.searchEntities(query, { limit: 5 }).catch(() => []),
+    client.reasoning.listSteps(convId).catch(() => []),
+    searchUserConversations(client, userId, convId, query, 8),
+  ]);
+
+  const currentContents = new Set(shortHits.map(m => m.content));
+  const uniqueCrossSession = crossSessionHits.filter(h => !currentContents.has(h.content));
+
+  // Cap reasoning to the most recent N direct-response steps
+  const cleanReasoningSteps = reasoningSteps
+    .filter(s => s.actionTaken === 'direct response')
+    .slice(-MAX_REASONING_STEPS);
+
+  const memories: MemoryHit[] = [
+    // Long-term entities: use entity confidence when available; otherwise position-based score
+    ...longHits.map((e, i) => ({
+      content: e.description ?? e.name,
+      source: 'long-term' as const,
+      type: 'entity',
+      score: e.confidence ?? (1 - i / Math.max(longHits.length, 1)),
+    })),
+    // Current-session messages: NAMS returns by descending similarity, so position ≈ relevance
+    ...shortHits.map((m, i) => ({
+      content: m.content,
+      source: 'conversation' as const,
+      type: 'interaction',
+      score: 1 - i / Math.max(shortHits.length, 1),
+    })),
+    ...uniqueCrossSession,
+    // Reasoning steps: background context, always ranked last
+    ...cleanReasoningSteps.map(s => ({
+      content: s.reasoning,
+      source: 'reasoning' as const,
+      type: 'step',
+      score: 0.2,
+    })),
+  ];
+
+  // Surface highest-confidence / most-relevant hits first
+  memories.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+  console.log(
+    `[NAMS:query] ✓ ${shortHits.length} current + ${uniqueCrossSession.length} cross-session + ` +
+    `${longHits.length} long-term + ${cleanReasoningSteps.length}/${reasoningSteps.length} reasoning (${Date.now() - t0}ms)`,
+  );
+  memories.forEach((m, i) =>
+    console.log(`[NAMS:query]   [${i + 1}] (${m.source}/${m.type}, score=${(m.score ?? 0).toFixed(2)}) "${trim(m.content)}"`),
+  );
+
+  if (memories.length === 0) return { found: false, message: 'No relevant memories found.', memories: [] };
+  return { found: true, count: memories.length, memories };
+}
+
+/** Core store logic — callable by both tool() wrappers and the provider middleware. */
+export async function executeStoreMemory(
+  client: MemoryClient,
+  _userId: string,
+  convId: string,
+  { content, type, confidence, tags }: StoreInput,
+): Promise<StoreOutput> {
+  console.log(`[NAMS:store] ${type} (conf=${confidence}): "${trim(content)}"`);
+  const t0 = Date.now();
+
+  if (type === 'interaction') {
+    // Persist confidence + tags as message metadata so they're searchable later
+    await client.shortTerm.addMessage(convId, 'assistant', content, {
+      metadata: { confidence, ...(tags.length ? { tags } : {}) },
+    });
+    console.log(`[NAMS:store] ✓ short-term (${Date.now() - t0}ms)`);
+  } else {
+    // Map our schema type to the NAMS hosted entity taxonomy
+    const namsType = type === 'user_preference' ? 'custom' : 'concept';
+    const entityName = deriveEntityName(content);
+
+    // Deduplicate: check if this entity already exists before creating a new node
+    let entity = await client.longTerm.getEntityByName(entityName).catch(() => null);
+    if (!entity) {
+      entity = await client.longTerm.addEntity(entityName, namsType, { description: content });
+      console.log(`[NAMS:store] ✓ long-term entity "${trim(entityName)}" (${Date.now() - t0}ms)`);
+    } else {
+      console.log(`[NAMS:store] ✓ deduped entity "${trim(entityName)}" id=${entity.id}`);
+    }
+
+    // Persist the model's confidence score as entity feedback
+    if (entity?.id) {
+      await client.longTerm
+        .setEntityFeedback(entity.id, { userScore: confidence, confirmed: confidence >= 0.8 })
+        .catch(() => { });
+    }
+  }
+
+  return {
+    stored: true,
+    type,
+    preview: trim(content),
+    message: `Memory stored (${type}, confidence=${confidence})`,
+  };
+}
+
 export function createNamsMemoryTools(options: NamsMemoryOptions) {
   const client = makeClient(options);
-  let convId: string | null = convCache.get(options.userId) ?? null;
+  let convId: string | null =
+    options.conversationId ?? convCache.get(cacheKey(options.userId, options.workspaceId)) ?? null;
 
   async function getConvId(): Promise<string> {
     if (convId) return convId;
-    convId = await resolveConversationId(client, options.userId);
+    convId = await resolveConversationId(client, options.userId, options.workspaceId);
     return convId;
   }
 
@@ -200,81 +357,18 @@ export function createNamsMemoryTools(options: NamsMemoryOptions) {
       'Search NAMS (Neo4j Agent Memory System) for context relevant to the current message. ' +
       'Call this FIRST every turn before answering.',
     inputSchema: zodSchema(querySchema),
-    execute: async ({ query, limit }: QueryInput): Promise<QueryOutput> => {
-      console.log(`[NAMS:query] "${trim(query)}" (limit=${limit})`);
-      const t0 = Date.now();
-      const id = await getConvId();
-
-      const [shortHits, longHits, reasoningSteps, crossSessionHits] = await Promise.all([
-        client.shortTerm
-          .searchMessages(query, { sessionId: id, limit, threshold: 0.4 })
-          .catch(() => []),
-        client.longTerm.searchEntities(query, { limit: 5 }).catch(() => []),
-        client.reasoning.listSteps(id).catch(() => []),
-        searchUserConversations(client, options.userId, id, query, 8),
-      ]);
-
-      // Deduplicate cross-session hits against current session hits
-      const currentContents = new Set(shortHits.map(m => m.content));
-      const uniqueCrossSession = crossSessionHits.filter(h => !currentContents.has(h.content));
-
-      const cleanReasoningSteps = reasoningSteps.filter(s => s.actionTaken === 'direct response');
-
-      // Long-term entities first (highest signal), then conversation hits, then cross-session, then reasoning
-      const memories: MemoryHit[] = [
-        ...longHits.map(e => ({
-          content: e.description ?? e.name,
-          source:  'long-term' as const,
-          type:    'entity',
-        })),
-        ...shortHits.map(m => ({ content: m.content, source: 'conversation' as const, type: 'interaction' })),
-        ...uniqueCrossSession,
-        ...cleanReasoningSteps.map(s => ({
-          content: s.reasoning,
-          source:  'reasoning' as const,
-          type:    'step',
-        })),
-      ];
-
-      console.log(
-        `[NAMS:query] ✓ ${shortHits.length} current + ${uniqueCrossSession.length} cross-session + ${longHits.length} long-term + ${cleanReasoningSteps.length}/${reasoningSteps.length} reasoning (${Date.now() - t0}ms)`,
-      );
-      memories.forEach((m, i) =>
-        console.log(`[NAMS:query]   [${i + 1}] (${m.source}/${m.type}) "${trim(m.content)}"`),
-      );
-
-      if (memories.length === 0) return { found: false, message: 'No relevant memories found.', memories: [] };
-      return { found: true, count: memories.length, memories };
+    execute: async (input: QueryInput) => {
+      return executeQueryMemory(client, options.userId, await getConvId(), input);
     },
   });
 
-  // store_memory (AFTER answering)
   const store_memory = tool<StoreInput, StoreOutput>({
     description:
       'Persist important information to NAMS (Neo4j graph). ' +
       'Call this AFTER your response to save facts, preferences, and patterns.',
     inputSchema: zodSchema(storeSchema),
-    execute: async ({ content, type, confidence, tags }: StoreInput): Promise<StoreOutput> => {
-      console.log(`[NAMS:store] ${type} (conf=${confidence}): "${trim(content)}"`);
-      const t0 = Date.now();
-      const id = await getConvId();
-
-      if (type === 'interaction') {
-        await client.shortTerm.addMessage(id, 'assistant', content);
-        console.log(`[NAMS:store] ✓ short-term (${Date.now() - t0}ms)`);
-      } else {
-        const name = content.slice(0, 60) + (content.length > 60 ? '…' : '');
-        await client.longTerm.addEntity(name, type, { description: content });
-        console.log(`[NAMS:store] ✓ long-term "${trim(name)}" (${Date.now() - t0}ms)`);
-      }
-
-      void tags;
-      return {
-        stored:  true,
-        type,
-        preview: trim(content),
-        message: `Memory stored (${type}, confidence=${confidence})`,
-      };
+    execute: async (input: StoreInput) => {
+      return executeStoreMemory(client, options.userId, await getConvId(), input);
     },
   });
 

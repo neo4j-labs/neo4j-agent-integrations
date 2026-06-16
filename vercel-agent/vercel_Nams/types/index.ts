@@ -2,6 +2,7 @@ export interface MemoryHit {
   content: string;
   source: 'conversation' | 'long-term' | 'reasoning';
   type: string;
+  score?: number;
 }
 
 export interface QueryOutput {
