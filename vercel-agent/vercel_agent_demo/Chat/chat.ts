@@ -289,7 +289,7 @@ export async function searchPreviousConversations(
         }
       }
     } catch (err) {
-      console.warn(`${tag('PrevSearch')} Failed to search conversation ${convId}:`, err);
+      console.warn(`${tag('PrevSearch')} Failed to search conversation %s:`, convId, err);
     }
   }
   console.log(`${tag('PrevSearch')} Total previous-conversation hits: ${results.length} (${Date.now() - t0}ms)`);
