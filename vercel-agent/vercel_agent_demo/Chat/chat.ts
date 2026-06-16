@@ -254,7 +254,13 @@ export async function searchUserMemoryContext(
     console.log(`${tag('UserSearch')} Total user-level hits: ${results.length} (${Date.now() - t0}ms)`);
     return results;
   } catch (err: unknown) {
-    console.warn(`${tag('UserSearch')} Failed to list conversations for user ${userId} (${Date.now() - t0}ms):`, err);
+    console.warn(
+      '%s Failed to list conversations for user %s (%dms):',
+      tag('UserSearch'),
+      userId,
+      Date.now() - t0,
+      err,
+    );
     return [];
   }
 }
