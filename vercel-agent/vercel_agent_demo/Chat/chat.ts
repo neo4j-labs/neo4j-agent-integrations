@@ -135,7 +135,7 @@ export async function ensureConversation(
     console.log(`${tag('Conversation')} Created → id: ${conv.id} (${Date.now() - t0}ms)`);
     return conv.id;
   } catch (err) {
-    console.error(`${tag('Conversation')} Failed to create conversation for session ${sessionId}:`, err);
+    console.error('%s Failed to create conversation for session %s:', tag('Conversation'), sessionId, err);
     throw err;
   }
 }
