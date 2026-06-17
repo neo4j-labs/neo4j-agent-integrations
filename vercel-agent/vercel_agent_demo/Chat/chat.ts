@@ -135,7 +135,7 @@ export async function ensureConversation(
     console.log(`${tag('Conversation')} Created → id: ${conv.id} (${Date.now() - t0}ms)`);
     return conv.id;
   } catch (err) {
-    console.error(`${tag('Conversation')} Failed to create conversation for session ${sessionId}:`, err);
+    console.error('%s Failed to create conversation for session %s:', tag('Conversation'), sessionId, err);
     throw err;
   }
 }
@@ -254,7 +254,13 @@ export async function searchUserMemoryContext(
     console.log(`${tag('UserSearch')} Total user-level hits: ${results.length} (${Date.now() - t0}ms)`);
     return results;
   } catch (err: unknown) {
-    console.warn(`${tag('UserSearch')} Failed to list conversations for user ${userId} (${Date.now() - t0}ms):`, err);
+    console.warn(
+      '%s Failed to list conversations for user %s (%dms):',
+      tag('UserSearch'),
+      userId,
+      Date.now() - t0,
+      err,
+    );
     return [];
   }
 }
@@ -283,7 +289,7 @@ export async function searchPreviousConversations(
         }
       }
     } catch (err) {
-      console.warn(`${tag('PrevSearch')} Failed to search conversation ${convId}:`, err);
+      console.warn(`${tag('PrevSearch')} Failed to search conversation %s:`, convId, err);
     }
   }
   console.log(`${tag('PrevSearch')} Total previous-conversation hits: ${results.length} (${Date.now() - t0}ms)`);
@@ -398,7 +404,7 @@ export async function deleteConversation(conversationId: string): Promise<void> 
     await getSdkClient().shortTerm.deleteConversation(conversationId);
     console.log(`${tag('Delete')} ✓ Conversation ${conversationId} deleted`);
   } catch (err) {
-    console.error(`${tag('Delete')} Failed to delete conversation ${conversationId}:`, err);
+    console.error('%s Failed to delete conversation %s:', tag('Delete'), conversationId, err);
     throw err;
   }
 }
