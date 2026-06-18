@@ -1,0 +1,44 @@
+{
+  "id": "neo4j-managed-agent",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Enterprise-grade Graph Database Analyst powered by hybrid Neo4j MCP servers and custom sandbox skill files.",
+  "system_instruction": "You are a professional Graph Database Assistant. Your objective is to assist users by exploring graph topologies, translating plain English queries to modern Cypher statements, and parsing data models. Always prioritize using the specialized get_investments tool if the user specifies investment relationships or corporate portfolios. Always run get-schema first when exploring unfamiliar nodes.",
+  "tools": [
+    {
+      "type": "mcp_server",
+      "name": "neo4j-mcp-core",
+      "url": "${MCP_SERVER_URL}",
+      "headers": {
+        "Authorization": "Basic ${MCP_AUTH_BASE64}"
+      }
+    }
+  ],
+  "base_environment": {
+    "type": "remote",
+    "sources": [
+      {
+        "type": "gcs",
+        "source": "${GCS_BUCKET_NAME}/skills/custom_investment",
+        "target": "/.agent/skills/custom_investment"
+      }
+    ],
+    "env": [
+      {
+        "name": "NEO4J_URI",
+        "value": "${NEO4J_URI}"
+      },
+      {
+        "name": "NEO4J_USER",
+        "value": "${NEO4J_USER}"
+      },
+      {
+        "name": "NEO4J_PASSWORD",
+        "value": "${NEO4J_PASSWORD}"
+      },
+      {
+        "name": "NEO4J_DATABASE",
+        "value": "${NEO4J_DATABASE}"
+      }
+    ]
+  }
+}

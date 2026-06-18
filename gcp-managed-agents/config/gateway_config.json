@@ -1,0 +1,48 @@
+{
+  "name": "projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/agentGateways/neo4j-egress-gateway",
+  "type": "AGENT_TO_ANYWHERE",
+  "description": "Enterprise Egress Agent Gateway monitoring connections to Cloud Run MCP servers and Neo4j endpoints.",
+  "enforcementMode": "AUDIT",
+  "networkConfig": {
+    "egressRoutingRules": [
+      {
+        "description": "Allow and log outbound traffic to the hosted Cloud Run MCP discovery layer.",
+        "destination": {
+          "domainAllowlist": [
+            "*.run.app"
+          ]
+        },
+        "allowedPorts": [
+          "443"
+        ]
+      },
+      {
+        "description": "Allow and log encrypted graph database traffic to the Neo4j deployment.",
+        "destination": {
+          "domainAllowlist": [
+            "*.databases.neo4j.io",
+            "*.neo4jlabs.com"
+          ]
+        },
+        "allowedPorts": [
+          "7687",
+          "7474"
+        ]
+      }
+    ]
+  },
+  "securityExtensions": {
+    "modelArmorPolicyBinding": {
+      "policyTemplate": "projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/modelArmorTemplates/neo4j-agent-armor",
+      "enforcement": "AUDIT_ONLY"
+    },
+    "loggingOptions": {
+      "logLevel": "VERBOSE",
+      "includePayloadMetadata": true
+    }
+  },
+  "labels": {
+    "layer": "networking-perimeter",
+    "mode": "audit-dry-run"
+  }
+}
