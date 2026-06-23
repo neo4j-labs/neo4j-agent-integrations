@@ -23,3 +23,5 @@ _generated/
 
 # Bicep build artifact (az bicep build output)
 microsoft-foundry/infra/infra/main.json
+
+.adk
