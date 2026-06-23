@@ -103,7 +103,7 @@ const RETRIEVAL = {
   maxTotal: 12,
 };
 
-function dedupePush(hits: MemoryHit[], seen: Set<string>, hit: MemoryHit): void {
+function deduplicatePush(hits: MemoryHit[], seen: Set<string>, hit: MemoryHit): void {
   const k = hit.content?.trim();
   if (!k || seen.has(k)) return;
   seen.add(k);
@@ -139,11 +139,11 @@ async function searchPastConversations(
       ]);
 
       for (const m of messages) {
-        dedupePush(hits, seen, { content: m.content, source: 'cross-session', type: 'message', score: m.score });
+        deduplicatePush(hits, seen, { content: m.content, source: 'cross-session', type: 'message', score: m.score });
       }
       for (const s of steps) {
         if (s.actionTaken !== 'direct response' || !s.reasoning) continue;
-        dedupePush(hits, seen, { content: s.reasoning, source: 'cross-session', type: 'reasoning', score: s.score });
+        deduplicatePush(hits, seen, { content: s.reasoning, source: 'cross-session', type: 'reasoning', score: s.score });
       }
     }),
   );
@@ -178,7 +178,7 @@ export async function retrieveMemories(
   const hits: MemoryHit[] = [];
 
   for (const e of longHits) {
-    dedupePush(hits, seen, {
+    deduplicatePush(hits, seen, {
       content: e.description ?? e.name,
       source: 'long-term',
       type: e.type ?? 'entity',
@@ -186,15 +186,15 @@ export async function retrieveMemories(
     });
   }
   for (const m of shortHits) {
-    dedupePush(hits, seen, { content: m.content, source: 'conversation', type: 'message', score: m.score });
+    deduplicatePush(hits, seen, { content: m.content, source: 'conversation', type: 'message', score: m.score });
   }
-  for (const h of crossHits) dedupePush(hits, seen, h);
+  for (const h of crossHits) deduplicatePush(hits, seen, h);
 
   const reasoning = (reasoningSteps as any[])
     .filter(s => s.actionTaken === 'direct response' && s.reasoning)
     .slice(0, RETRIEVAL.maxReasoning);
   for (const s of reasoning) {
-    dedupePush(hits, seen, { content: s.reasoning, source: 'reasoning', type: 'step', score: s.score });
+    deduplicatePush(hits, seen, { content: s.reasoning, source: 'reasoning', type: 'step', score: s.score });
   }
 
   const hasScores = hits.some(h => typeof h.score === 'number');

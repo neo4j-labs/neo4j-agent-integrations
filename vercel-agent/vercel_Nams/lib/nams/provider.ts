@@ -6,7 +6,6 @@
  *   • persists the user message + assistant response to NAMS after every call
  *
  * The model never sees query_memory / store_memory — memory is fully automatic.
- * This is the closest pattern to Mem0 / Letta and the easiest drop-in.
  *
  * @example
  * const memory = createNamsMemory({ apiKey: process.env.MEMORY_API_KEY! });

@@ -8,11 +8,11 @@
  * ├──────────────┼────────────────────────────────────────────────────────────┤
  * │ provider     │ Wraps the model via LanguageModelV3Middleware. Memory is   │
  * │              │ retrieved + persisted automatically, no tool calls needed. │
- * │              │ Like Mem0 — deterministic, runs every turn.                │
+ * │              │
  * ├──────────────┼────────────────────────────────────────────────────────────┤
  * │ tools        │ Exposes query_memory / store_memory as AI SDK tool()s.     │
  * │              │ The model decides when to call them (model-driven).        │
- * │              │ Like Supermemory — tool-call trace visible in UI.          │
+ * │              │ tool-call trace visible in UI.          │
  * └──────────────┴────────────────────────────────────────────────────────────┘
  *
  * Usage — pick the mode that fits:
@@ -30,8 +30,8 @@
  * const tools = nams.tools({ userId });
  * return streamText({ model: openai('gpt-4o-mini'), tools, messages, stopWhen: stepCountIs(10) })
  *   .toUIMessageStreamResponse();
+ * }}
  * ```
- *
  * @example Flag-driven (env var selects mode at runtime)
  * ```ts
  * const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
@@ -67,7 +67,7 @@ import type { NamsMemoryConfig } from './provider';
 import { createNamsMemory } from './provider';
 import { createNamsMemoryTools } from './tools';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types
 
 /** The two NAMS integration modes. */
 export type NamsMode = 'provider' | 'tools';
@@ -81,7 +81,7 @@ export interface NamsFactoryConfig extends NamsConfig {
   persistInteractions?: boolean;
 }
 
-// ─── Unified factory ──────────────────────────────────────────────────────────
+// ─── Unified factory 
 
 /**
  * Create a unified NAMS instance that supports both integration modes.
@@ -89,8 +89,6 @@ export interface NamsFactoryConfig extends NamsConfig {
  * - `.wrap(model, scope)`  → provider mode (transparent middleware)
  * - `.tools(scope)`        → tools mode (explicit query_memory / store_memory)
  *
- * Choose the mode at call-site, or read `NAMS_MODE` from the environment and
- * branch in your route handler.
  */
 export function createNams(config: NamsFactoryConfig) {
   const providerConfig: NamsMemoryConfig = {

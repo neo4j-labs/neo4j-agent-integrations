@@ -7,7 +7,8 @@ import {
   type UIMessage,
 } from 'ai';
 import { createNams, type NamsMode } from '@/lib/nams';
-import { SYSTEM_PROMPT }             from '@/lib/constants';
+import { SYSTEM_PROMPT, NEO4J_MCP } from '@/lib/constants';
+import { getNeo4jMcpTools, isMcpConfigured }  from '@/lib/neo4j-mcp';
 
 // ─── Integration mode
 //
@@ -83,9 +84,10 @@ export async function POST(req: Request) {
   if (!apiKey) return json({ error: 'MEMORY_API_KEY is not set. Check your .env.local file.' }, 503);
 
   const mode = ((process.env.NAMS_MODE ?? 'provider').trim()) as NamsMode;
+  const mcpEnabled = isMcpConfigured();
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`[chat] POST /api/chat  mode=${mode}`);
+  console.log(`[chat] POST /api/chat  mode=${mode}  mcp=${mcpEnabled}`);
   console.log(`[chat]   userId=${userId}  conv=${conversationId ?? 'auto'}  query="${trim(userText)}"`);
 
   const nams = createNams({
@@ -95,33 +97,45 @@ export async function POST(req: Request) {
 
   const scope = { userId, conversationId };
 
+  // Optionally connect to Neo4j MCP for live database queries
+  const mcpResult = mcpEnabled ? await getNeo4jMcpTools().catch((err) => {
+    console.warn('[chat] Neo4j MCP connection failed:', err?.message ?? err);
+    return null;
+  }) : null;
+
   //
   // MODE 1 — Provider: wrap the model; no tools: needed.
   // MODE 2 — Tools: pass tool objects; model drives memory.
+  // In both modes, Neo4j MCP tools are merged in when configured.
   //
   const resolvedModel = mode === 'provider'
     ? nams.wrap(openai(MODEL_ID), scope)
     : openai(MODEL_ID);
 
-  const tools = mode === 'tools'
-    ? nams.tools(scope)
+  const namsTools = mode === 'tools' ? nams.tools(scope) : undefined;
+  const tools = (namsTools || mcpResult?.tools)
+    ? { ...(namsTools ?? {}), ...(mcpResult?.tools ?? {}) }
     : undefined;
 
-  console.log(`[chat]   model=${MODEL_ID}  maxSteps=${MAX_STEPS}`);
+  const systemPrompt = mcpResult
+    ? `${SYSTEM_PROMPT}\n\n${NEO4J_MCP}`
+    : SYSTEM_PROMPT;
+
+  console.log(`[chat]   model=${MODEL_ID}  maxSteps=${MAX_STEPS}  mcpTools=${mcpResult ? Object.keys(mcpResult.tools).length : 0}`);
 
   try {
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         const result = streamText({
           model:    resolvedModel,
-          system:   SYSTEM_PROMPT,
+          system:   systemPrompt,
           messages: coreMessages,
           tools,
-          stopWhen: mode === 'tools' ? stepCountIs(MAX_STEPS) : undefined,
+          stopWhen: (mode === 'tools' || mcpResult) ? stepCountIs(MAX_STEPS) : undefined,
           onFinish: async ({ text, steps, usage }) => {
-            const calls   = steps.flatMap(s => s.toolCalls ?? []);
-            const queries = calls.filter(c => c.toolName === 'query_memory').length;
-            const stores  = calls.filter(c => c.toolName === 'store_memory').length;
+            const calls   = steps.flatMap(s => s.toolCalls ?? []).filter(Boolean);
+            const queries = calls.filter(c => c?.toolName === 'query_memory').length;
+            const stores  = calls.filter(c => c?.toolName === 'store_memory').length;
             console.log(
               `[chat] Done | steps=${steps.length} queries=${queries} stores=${stores} ` +
               `elapsed=${Date.now() - reqStart}ms`,
@@ -149,6 +163,9 @@ export async function POST(req: Request) {
                 });
               }
             }
+
+            // Close the MCP connection after the turn completes
+            if (mcpResult) await mcpResult.close().catch(() => {});
           },
         });
 

@@ -100,10 +100,7 @@ function trim(text: string, maxLen = 80): string {
   return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
 }
 
-/**
- * Derive a stable, meaningful entity name from free-form content.
- * Strips common sentence-starter phrases so the name isn't a truncated sentence.
- */
+
 function deriveEntityName(content: string): string {
   const first = content.split(/[.!?]/)[0].trim();
   const name = first.replace(/^(the user|i am|i'm)\s+/i, '').trim() || first;
