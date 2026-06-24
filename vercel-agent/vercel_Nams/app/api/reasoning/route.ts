@@ -1,4 +1,4 @@
-import { findExistingConversation, type NamsMemoryOptions } from '@/lib/nams-memory-provider';
+import { makeClient, findExistingConversation } from '@/lib/nams/client';
 
 export const runtime = 'nodejs';
 
@@ -15,23 +15,26 @@ export async function GET(req: Request) {
 
   if (!userId) return json({ error: 'Missing userId' }, 400);
 
-  const memoryOptions: NamsMemoryOptions = {
-    apiKey:      process.env.MEMORY_API_KEY ?? '',
-    userId,
-    conversationId,
+  const apiKey = process.env.MEMORY_API_KEY ?? '';
+  if (!apiKey) return json({ error: 'MEMORY_API_KEY not set' }, 503);
+
+  const config = {
+    apiKey,
     workspaceId: process.env.MEMORY_WORKSPACE_ID,
   };
-
-  if (!memoryOptions.apiKey) return json({ error: 'MEMORY_API_KEY not set' }, 503);
+  const scope = { userId, conversationId };
 
   try {
-    const result = await findExistingConversation(memoryOptions);
-    if (!result) {
+    const client = makeClient(config);
+    const convId = await findExistingConversation(client, config, scope);
+
+    if (!convId) {
       console.log(`[reasoning/GET] No conversation found for userId=${userId}`);
       return json({ steps: [] }, 200);
     }
-    console.log(`[reasoning/GET] Listing reasoning steps for convId=${result.convId} userId=${userId}`);
-    const steps = await result.client.reasoning.listSteps(result.convId);
+
+    console.log(`[reasoning/GET] Listing reasoning steps for convId=${convId} userId=${userId}`);
+    const steps = await client.reasoning.listSteps(convId);
     console.log(`[reasoning/GET] Returning ${steps.length} steps`);
     return json({ steps }, 200);
   } catch (err) {

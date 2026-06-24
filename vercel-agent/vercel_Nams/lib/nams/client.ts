@@ -10,7 +10,6 @@ export interface NamsConfig {
 
 export interface NamsScope {
   userId: string;
-  /** Pin to an existing NAMS conversation id (e.g. sent back from a previous response). */
   conversationId?: string;
 }
 
@@ -33,7 +32,7 @@ export interface StoreInput {
 
 export type GraphExtractor = (client: MemoryClient, input: StoreInput) => Promise<void>;
 
-// ─── Client factory ───────────────────────────────────────────────────────────
+// ─── Client factory
 
 export function makeClient(config: NamsConfig): MemoryClient {
   const headers: Record<string, string> = {};
@@ -45,10 +44,7 @@ export function makeClient(config: NamsConfig): MemoryClient {
   });
 }
 
-// ─── Conversation resolution ──────────────────────────────────────────────────
-// In-process cache keyed by workspace + user so multi-tenant deployments can't
-// collide. Does NOT survive Vercel cold starts — warm-instance optimisation only.
-
+// ─── Conversation resolution
 const convCache = new Map<string, string>();
 
 function cacheKey(config: NamsConfig, userId: string): string {
@@ -94,12 +90,38 @@ export async function resolveConversation(
   return conv.id;
 }
 
-// ─── Retrieval ────────────────────────────────────────────────────────────────
+/**
+ * Find an existing conversation without creating one.
+ * Returns null if the user has no conversations yet — used by read-only routes
+ * (e.g. reasoning trace) that should not side-effect a new conversation.
+ */
+export async function findExistingConversation(
+  client: MemoryClient,
+  config: NamsConfig,
+  scope: NamsScope,
+): Promise<string | null> {
+  if (scope.conversationId) return scope.conversationId;
+
+  const key = cacheKey(config, scope.userId);
+  const cached = convCache.get(key);
+  if (cached) return cached;
+
+  try {
+    const convs = await client.shortTerm.listConversations({ userId: scope.userId, limit: 1 });
+    if (convs.length === 0) return null;
+    convCache.set(key, convs[0].id);
+    return convs[0].id;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Retrieval
 
 const RETRIEVAL = {
   currentThreshold: 0.4,
   crossThreshold: 0.4,
-  maxReasoning: 6,   // cap reasoning steps so context can't grow unbounded
+  maxReasoning: 6,
   maxTotal: 12,
 };
 
@@ -202,7 +224,7 @@ export async function retrieveMemories(
   return ranked.slice(0, RETRIEVAL.maxTotal);
 }
 
-// ─── Storage ──────────────────────────────────────────────────────────────────
+// ─── Storage
 
 function entityName(content: string, max = 60): string {
   const s = content.replace(/\s+/g, ' ').trim();
@@ -211,9 +233,8 @@ function entityName(content: string, max = 60): string {
 
 /**
  * Persist a memory:
- *   - `interaction`              → short-term conversation thread
+ *   - `interaction`               → short-term conversation thread
  *   - fact / preference / pattern → long-term graph
- *
  * If `extractor` is provided, real entities + relationships are extracted
  * so the graph actually forms. Otherwise falls back to a single entity node.
  */

@@ -6,7 +6,7 @@ import {
   stepCountIs,
   type UIMessage,
 } from 'ai';
-import { createNams, type NamsMode } from '@/lib/nams';
+import { createNams, createNamsProvider, type NamsMode } from '@/lib/nams';
 import { SYSTEM_PROMPT, NEO4J_MCP } from '@/lib/constants';
 import { getNeo4jMcpTools, isMcpConfigured }  from '@/lib/neo4j-mcp';
 
@@ -90,12 +90,8 @@ export async function POST(req: Request) {
   console.log(`[chat] POST /api/chat  mode=${mode}  mcp=${mcpEnabled}`);
   console.log(`[chat]   userId=${userId}  conv=${conversationId ?? 'auto'}  query="${trim(userText)}"`);
 
-  const nams = createNams({
-    apiKey,
-    workspaceId: process.env.MEMORY_WORKSPACE_ID,
-  });
-
   const scope = { userId, conversationId };
+  const memoryConfig = { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID };
 
   // Optionally connect to Neo4j MCP for live database queries
   const mcpResult = mcpEnabled ? await getNeo4jMcpTools().catch((err) => {
@@ -104,15 +100,17 @@ export async function POST(req: Request) {
   }) : null;
 
   //
-  // MODE 1 — Provider: wrap the model; no tools: needed.
-  // MODE 2 — Tools: pass tool objects; model drives memory.
+  // MODE 1 — Provider (ProviderV3): createNamsProvider wraps the base provider;
+  //           memory is retrieved + persisted transparently via middleware.
+  // MODE 2 — Tools: createNams().tools() exposes query_memory / store_memory
+  //           as explicit tool() calls the model drives itself.
   // In both modes, Neo4j MCP tools are merged in when configured.
   //
   const resolvedModel = mode === 'provider'
-    ? nams.wrap(openai(MODEL_ID), scope)
+    ? createNamsProvider({ ...memoryConfig, baseProvider: openai, scope }).languageModel(MODEL_ID)
     : openai(MODEL_ID);
 
-  const namsTools = mode === 'tools' ? nams.tools(scope) : undefined;
+  const namsTools = mode === 'tools' ? createNams(memoryConfig).tools(scope) : undefined;
   const tools = (namsTools || mcpResult?.tools)
     ? { ...(namsTools ?? {}), ...(mcpResult?.tools ?? {}) }
     : undefined;

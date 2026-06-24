@@ -54,11 +54,13 @@ export type {
   NamsToolsOptions, QueryInput, StoreInput as ToolStoreInput,
   QueryOutput, StoreOutput
 } from './tools';
+export type { NamsProviderOptions } from './nams-provider';
 
-export { makeClient, resolveConversation, retrieveMemories, storeMemory } from './client';
+export { makeClient, resolveConversation, findExistingConversation, retrieveMemories, storeMemory } from './client';
 export { createGraphExtractor } from './extract';
 export { createNamsMemory } from './provider';
 export { createNamsMemoryTools, NamsMemoryTools } from './tools';
+export { createNamsProvider } from './nams-provider';
 
 import type { LanguageModel } from 'ai';
 import type { LanguageModelV3 } from '@ai-sdk/provider';
@@ -67,21 +69,15 @@ import type { NamsMemoryConfig } from './provider';
 import { createNamsMemory } from './provider';
 import { createNamsMemoryTools } from './tools';
 
-// ─── Types
-
 /** The two NAMS integration modes. */
 export type NamsMode = 'provider' | 'tools';
 
 export interface NamsFactoryConfig extends NamsConfig {
-  /** When set, build a real entity graph per turn (one extra model call). */
   extractionModel?: LanguageModel;
-  /** Max memories injected per turn when using provider mode (default: 6). */
   injectLimit?: number;
-  /** Persist each turn to NAMS short-term memory (default: true). */
   persistInteractions?: boolean;
 }
 
-// ─── Unified factory 
 
 /**
  * Create a unified NAMS instance that supports both integration modes.
@@ -106,7 +102,7 @@ export function createNams(config: NamsFactoryConfig) {
     /**
      * MODE 1 — Provider (transparent).
      * Wrap any LanguageModel; memory is retrieved + persisted automatically.
-     * Do NOT also pass memory tools — the middleware owns the full lifecycle.
+     * No need to pass memory tools — the middleware owns the full lifecycle.
      */
     wrap(model: LanguageModelV3, scope: NamsScope): LanguageModelV3 {
       return memory.wrap(model, scope);

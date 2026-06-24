@@ -19,7 +19,6 @@ import {
   makeClient,
   resolveConversation,
   retrieveMemories,
-  storeMemory,
   type NamsConfig,
   type NamsScope,
   type GraphExtractor,
@@ -179,9 +178,9 @@ export function createNamsMemory(config: NamsMemoryConfig) {
   const persist = config.persistInteractions ?? true;
 
   return {
-    wrap(model: LanguageModelV3, scope: NamsScope): LanguageModelV3 {
+    wrap(model: LanguageModelV3, scope: NamsScope, providerId?: string): LanguageModelV3 {
       const middleware = buildMiddleware(config, scope, extractor, injectLimit, persist);
-      return wrapLanguageModel({ model, middleware });
+      return wrapLanguageModel({ model, middleware, ...(providerId && { providerId }) });
     },
   };
 }
