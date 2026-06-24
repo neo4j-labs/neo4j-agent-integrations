@@ -74,7 +74,7 @@ export function createGraphExtractor(model: LanguageModel): GraphExtractor {
         if (from && to) {
           await addRelation
             .call(lt, { from, to, type: r.type })
-            .catch((e: unknown) => console.warn('[nams] addRelation failed:', e));
+            .catch((e: unknown) => console.warn('[nams:extract] addRelation failed:', e));
         }
       }
     } else if (object.relationships.length > 0) {

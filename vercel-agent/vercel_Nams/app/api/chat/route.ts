@@ -1,6 +1,6 @@
 import { openai }   from '@ai-sdk/openai';
 import {
-  streamText,
+  ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
   stepCountIs,
@@ -124,51 +124,51 @@ export async function POST(req: Request) {
   console.log(`[chat]   model=${MODEL_ID}  maxSteps=${MAX_STEPS}  mcpTools=${mcpResult ? Object.keys(mcpResult.tools).length : 0}`);
 
   try {
+    const agent = new ToolLoopAgent({
+      model:        resolvedModel,
+      instructions: systemPrompt,
+      tools,
+      stopWhen: (mode === 'tools' || mcpResult) ? stepCountIs(MAX_STEPS) : stepCountIs(1),
+      onFinish: async ({ text, steps, usage }: { text: string; steps: any[]; usage: any }) => {
+        const calls   = steps.flatMap((s: any) => s.toolCalls ?? []).filter(Boolean);
+        const queries = calls.filter((c: any) => c?.toolName === 'query_memory').length;
+        const stores  = calls.filter((c: any) => c?.toolName === 'store_memory').length;
+        console.log(
+          `[chat] Done | steps=${steps.length} queries=${queries} stores=${stores} ` +
+          `elapsed=${Date.now() - reqStart}ms`,
+        );
+        if (usage) console.log(`[chat]   tokens in=${usage.inputTokens} out=${usage.outputTokens}`);
+        if (text)  console.log(`[chat]   response="${trim(text)}"`);
+
+        if (steps.length > 0 && mode === 'tools') {
+          const { makeClient: mk, resolveConversation: rc } = await import('@/lib/nams');
+          const client = mk({ apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID });
+          const convId = await rc(client, { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID }, scope)
+            .catch(() => '');
+          if (convId) {
+            steps.forEach((step: any, i: number) => {
+              const toolNames = (step.toolCalls ?? []).map((c: any) => c.toolName).join(', ');
+              const reasoning = (step.text || `Step ${i + 1}${toolNames ? ` — ${toolNames}` : ''}`).slice(0, 500);
+              const actionTaken = toolNames || 'direct response';
+              const result = (step.toolResults ?? [])
+                .map((r: any) => JSON.stringify(r?.output ?? r).slice(0, 150))
+                .join('; ')
+                .slice(0, 500);
+              client.reasoning
+                .recordStep({ conversationId: convId, reasoning, actionTaken, result })
+                .catch(() => {});
+            });
+          }
+        }
+
+        // Close the MCP connection after the turn completes
+        if (mcpResult) await mcpResult.close().catch(() => {});
+      },
+    });
+
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        const result = streamText({
-          model:    resolvedModel,
-          system:   systemPrompt,
-          messages: coreMessages,
-          tools,
-          stopWhen: (mode === 'tools' || mcpResult) ? stepCountIs(MAX_STEPS) : undefined,
-          onFinish: async ({ text, steps, usage }) => {
-            const calls   = steps.flatMap(s => s.toolCalls ?? []).filter(Boolean);
-            const queries = calls.filter(c => c?.toolName === 'query_memory').length;
-            const stores  = calls.filter(c => c?.toolName === 'store_memory').length;
-            console.log(
-              `[chat] Done | steps=${steps.length} queries=${queries} stores=${stores} ` +
-              `elapsed=${Date.now() - reqStart}ms`,
-            );
-            if (usage) console.log(`[chat]   tokens in=${usage.inputTokens} out=${usage.outputTokens}`);
-            if (text)  console.log(`[chat]   response="${trim(text)}"`);
-
-            if (steps.length > 0 && mode === 'tools') {
-              const { makeClient: mk, resolveConversation: rc } = await import('@/lib/nams');
-              const client = mk({ apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID });
-              const convId = await rc(client, { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID }, scope)
-                .catch(() => '');
-              if (convId) {
-                steps.forEach((step, i) => {
-                  const toolNames = (step.toolCalls ?? []).map((c: any) => c.toolName).join(', ');
-                  const reasoning = (step.text || `Step ${i + 1}${toolNames ? ` — ${toolNames}` : ''}`).slice(0, 500);
-                  const actionTaken = toolNames || 'direct response';
-                  const result = (step.toolResults ?? [])
-                    .map((r: any) => JSON.stringify(r?.output ?? r).slice(0, 150))
-                    .join('; ')
-                    .slice(0, 500);
-                  client.reasoning
-                    .recordStep({ conversationId: convId, reasoning, actionTaken, result })
-                    .catch(() => {});
-                });
-              }
-            }
-
-            // Close the MCP connection after the turn completes
-            if (mcpResult) await mcpResult.close().catch(() => {});
-          },
-        });
-
+        const result = await agent.stream({ messages: coreMessages });
         writer.merge(result.toUIMessageStream());
       },
       onError: (err) => {

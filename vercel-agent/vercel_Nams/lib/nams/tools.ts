@@ -27,7 +27,7 @@ import {
 } from './client';
 import { createGraphExtractor } from './extract';
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
+// ─── Schemas
 
 const querySchema = z.object({
   query: z.string().describe('Keywords or phrase to search in memory'),
@@ -54,18 +54,15 @@ export type StoreOutput = { stored: boolean; type: string; preview: string; mess
 // ─── Options
 
 export interface NamsToolsOptions extends NamsConfig, NamsScope {
-  /** When set, build a real entity graph on store (one extra model call). */
   extractionModel?: LanguageModel;
 }
 
-// ─── Factory
-
-/** Returns `{ query_memory, store_memory }` ready to pass to `streamText({ tools })`. */
 export function createNamsMemoryTools(options: NamsToolsOptions) {
   const client = makeClient(options);
   const scope: NamsScope = { userId: options.userId, conversationId: options.conversationId };
   const extractor = options.extractionModel ? createGraphExtractor(options.extractionModel) : undefined;
 
+  console.log(`[nams:tools] createNamsMemoryTools — userId=${options.userId} graphExtractor=${!!extractor}`);
   let convIdPromise: Promise<string> | null = null;
   const getConvId = (): Promise<string> =>
     (convIdPromise ??= resolveConversation(client, options, scope));
@@ -77,7 +74,9 @@ export function createNamsMemoryTools(options: NamsToolsOptions) {
     inputSchema: zodSchema(querySchema),
     execute: async ({ query, limit }) => {
       const convId = await getConvId();
+      console.log(`[nams:tools] query_memory — convId=${convId} query="${query.slice(0, 60)}" limit=${limit}`);
       const memories = await retrieveMemories(client, scope, convId, query, limit);
+      console.log(`[nams:tools] query_memory — found ${memories.length} memories`);
       if (memories.length === 0)
         return { found: false, message: 'No relevant memories found.', memories: [] };
       return { found: true, count: memories.length, memories };
@@ -91,8 +90,10 @@ export function createNamsMemoryTools(options: NamsToolsOptions) {
     inputSchema: zodSchema(storeSchema),
     execute: async ({ content, type, confidence, tags }) => {
       const convId = await getConvId();
+      console.log(`[nams:tools] store_memory — type=${type} confidence=${confidence} convId=${convId} preview="${content.slice(0, 60)}"`);
       try {
         await storeMemory(client, convId, { content, type, confidence, tags }, { extractor });
+        console.log(`[nams:tools] store_memory — stored OK`);
         return {
           stored: true,
           type,
@@ -100,7 +101,7 @@ export function createNamsMemoryTools(options: NamsToolsOptions) {
           message: `Memory stored (${type}, confidence=${confidence})`,
         };
       } catch (err) {
-        console.error('[nams] store_memory failed:', err);
+        console.error('[nams:tools] store_memory failed:', err);
         return { stored: false, type, preview: content.slice(0, 80), message: 'Failed to store memory.' };
       }
     },
@@ -109,10 +110,6 @@ export function createNamsMemoryTools(options: NamsToolsOptions) {
   return { query_memory, store_memory };
 }
 
-/**
- * Class-style alternative: construct once with shared config, call
- * `.forUser(userId, conversationId?)` per-request.
- */
 export class NamsMemoryTools {
   constructor(private readonly base: Omit<NamsToolsOptions, 'userId' | 'conversationId'>) { }
 

@@ -117,7 +117,6 @@ function buildMiddleware(
 
   return {
     specificationVersion: 'v3',
-
     transformParams: async ({ params }) => {
       const userText = lastUserText(params.prompt);
       if (!userText) return params;
@@ -126,18 +125,24 @@ function buildMiddleware(
 
       const convId = await getConvId();
       const memories = await retrieveMemories(client, scope, convId, userText, injectLimit)
-        .catch(e => { console.warn('[nams] retrieve failed:', e); return [] as MemoryHit[]; });
+        .catch(e => { console.warn('[nams:provider] retrieve failed:', e); return [] as MemoryHit[]; });
 
-      if (memories.length === 0) return params;
+      if (memories.length === 0) {
+        console.log(`[nams:provider] No memories found — prompt unchanged`);
+        return params;
+      }
 
       injectIntoLastUser(params.prompt, formatMemoryBlock(memories));
       return params;
     },
 
+    // Called by the AI SDK for non-streaming model calls.
+    // PURPOSE: after the model responds, persist both the user message and
+    // assistant reply to NAMS short-term memory for future retrieval.
     wrapGenerate: async ({ doGenerate, params }) => {
       const result = await doGenerate();
       await persistTurn(params, textFromResult(result))
-        .catch(e => console.warn('[nams] persist failed:', e));
+        .catch(e => console.warn('[nams:provider] persist failed:', e));
       return result;
     },
 
@@ -156,7 +161,7 @@ function buildMiddleware(
         },
         async flush() {
           await persistTurn(params, text)
-            .catch(e => console.warn('[nams] persist failed:', e));
+            .catch(e => console.warn('[nams:provider] persist failed:', e));
         },
       });
 
@@ -165,11 +170,8 @@ function buildMiddleware(
   };
 }
 
-// ─── Public API
-
 /**
- * Create a NAMS memory provider.
- * Call `.wrap(model, scope)` to get a memory-augmented LanguageModel.
+ * Create a NAMS memory provider to getmemory
  */
 export function createNamsMemory(config: NamsMemoryConfig) {
   const extractor = config.extractionModel ? createGraphExtractor(config.extractionModel) : undefined;
@@ -177,10 +179,6 @@ export function createNamsMemory(config: NamsMemoryConfig) {
   const persist = config.persistInteractions ?? true;
 
   return {
-    /**
-     * Wrap any LanguageModel with transparent NAMS memory.
-     * Memory is retrieved and persisted automatically — no tools needed.
-     */
     wrap(model: LanguageModelV3, scope: NamsScope): LanguageModelV3 {
       const middleware = buildMiddleware(config, scope, extractor, injectLimit, persist);
       return wrapLanguageModel({ model, middleware });
