@@ -254,13 +254,7 @@ export async function searchUserMemoryContext(
     console.log(`${tag('UserSearch')} Total user-level hits: ${results.length} (${Date.now() - t0}ms)`);
     return results;
   } catch (err: unknown) {
-    console.warn(
-      '%s Failed to list conversations for user %s (%dms):',
-      tag('UserSearch'),
-      userId,
-      Date.now() - t0,
-      err,
-    );
+    console.warn('%s Failed to list conversations for user %s (%dms):', tag('UserSearch'), userId, Date.now() - t0, err);
     return [];
   }
 }
@@ -289,7 +283,7 @@ export async function searchPreviousConversations(
         }
       }
     } catch (err) {
-      console.warn(`${tag('PrevSearch')} Failed to search conversation %s:`, convId, err);
+      console.warn('%s Failed to search conversation %s:', tag('PrevSearch'), convId, err);
     }
   }
   console.log(`${tag('PrevSearch')} Total previous-conversation hits: ${results.length} (${Date.now() - t0}ms)`);
@@ -404,7 +398,7 @@ export async function deleteConversation(conversationId: string): Promise<void> 
     await getSdkClient().shortTerm.deleteConversation(conversationId);
     console.log(`${tag('Delete')} ✓ Conversation ${conversationId} deleted`);
   } catch (err) {
-    console.error('%s Failed to delete conversation %s:', tag('Delete'), conversationId, err);
+    console.error(`${tag('Delete')} Failed to delete conversation %s:`, conversationId, err);
     throw err;
   }
 }
