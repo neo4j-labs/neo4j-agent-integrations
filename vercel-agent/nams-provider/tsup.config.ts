@@ -1,0 +1,16 @@
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: ['src/index.ts'],
+  format: ['cjs', 'esm'],
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  treeshake: true,
+  external: [
+    'ai',
+    '@ai-sdk/provider',
+    '@neo4j-labs/agent-memory',
+    'zod',
+  ],
+});
