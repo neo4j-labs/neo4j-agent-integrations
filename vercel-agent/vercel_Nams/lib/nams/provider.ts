@@ -9,7 +9,7 @@
  *
  * @example
  * const memory = createNamsMemory({ apiKey: process.env.MEMORY_API_KEY! });
- * const model  = memory.wrap(openai('gpt-4o-mini'), { userId });
+ * const model  = memory.wrap(openai('gpt-5.4-mini'), { userId });
  * return streamText({ model, messages }).toUIMessageStreamResponse();
  */
 

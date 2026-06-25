@@ -17,7 +17,7 @@
  *
  * // Drop-in replacement for any model — memory is fully automatic.
  * const { textStream } = streamText({
- *   model: nams.languageModel('gpt-4o-mini'),
+ *   model: nams.languageModel('gpt-5.4-mini'),
  *   messages,
  * });
  * ```
@@ -50,7 +50,7 @@ export interface NamsProviderOptions extends NamsConfig {
 
 /**
  * Returns a ProviderV3-compatible NAMS provider that can be registered with the
- * Vercel AI SDK via `experimental_createProviderRegistry`.
+ * Vercel AI SDK via `createProviderRegistry`.
  *
  * Every `languageModel(modelId)` call resolves the model through `baseProvider`,
  * then wraps it with the NAMS memory middleware transparently.

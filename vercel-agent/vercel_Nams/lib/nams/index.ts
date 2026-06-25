@@ -20,7 +20,7 @@
  * @example Provider mode (transparent, no tools in streamText)
  * ```ts
  * const nams = createNams({ apiKey: process.env.MEMORY_API_KEY! });
- * const model = nams.wrap(openai('gpt-4o-mini'), { userId });
+ * const model = nams.wrap(openai('gpt-5.4-mini'), { userId });
  * return streamText({ model, messages }).toUIMessageStreamResponse();
  * ```
  *
@@ -28,7 +28,7 @@
  * ```ts
  * const nams  = createNams({ apiKey: process.env.MEMORY_API_KEY! });
  * const tools = nams.tools({ userId });
- * return streamText({ model: openai('gpt-4o-mini'), tools, messages, stopWhen: stepCountIs(10) })
+ * return streamText({ model: openai('gpt-5.4-mini'), tools, messages, stopWhen: stepCountIs(10) })
  *   .toUIMessageStreamResponse();
  * }}
  * ```
@@ -38,11 +38,11 @@
  * const mode = (process.env.NAMS_MODE ?? 'provider') as NamsMode;
  *
  * if (mode === 'provider') {
- *   const model = nams.wrap(openai('gpt-4o-mini'), { userId });
+ *   const model = nams.wrap(openai('gpt-5.4-mini'), { userId });
  *   return streamText({ model, messages }).toUIMessageStreamResponse();
  * } else {
  *   const tools = nams.tools({ userId });
- *   return streamText({ model: openai('gpt-4o-mini'), tools, messages, stopWhen: stepCountIs(10) })
+ *   return streamText({ model: openai('gpt-5.4-mini'), tools, messages, stopWhen: stepCountIs(10) })
  *     .toUIMessageStreamResponse();
  * }
  * ```

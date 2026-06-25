@@ -28,7 +28,7 @@ import { getNeo4jMcpTools, isMcpConfigured }  from '@/lib/neo4j-mcp';
 export const runtime = 'nodejs';
 
 const MAX_STEPS = 10;
-const MODEL_ID  = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const MODEL_ID  = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 
 function trim(text: string, max = 80): string {
   const s = text.replace(/\s+/g, ' ').trim();
