@@ -1,7 +1,7 @@
 
 import { openai } from '@ai-sdk/openai';
 import {
-  streamText,
+  ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
   stepCountIs,
@@ -287,13 +287,12 @@ export async function POST(req: Request) {
           `Agent loop starting | model: gpt-5.4-mini | maxSteps: ${MAX_TOOL_STEPS} | hasStrongMemory: ${hasStrongMemory}`,
         );
 
-        const result = streamText({
+        const agent = new ToolLoopAgent({
           model: openai('gpt-5.4-mini'),
-          system: `${BASE_SYSTEM_PROMPT}${memoryContextStr}`,
-          messages: [...historyMsgs, ...uiConversationMsgs],
+          instructions: `${BASE_SYSTEM_PROMPT}${memoryContextStr}`,
           tools: neo4jTools,
           stopWhen: stepCountIs(MAX_TOOL_STEPS),
-          onFinish: async ({ text, steps }) => {
+          onFinish: async ({ text, steps }: { text: string; steps: any[] }) => {
             console.log(`Agent finished in ${steps.length} step(s)`);
             if (text) {
               //6: store assistant response
@@ -314,6 +313,7 @@ export async function POST(req: Request) {
           },
         });
 
+        const result = await agent.stream({ messages: [...historyMsgs, ...uiConversationMsgs] as any });
         writer.merge(result.toUIMessageStream());
 
         const title = await titlePromise;

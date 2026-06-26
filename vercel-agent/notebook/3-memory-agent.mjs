@@ -32,22 +32,22 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { generateText, stepCountIs } from 'ai';
+import { ToolLoopAgent, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { MemoryClient } from '@neo4j-labs/agent-memory';
 import { getModel } from './providers.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const PORT   = process.env.MCP_PORT || '8443';
-const mcpUrl = process.env.MCP_URL  || `http://localhost:${PORT}/mcp`;
-const creds  = Buffer.from(
+const PORT = process.env.MCP_PORT || '8443';
+const mcpUrl = process.env.MCP_URL || `http://localhost:${PORT}/mcp`;
+const creds = Buffer.from(
   `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
 ).toString('base64');
 
 const MEMORY_API_KEY = process.env.MEMORY_API_KEY;
 const MEMORY_WORKSPACE_ID = process.env.MEMORY_WORKSPACE_ID;
 const MEMORY_ENDPOINT = process.env.MEMORY_ENDPOINT; // optional: override default NAMS endpoint
-const DEMO_USER_ID   = process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
+const DEMO_USER_ID = process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
 
 if (!MEMORY_API_KEY) {
   console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
@@ -73,8 +73,8 @@ console.log(`Memory session: ${convId}`);
 // Set MCP_URL to use a hosted remote MCP server; defaults to local.
 const mcpClient = await createMCPClient({
   transport: {
-    type:    'http',
-    url:     mcpUrl,
+    type: 'http',
+    url: mcpUrl,
     headers: { Authorization: `Basic ${creds}` },
   },
 });
@@ -130,13 +130,13 @@ async function runWithMemory(query) {
 
   const systemWithContext = await buildContext(query);
 
-  const { text } = await generateText({
+  const agent = new ToolLoopAgent({
     model,
-    system:   systemWithContext,
-    prompt:   query,
-    tools:    mcpTools,
+    instructions: systemWithContext,
+    tools: mcpTools,
     stopWhen: stepCountIs(10),
   });
+  const { text } = await agent.generate({ prompt: query });
 
   console.log(`[AGENT]: ${text}`);
   await saveInteraction(query, text);

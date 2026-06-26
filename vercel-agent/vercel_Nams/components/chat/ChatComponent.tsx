@@ -144,7 +144,8 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
                 const toolParts      = msg.parts.filter(
                   (p): p is DynamicToolUIPart =>
                     p.type === 'dynamic-tool' &&
-                    (p.toolName === 'query_memory' || p.toolName === 'store_memory'),
+                    p.toolName !== 'query_memory' &&
+                    p.toolName !== 'store_memory',
                 );
                 const hasOverlay = toolParts.length > 0 || isLive || completedSteps.length > 0;
 

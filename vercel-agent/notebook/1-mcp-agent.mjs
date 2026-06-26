@@ -16,13 +16,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { generateText, stepCountIs } from 'ai';
+import { ToolLoopAgent, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { getModel } from './providers.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const PORT   = process.env.MCP_PORT || '8443';
-const mcpUrl = process.env.MCP_URL  || `http://localhost:${PORT}/mcp`;
+const PORT = process.env.MCP_PORT || '8443';
+const mcpUrl = process.env.MCP_URL || `http://localhost:${PORT}/mcp`;
 const creds = Buffer.from(
   `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
 ).toString('base64');
@@ -32,8 +32,8 @@ const creds = Buffer.from(
 // Credentials are passed per-request via Basic Auth (not as env vars on the server process).
 const mcpClient = await createMCPClient({
   transport: {
-    type:    'http',
-    url:     mcpUrl,
+    type: 'http',
+    url: mcpUrl,
     headers: { Authorization: `Basic ${creds}` },
   },
 });
@@ -49,13 +49,13 @@ function createAgent({ model, name, instruction, tools }) {
 
 async function askGraph(agent, query) {
   console.log(`Query: ${query}`);
-  const { text, steps } = await generateText({
-    model:    agent.model,
-    system:   agent.instruction,
-    prompt:   query,
-    tools:    agent.tools,
-    stopWhen: stepCountIs(10),  // AI SDK v6: replaces maxSteps
+  const instance = new ToolLoopAgent({
+    model: agent.model,
+    instructions: agent.instruction,
+    tools: agent.tools,
+    stopWhen: stepCountIs(10),
   });
+  const { text, steps } = await instance.generate({ prompt: query });
   console.log(`\nResult: ${text}`);
   console.log(`[Completed in ${steps.length} step(s)]\n`);
   return text;
@@ -66,7 +66,7 @@ const model = await getModel();
 
 const mcpAgent = createAgent({
   model,
-  name:        'neo4j_explorer',
+  name: 'neo4j_explorer',
   instruction: `You are a graph database assistant. Your job is to answer user questions by querying Neo4j.
 Always run 'get-schema' first if you are unfamiliar with the graph structure.
 Use Cypher queries to retrieve data.

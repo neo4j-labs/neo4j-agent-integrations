@@ -16,18 +16,18 @@
  * });
  *
  * // Drop-in replacement for any model — memory is fully automatic.
- * const { textStream } = streamText({
+ * const agent = new ToolLoopAgent({
  *   model: nams.languageModel('gpt-5.4-mini'),
- *   messages,
  * });
+ * const result = await agent.run({ messages });
  * ```
  */
 
 import type { ProviderV3, LanguageModelV3, EmbeddingModelV3, ImageModelV3 } from '@ai-sdk/provider';
 import { NoSuchModelError } from '@ai-sdk/provider';
 import type { LanguageModel } from 'ai';
-import type { NamsConfig, NamsScope } from './client';
 import { createNamsMemory } from './provider';
+import { NamsConfig, NamsScope } from './types';
 
 export interface NamsProviderOptions extends NamsConfig {
   baseProvider: (modelId: string) => LanguageModelV3;
@@ -47,9 +47,9 @@ export interface NamsProviderOptions extends NamsConfig {
 /**
  * Returns a ProviderV3-compatible NAMS provider that can be registered with the
  * Vercel AI SDK via `createProviderRegistry`.
- *
- * Every `languageModel(modelId)` call resolves the model through `baseProvider`,
- * then wraps it with the NAMS memory middleware transparently.
+  * ─── Step 1: Entry point — createNamsProvider() is the public factory that
+  * returns a ProviderV3 object with specificationVersion + the three required
+  * model factory methods (languageModel, embeddingModel, imageModel).
  */
 export function createNamsProvider(options: NamsProviderOptions): ProviderV3 {
   const { baseProvider, scope, ...memoryConfig } = options;

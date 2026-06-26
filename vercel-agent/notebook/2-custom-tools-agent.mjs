@@ -17,15 +17,15 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
+import { ToolLoopAgent, tool, jsonSchema, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import neo4j from 'neo4j-driver';
 import { getModel } from './providers.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const PORT   = process.env.MCP_PORT || '8443';
-const mcpUrl = process.env.MCP_URL  || `http://localhost:${PORT}/mcp`;
-const creds  = Buffer.from(
+const PORT = process.env.MCP_PORT || '8443';
+const mcpUrl = process.env.MCP_URL || `http://localhost:${PORT}/mcp`;
+const creds = Buffer.from(
   `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
 ).toString('base64');
 
@@ -33,8 +33,8 @@ const creds  = Buffer.from(
 // Set MCP_URL to use a hosted remote MCP server; defaults to local.
 const mcpClient = await createMCPClient({
   transport: {
-    type:    'http',
-    url:     mcpUrl,
+    type: 'http',
+    url: mcpUrl,
     headers: { Authorization: `Basic ${creds}` },
   },
 });
@@ -74,13 +74,14 @@ const getInvestments = tool({
 // ── Build agent with MCP tools + custom tool ──────────────────────────────────
 const model = await getModel();
 
-const { text, steps } = await generateText({
+const agent = new ToolLoopAgent({
   model,
-  system:   'You are a helpful assistant with access to a Neo4j graph database containing company data. Use the available tools to answer questions.',
-  prompt:   'Which companies did Google invest in?',
-  tools:    { ...mcpTools, getInvestments },  // custom tool merged with MCP tools
+  instructions: 'You are a helpful assistant with access to a Neo4j graph database containing company data. Use the available tools to answer questions.',
+  tools: { ...mcpTools, getInvestments },
   stopWhen: stepCountIs(10),
 });
+
+const { text, steps } = await agent.generate({ prompt: 'Which companies did Google invest in?' });
 
 console.log('\nResult:', text);
 console.log(`[Completed in ${steps.length} step(s)]`);

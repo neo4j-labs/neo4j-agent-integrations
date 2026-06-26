@@ -141,7 +141,7 @@ export async function POST(req: Request) {
         if (usage) console.log(`[chat]   tokens in=${usage.inputTokens} out=${usage.outputTokens}`);
         if (text)  console.log(`[chat]   response="${trim(text)}"`);
 
-        if (steps.length > 0 && mode === 'tools') {
+        if (steps.length > 0) {
           const { makeClient: mk, resolveConversation: rc } = await import('@neo4j-labs/nams-ai-provider');
           const client = mk({ apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID });
           const convId = await rc(client, { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID }, scope)

@@ -2,7 +2,7 @@ import { generateText, Output, zodSchema } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { MemoryClient } from '@neo4j-labs/agent-memory';
-import type { GraphExtractor, StoreInput } from './client';
+import { GraphExtractor, StoreInput } from './types';
 
 const graphSchema = z.object({
   entities: z
