@@ -13,7 +13,7 @@
  *                                      npm install @ai-sdk/mistral
  *
  * Optionally set AI_MODEL to override the provider default:
- *   AI_MODEL=gpt-4o-mini
+ *   AI_MODEL=gpt-5.4-mini
  */
 
 const PROVIDER_DEFAULTS = {

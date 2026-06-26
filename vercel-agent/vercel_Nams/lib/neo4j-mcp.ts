@@ -3,6 +3,7 @@
  */
 
 import { createMCPClient } from '@ai-sdk/mcp';
+import type { McpConfig } from '@neo4j-labs/nams-ai-provider';
 
 export interface Neo4jMcpConfig {
   url: string;
@@ -45,6 +46,17 @@ export async function getNeo4jMcpTools(): Promise<{
     tools,
     close: () => client.close(),
   };
+}
+
+/**
+ * Returns the McpConfig format expected by createNams().toolsWithMcp().
+ * Use this in tools mode; for provider mode use getNeo4jMcpTools() directly.
+ */
+export function getNamsMcpConfig(): McpConfig | undefined {
+  const config = getMcpConfig();
+  if (!config) return undefined;
+  const creds = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+  return { url: config.url, headers: { Authorization: `Basic ${creds}` } };
 }
 
 /** Returns true if enough MCP env vars are set to attempt a connection. */

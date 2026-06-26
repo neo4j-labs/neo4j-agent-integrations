@@ -1,4 +1,4 @@
-import { makeClient, findExistingConversation } from '@/lib/nams/client';
+import { makeClient, findExistingConversation } from '@neo4j-labs/nams-ai-provider';
 
 export const runtime = 'nodejs';
 

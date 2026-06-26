@@ -5,10 +5,11 @@ import {
   createUIMessageStreamResponse,
   stepCountIs,
   type UIMessage,
+  type ToolSet,
 } from 'ai';
-import { createNams, createNamsProvider, type NamsMode } from '@/lib/nams';
+import { createNams, createNamsProvider, type NamsMode } from '@neo4j-labs/nams-ai-provider';
 import { SYSTEM_PROMPT, NEO4J_MCP } from '@/lib/constants';
-import { getNeo4jMcpTools, isMcpConfigured }  from '@/lib/neo4j-mcp';
+import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured } from '@/lib/neo4j-mcp';
 
 // ─── Integration mode
 //
@@ -93,40 +94,42 @@ export async function POST(req: Request) {
   const scope = { userId, conversationId };
   const memoryConfig = { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID };
 
-  // Optionally connect to Neo4j MCP for live database queries
-  const mcpResult = mcpEnabled ? await getNeo4jMcpTools().catch((err) => {
-    console.warn('[chat] Neo4j MCP connection failed:', err?.message ?? err);
-    return null;
-  }) : null;
-
-  //
-  // MODE 1 — Provider (ProviderV3): createNamsProvider wraps the base provider;
-  //           memory is retrieved + persisted transparently via middleware.
-  // MODE 2 — Tools: createNams().tools() exposes query_memory / store_memory
-  //           as explicit tool() calls the model drives itself.
-  // In both modes, Neo4j MCP tools are merged in when configured.
   //
   const resolvedModel = mode === 'provider'
     ? createNamsProvider({ ...memoryConfig, baseProvider: openai, scope }).languageModel(MODEL_ID)
     : openai(MODEL_ID);
 
-  const namsTools = mode === 'tools' ? createNams(memoryConfig).tools(scope) : undefined;
-  const tools = (namsTools || mcpResult?.tools)
-    ? { ...(namsTools ?? {}), ...(mcpResult?.tools ?? {}) }
-    : undefined;
+  // Provider mode: MCP connection is separate (transparent middleware handles memory)
+  const mcpResult = mode === 'provider' && mcpEnabled
+    ? await getNeo4jMcpTools().catch((err) => {
+        console.warn('[chat] Neo4j MCP connection failed:', err?.message ?? err);
+        return null;
+      })
+    : null;
 
-  const systemPrompt = mcpResult
+  // Tools mode: toolsWithMcp merges NAMS memory tools + MCP into one call
+  const namsResult = mode === 'tools'
+    ? await createNams(memoryConfig)
+        .toolsWithMcp(scope, getNamsMcpConfig())
+        .catch(async (err) => {
+          console.warn('[chat] MCP unavailable, falling back to NAMS tools only:', err?.message ?? err);
+          return createNams(memoryConfig).toolsWithMcp(scope);
+        })
+    : null;
+
+  const tools = (namsResult?.tools ?? mcpResult?.tools) as ToolSet | undefined;
+  const systemPrompt = (mcpResult || (mode === 'tools' && mcpEnabled))
     ? `${SYSTEM_PROMPT}\n\n${NEO4J_MCP}`
     : SYSTEM_PROMPT;
 
-  console.log(`[chat]   model=${MODEL_ID}  maxSteps=${MAX_STEPS}  mcpTools=${mcpResult ? Object.keys(mcpResult.tools).length : 0}`);
+  console.log(`[chat]   model=${MODEL_ID}  maxSteps=${MAX_STEPS}  tools=${Object.keys(tools ?? {}).length}`);
 
   try {
     const agent = new ToolLoopAgent({
       model:        resolvedModel,
       instructions: systemPrompt,
       tools,
-      stopWhen: (mode === 'tools' || mcpResult) ? stepCountIs(MAX_STEPS) : stepCountIs(1),
+      stopWhen: (namsResult || mcpResult) ? stepCountIs(MAX_STEPS) : stepCountIs(1),
       onFinish: async ({ text, steps, usage }: { text: string; steps: any[]; usage: any }) => {
         const calls   = steps.flatMap((s: any) => s.toolCalls ?? []).filter(Boolean);
         const queries = calls.filter((c: any) => c?.toolName === 'query_memory').length;
@@ -139,7 +142,7 @@ export async function POST(req: Request) {
         if (text)  console.log(`[chat]   response="${trim(text)}"`);
 
         if (steps.length > 0 && mode === 'tools') {
-          const { makeClient: mk, resolveConversation: rc } = await import('@/lib/nams');
+          const { makeClient: mk, resolveConversation: rc } = await import('@neo4j-labs/nams-ai-provider');
           const client = mk({ apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID });
           const convId = await rc(client, { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID }, scope)
             .catch(() => '');
@@ -159,8 +162,8 @@ export async function POST(req: Request) {
           }
         }
 
-        // Close the MCP connection after the turn completes
-        if (mcpResult) await mcpResult.close().catch(() => {});
+        if (namsResult) await namsResult.close().catch(() => {});
+        if (mcpResult)  await mcpResult.close().catch(() => {});
       },
     });
 

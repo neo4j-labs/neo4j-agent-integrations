@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['@neo4j-labs/agent-memory'],
+  experimental: {
+    serverComponentsExternalPackages: [
+      '@neo4j-labs/agent-memory',
+      '@neo4j-labs/nams-ai-provider',
+    ],
+  },
 };
 
 module.exports = nextConfig;
