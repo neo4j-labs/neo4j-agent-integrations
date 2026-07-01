@@ -2,17 +2,25 @@
 
 ## Overview
 
-This integration packages a **Neo4j-backed research agent** as a DataRobot **Agentic Workflow** custom model.  
-It supports three optional extensions — all non-blocking if not configured:
+This integration packages a **Neo4j-backed research agent** for DataRobot in **two supported forms**:
+
+| Path | Files | Deployment target | When to use |
+|---|---|---|---|
+| **A. DRUM custom model** (original) | `agent/custom.py`, `agent/agent.py`, `agent/mcp_client.py`, `agent/memory.py` | Registry → Workshop → Agentic Workflow custom model | Simple, dependency-light deployment; full control over the OpenAI tool-calling loop; works today with `infra/agent.py deploy` |
+| **B. `datarobot-agent-application` template** (recommended by DataRobot) | `agent/myagent.py`, `agent/neo4j_tools.py` | `dr-genai` / `dr-agent` runtime via the [`datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) template + `task deploy` | Aligns with DataRobot's native MCP server, LangGraph orchestration, governance/lineage tracking, and Agentic Memory Service |
+
+Both paths share the same Neo4j **companies** knowledge graph and can be extended with:
 
 | Extension | Purpose | Config var(s) |
 |---|---|---|
-| **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph | `MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID` |
-| **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server | `MCP_SERVER_URL`, `MCP_AUTH_TOKEN` _(optional)_ |
+| **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph (Path A) | `MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID` |
+| **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server (Path A) or DataRobot's global MCP server (Path B) | `MCP_SERVER_URL`, `MCP_AUTH_TOKEN` _(optional, Path A)_ |
+
+> **Why two paths?** Path A was built first and is fully working today. After deploying it, DataRobot's team recommended aligning with their `datarobot-agent-application` template (native MCP server, `dr-genai`/`dr-agent` runtimes, governance lineage on `task deploy`). Path B (`myagent.py` + `neo4j_tools.py`) implements that recommended pattern and is ready to drop into the template's `agent/agent/` directory. Path A remains fully functional for teams that prefer the lighter-weight DRUM deployment.
 
 ---
 
-## Architecture
+## Architecture (Path A — DRUM custom model)
 
 ```mermaid
 flowchart TD
@@ -72,20 +80,22 @@ datarobot/
 ├── .env.example
 ├── README.md
 ├── requirements.txt
-├── run_local.py            ← local CLI test (mirrors DataRobot execution)
-├── datarobot_agent.ipynb   ← Jupyter demo notebook
+├── run_local.py            ← local CLI test for Path A (mirrors DataRobot DRUM execution)
+├── datarobot_agent.ipynb   ← Jupyter demo notebook (Path A)
 ├── agent/
 │   ├── __init__.py
-│   ├── agent.py            ← Neo4jResearchAgent + 10 tools + MCP tool loader
-│   ├── custom.py           ← DataRobot load_model() + chat() with memory
-│   ├── helpers.py          ← prompt helpers + response formatting
-│   ├── memory.py           ← NAMS integration (graceful no-op if absent)
-│   ├── mcp_client.py       ← MCP client (graceful no-op if absent/unconfigured)
-│   ├── model-metadata.yaml ← DataRobot runtime parameter definitions
-│   └── requirements.txt    ← deps bundled in DataRobot ZIP
+│   ├── agent.py            ← [Path A] Neo4jResearchAgent + 10 tools + MCP tool loader
+│   ├── custom.py           ← [Path A] DataRobot load_model() + chat() with memory
+│   ├── helpers.py          ← [Path A] prompt helpers + response formatting
+│   ├── memory.py           ← [Path A] NAMS integration (graceful no-op if absent)
+│   ├── mcp_client.py       ← [Path A] MCP client (graceful no-op if absent/unconfigured)
+│   ├── model-metadata.yaml ← [Path A] DataRobot runtime parameter definitions
+│   ├── myagent.py          ← [Path B] LangGraph agent for datarobot-agent-application template
+│   ├── neo4j_tools.py      ← [Path B] LangChain-compatible Neo4j tools (7 tools)
+│   └── requirements.txt    ← deps bundled in DataRobot ZIP (both paths)
 └── infra/
     ├── __init__.py
-    └── agent.py            ← ZIP packager · DR API validator · automated deploy
+    └── agent.py            ← [Path A] ZIP packager · DR API validator · automated deploy
 ```
 
 ---
@@ -168,7 +178,80 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 
 ---
 
-## Built-in Neo4j tools
+## Path B — `datarobot-agent-application` template (`myagent.py`)
+
+`agent/myagent.py` + `agent/neo4j_tools.py` implement the pattern DataRobot's team recommended after reviewing Path A:
+
+```mermaid
+flowchart TD
+    User(["👤 User / DR Playground / dr-agent runtime"])
+
+    subgraph Template["datarobot-agent-application template"]
+        NAT["dr-genai / dr-agent runtime
+custompy_adaptor() entry point"]
+        MCPCTX["mcp_tools_context()
+DataRobot global MCP server
+(native — no custom transport code)"]
+    end
+
+    subgraph MyAgent["myagent.py — LangGraph workflow"]
+        PLANNER["planner_node
+binds Neo4j + MCP tools to the LLM
+native tool_calls loop (max 4 rounds)"]
+        RELAY["relay
+AIMessage → HumanMessage"]
+        WRITER["writer_node
+formats final Markdown report"]
+    end
+
+    subgraph Neo4jTools["neo4j_tools.py — 7 LangChain tools"]
+        CYPHER["run_cypher_query · search_companies
+query_company_profile · list_industries
+companies_in_industry
+analyze_company_relationships
+people_at_company"]
+    end
+
+    subgraph Neo4j["Neo4j Graph DB"]
+        KG["Organizations · People
+Articles · Industries"]
+    end
+
+    User -->|"RunAgentInput"| NAT
+    NAT -->|"forwarded_headers +
+authorization_context"| MCPCTX
+    NAT -->|"agent.invoke()"| PLANNER
+    MCPCTX -->|"native MCP tools
+(if configured on DR platform)"| PLANNER
+    PLANNER <-->|"tool_calls"| CYPHER <-->|"Bolt / neo4j+s"| KG
+    PLANNER --> RELAY --> WRITER
+    WRITER -->|"DRAgentEventResponse"| NAT --> User
+```
+
+**Key differences from Path A:**
+
+| Aspect | Path A (`agent.py`/`custom.py`) | Path B (`myagent.py`/`neo4j_tools.py`) |
+|---|---|---|
+| Orchestration | Manual OpenAI tool-calling loop | LangGraph `StateGraph` (planner → writer) |
+| MCP | Custom `mcp_client.py` (transport/auth auto-detect) | DataRobot's native global MCP server via `mcp_tools_context()` |
+| Memory | NAMS (`memory.py`) | DataRobot's native Agentic Memory Service (integrate via `datarobot_genai`) |
+| Deployment | `infra/agent.py deploy` → Workshop custom model | `dr start` / `dr run dev` / `task deploy` with the template |
+| Governance | None built-in | Lineage, versioning via `task deploy` |
+| Dependencies | `openai`, `neo4j`, `mcp` (optional) | `datarobot_genai`, `langgraph`, `langchain-neo4j` |
+
+**Using Path B:**
+
+1. Clone [`datarobot-community/datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) and run `dr start` to scaffold the template (LangGraph agent choice).
+2. Copy `agent/myagent.py` and `agent/neo4j_tools.py` from this repo into the template's `agent/agent/` directory.
+3. Set `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` in the template's `.env`.
+4. Run `dr run dev` locally, or `task deploy` to publish with full governance/lineage tracking.
+5. If `datarobot_genai` is not installed (e.g. running `myagent.py` standalone), the module degrades gracefully: `graph_factory()` and the Neo4j tools still work with any LangChain-compatible LLM, but the DataRobot-specific `MyAgent`/`custompy_adaptor` entry points are skipped.
+
+> **Tested:** `graph_factory()` was verified end-to-end locally with `ChatOpenAI` + live Neo4j (`neo4j+s://demo.neo4jlabs.com`) — the planner correctly binds and calls `neo4j_tools` via native LangChain tool-calling, and the writer produces a formatted Markdown report.
+
+---
+
+## Built-in Neo4j tools (Path A — `agent.py`)
 
 | Tool | Description |
 |---|---|
@@ -182,6 +265,18 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 | `articles_in_month` | Articles published in a given month |
 | `get_article` | Full article body by article_id |
 | `companies_in_article` | Organizations mentioned in an article |
+
+## Neo4j LangChain tools (Path B — `neo4j_tools.py`)
+
+| Tool | Description |
+|---|---|
+| `run_cypher_query` | Execute any raw Cypher query |
+| `search_companies` | Full-text company lookup |
+| `query_company_profile` | Company profile — summary, industries, locations, leadership |
+| `list_industries` | List all industry categories |
+| `companies_in_industry` | Companies in a specific industry |
+| `analyze_company_relationships` | Org-to-org graph traversal (depth 1–4) |
+| `people_at_company` | Executives and board members |
 
 ---
 
@@ -299,3 +394,5 @@ Then in the DataRobot UI:
 - Secrets are loaded from DataRobot runtime parameters first; `.env` is for local development only.
 - `neo4j-agent-memory` and `mcp` both require Python ≥ 3.10. DataRobot's runtime satisfies this. On Python 3.9 locally, both features silently disable themselves.
 - `infra/agent.py validate` requires direct access to `app.datarobot.com`. Corporate proxies (Zscaler) return HTTP 403 — run from a network-open machine.
+- `myagent.py` (Path B) works on Python 3.9+ since it only depends on `langchain-core`/`langgraph`/`langchain-neo4j`; `datarobot_genai` itself requires the DataRobot template environment and is optional for local testing.
+- Path B was verified end-to-end locally: `graph_factory()` compiled as a LangGraph `StateGraph`, invoked with `ChatOpenAI`, and confirmed to call `neo4j_tools` via native tool-calling against the live `neo4j+s://demo.neo4jlabs.com` companies database.
