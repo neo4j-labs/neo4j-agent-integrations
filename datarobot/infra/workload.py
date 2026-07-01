@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import os
 import sys
 import time
@@ -95,10 +96,24 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
     """
     env_vars: list[dict[str, Any]] = []
     for name in PLAINTEXT_ENV_VARS:
-        value = os.environ.get(name)
-        if value:
-            env_vars.append({"name": name, "value": value})
+        plain_value = os.environ.get(name)
+        if plain_value:
+            env_vars.append({"name": name, "value": plain_value})
 
+    # Warn about any secret lacking a --credential mapping BEFORE reading any
+    # secret material. This loop only ever touches `name` (a fixed env var
+    # name string) — never a secret's actual value — so it cannot leak
+    # sensitive data to stdout/logs even if this code is later refactored.
+    for name in SECRET_ENV_VARS:
+        if name not in credentials:
+            print(
+                f"  WARNING: {name} has no --credential mapping; "
+                "falling back to a plaintext env var if set locally "
+                "(not recommended for production)."
+            )
+
+    # Read and inject secret values. No logging/printing happens in this
+    # loop, by design, so a secret's value is never passed to a log sink.
     for name in SECRET_ENV_VARS:
         if name in credentials:
             cred_id, key = credentials[name].split(":", 1)
@@ -108,11 +123,10 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
                 "drCredentialId": cred_id,
                 "key": key,
             })
-        else:
-            value = os.environ.get(name)
-            if value:
-                print(f"  WARNING: {name} injected as plaintext (no --credential given)")
-                env_vars.append({"name": name, "value": value})
+            continue
+        secret_value = os.environ.get(name)
+        if secret_value:
+            env_vars.append({"name": name, "value": secret_value})
 
     return {
         "name": WORKLOAD_NAME,
@@ -198,11 +212,38 @@ def wait_for_running(workload_id: str, interval: int = 5, max_wait: int = 600) -
     raise TimeoutError(f"Timed out waiting for workload {workload_id} to reach 'running'")
 
 
+def _redact_env_var_values(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy of a workload/artifact payload with plaintext
+    ``environmentVars[].value`` entries redacted.
+
+    The Workload API may echo back a container's ``environmentVars`` verbatim,
+    including any plaintext secrets injected without a ``dr-credential``
+    mapping (see ``_build_spec``). Never print such a payload as-is.
+    """
+    redacted = copy.deepcopy(payload)
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            env_vars = node.get("environmentVars")
+            if isinstance(env_vars, list):
+                for entry in env_vars:
+                    if isinstance(entry, dict) and "value" in entry:
+                        entry["value"] = "***REDACTED***"
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(redacted)
+    return redacted
+
+
 def workload_status(workload_id: str) -> None:
     with _client() as client:
         resp = client.get(f"/api/v2/workloads/{workload_id}/")
         resp.raise_for_status()
-        print(resp.json())
+        print(_redact_env_var_values(resp.json()))
 
 
 def workload_logs(workload_id: str, limit: int = 100) -> None:
