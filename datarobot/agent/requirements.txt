@@ -10,3 +10,6 @@ langchain-core>=0.3.0
 langchain-neo4j>=0.3.0
 langgraph>=0.3.0
 litellm>=1.40.0
+# HTTP server for the Workload API container (Path C, server.py)
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0

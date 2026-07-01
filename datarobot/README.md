@@ -2,21 +2,22 @@
 
 ## Overview
 
-This integration packages a **Neo4j-backed research agent** for DataRobot in **two supported forms**:
+This integration packages a **Neo4j-backed research agent** for DataRobot in **three supported forms**:
 
 | Path | Files | Deployment target | When to use |
 |---|---|---|---|
 | **A. DRUM custom model** (original) | `agent/custom.py`, `agent/agent.py`, `agent/mcp_client.py`, `agent/memory.py` | Registry → Workshop → Agentic Workflow custom model | Simple, dependency-light deployment; full control over the OpenAI tool-calling loop; works today with `infra/agent.py deploy` |
 | **B. `datarobot-agent-application` template** (recommended by DataRobot) | `agent/myagent.py`, `agent/neo4j_tools.py` | `dr-genai` / `dr-agent` runtime via the [`datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) template + `task deploy` | Aligns with DataRobot's native MCP server, LangGraph orchestration, governance/lineage tracking, and Agentic Memory Service |
+| **C. Workload API** (DataRobot's published container-deployment API) | `agent/server.py`, `Dockerfile`, `infra/workload.py` | Container image → `POST /api/v2/workloads/` → managed autoscaled service | The platform-native deployment mechanism DataRobot is moving to as Custom Model support winds down; reuses Path A's `agent/custom.py::chat()` logic behind a plain HTTP server. See [Workload API docs](https://docs.datarobot.com/en/docs/api/dev-learning/workload-api/overview.html) |
 
-Both paths share the same Neo4j **companies** knowledge graph and can be extended with:
+Path A and Path B share the same Neo4j **companies** knowledge graph and can be extended with:
 
 | Extension | Purpose | Config var(s) |
 |---|---|---|
 | **Neo4j Agent Memory (NAMS)** | Cross-session memory backed by a knowledge graph (Path A) | `MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID` |
 | **MCP (Model Context Protocol)** | Dynamically load tools from any MCP server (Path A) or DataRobot's global MCP server (Path B) | `MCP_SERVER_URL`, `MCP_AUTH_TOKEN` _(optional, Path A)_ |
 
-> **Why two paths?** Path A was built first and is fully working today. After deploying it, DataRobot's team recommended aligning with their `datarobot-agent-application` template (native MCP server, `dr-genai`/`dr-agent` runtimes, governance lineage on `task deploy`). Path B (`myagent.py` + `neo4j_tools.py`) implements that recommended pattern and is ready to drop into the template's `agent/agent/` directory. Path A remains fully functional for teams that prefer the lighter-weight DRUM deployment.
+> **Why three paths?** Path A was built first and is fully working today. After deploying it, DataRobot's team recommended aligning with their `datarobot-agent-application` template (native MCP server, `dr-genai`/`dr-agent` runtimes, governance lineage on `task deploy`) — that's Path B. DataRobot has since published the **Workload API** ([overview](https://docs.datarobot.com/en/docs/api/dev-learning/workload-api/overview.html)) as the platform's forward-looking, container-native deployment mechanism, replacing Custom Model deployment — that's Path C. Path C packages the exact same agent logic (`agent/custom.py::chat()`) as a container, deployed via `POST /api/v2/workloads/` instead of the Registry/Workshop custom-model flow. Path A remains functional for teams still on Custom Model deployment; Path C is the path to migrate to as that support winds down.
 
 ---
 
@@ -82,6 +83,7 @@ datarobot/
 ├── requirements.txt
 ├── run_local.py            ← local CLI test for Path A (mirrors DataRobot DRUM execution)
 ├── datarobot_agent.ipynb   ← Jupyter demo notebook (Path A)
+├── Dockerfile               ← [Path C] linux/amd64 image for the Workload API container
 ├── agent/
 │   ├── __init__.py
 │   ├── agent.py            ← [Path A] Neo4jResearchAgent + 10 tools + MCP tool loader
@@ -92,10 +94,12 @@ datarobot/
 │   ├── model-metadata.yaml ← [Path A] DataRobot runtime parameter definitions
 │   ├── myagent.py          ← [Path B] LangGraph agent for datarobot-agent-application template
 │   ├── neo4j_tools.py      ← [Path B] LangChain-compatible Neo4j tools (7 tools)
-│   └── requirements.txt    ← deps bundled in DataRobot ZIP (both paths)
+│   ├── server.py            ← [Path C] FastAPI wrapper around custom.py::chat() for the Workload API
+│   └── requirements.txt    ← deps bundled in DataRobot ZIP (all paths)
 └── infra/
     ├── __init__.py
-    └── agent.py            ← [Path A] ZIP packager · DR API validator · automated deploy
+    ├── agent.py            ← [Path A] ZIP packager · DR API validator · automated deploy
+    └── workload.py           ← [Path C] Workload API create/status/logs/delete CLI
 ```
 
 ---
@@ -251,6 +255,69 @@ authorization_context"| MCPCTX
 
 ---
 
+## Path C — Workload API (`agent/server.py`, `Dockerfile`, `infra/workload.py`)
+
+DataRobot has published the **Workload API** — a REST API for running arbitrary container images as managed, autoscalable services — as the platform's forward-looking deployment mechanism, replacing Custom Model deployment (Path A). See [Workload API overview](https://docs.datarobot.com/en/docs/api/dev-learning/workload-api/overview.html).
+
+```mermaid
+flowchart LR
+    User(["👤 User / client app"]) -->|"POST /v1/chat/completions"| Server
+
+    subgraph Container["Container (linux/amd64)"]
+        Server["agent/server.py
+FastAPI: /healthz · /readyz
+/v1/chat/completions"]
+        Custom["agent/custom.py::chat()
+same logic as Path A"]
+        Server --> Custom
+    end
+
+    subgraph Neo4j["Neo4j Graph DB"]
+        KG["companies knowledge graph"]
+    end
+
+    Custom -->|"Bolt / neo4j+s"| KG
+
+    subgraph DR["DataRobot Workload API"]
+        Workload["POST /api/v2/workloads/
+readiness/liveness probes
+autoscaling · rolling replacement"]
+    end
+
+    Workload -->|"routes traffic to"| Server
+```
+
+`agent/server.py` is a thin FastAPI wrapper that calls the **exact same** `agent/custom.py::chat()` used by Path A, so behavior (memory, MCP, Neo4j tools) is identical — only the transport changes from DRUM's in-process `chat()` convention to plain HTTP.
+
+**Deploying:**
+
+```bash
+# 1. Build and push a linux/amd64 image (required — ARM64-only images crash-loop on the platform)
+docker buildx build --platform linux/amd64 -t <registry>/<org>/neo4j-datarobot-agent:latest --push .
+
+# 2. Deploy via the Workload API (polls until the workload reaches "running")
+python infra/workload.py create --image <registry>/<org>/neo4j-datarobot-agent:latest
+
+# 3. Check status / logs, or tear down
+python infra/workload.py status <workload_id>
+python infra/workload.py logs <workload_id>
+python infra/workload.py delete <workload_id>
+```
+
+Secrets (`OPENAI_API_KEY`, `NEO4J_PASSWORD`, `MEMORY_API_KEY`, `MCP_AUTH_TOKEN`) should be injected via DataRobot credentials rather than plaintext env vars:
+
+```bash
+python infra/workload.py create --image <image> \
+  --credential OPENAI_API_KEY=<dr_credential_id>:apiToken \
+  --credential NEO4J_PASSWORD=<dr_credential_id>:password
+```
+
+If no `--credential` mapping is given for a secret, `infra/workload.py` falls back to reading it as a plaintext env var from the local `.env` (convenient for local/demo deployments, not recommended for production).
+
+> **Tested:** `agent/server.py` was run locally with `uvicorn`, and `/healthz`, `/readyz`, and `/v1/chat/completions` were all verified against the live Neo4j `companies` database and a real OpenAI call — confirmed a 200 response with a correct tool-calling answer. The actual `POST /api/v2/workloads/` deployment call in `infra/workload.py` follows DataRobot's documented Workload API contract but has not been run against a live DataRobot Workload API endpoint (requires DataRobot platform access with the Workload API enabled for the org); the container/server logic it deploys has been fully tested.
+
+---
+
 ## Built-in Neo4j tools (Path A — `agent.py`)
 
 | Tool | Description |
@@ -396,3 +463,4 @@ Then in the DataRobot UI:
 - `infra/agent.py validate` requires direct access to `app.datarobot.com`. Corporate proxies (Zscaler) return HTTP 403 — run from a network-open machine.
 - `myagent.py` (Path B) works on Python 3.9+ since it only depends on `langchain-core`/`langgraph`/`langchain-neo4j`; `datarobot_genai` itself requires the DataRobot template environment and is optional for local testing.
 - Path B was verified end-to-end locally: `graph_factory()` compiled as a LangGraph `StateGraph`, invoked with `ChatOpenAI`, and confirmed to call `neo4j_tools` via native tool-calling against the live `neo4j+s://demo.neo4jlabs.com` companies database.
+- Path C (`agent/server.py`) was verified end-to-end locally via `uvicorn` — `/healthz`, `/readyz`, and `/v1/chat/completions` all confirmed working against the live Neo4j database and a real OpenAI call. `infra/workload.py`'s actual `POST /api/v2/workloads/` call has not been exercised against a live DataRobot org (requires Workload API access), but follows DataRobot's published request/response contract.
