@@ -6,8 +6,10 @@ This integration packages a **Neo4j-backed research agent** for DataRobot in **t
 
 | Path | Files | Deployment target | When to use |
 |---|---|---|---|
-| **A. DRUM custom model** (original) | `agent/custom.py`, `agent/agent.py`, `agent/mcp_client.py`, `agent/memory.py` | Registry → Workshop → Agentic Workflow custom model | Simple, dependency-light deployment; full control over the OpenAI tool-calling loop; works today with `infra/agent.py deploy` |
-| **B. `datarobot-agent-application` template** (recommended by DataRobot) | `agent/myagent.py`, `agent/neo4j_tools.py` | `dr-genai` / `dr-agent` runtime via the [`datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) template + `task deploy` | Aligns with DataRobot's native MCP server, LangGraph orchestration, governance/lineage tracking, and Agentic Memory Service |
+| **A. Custom Model (DRUM)** — _current, being deprecated_ | `agent/custom.py`, `agent/agent.py`, `agent/mcp_client.py`, `agent/memory.py` | Registry → Workshop → Agentic Workflow custom model | Works today with `infra/agent.py deploy`. **DataRobot has stated Custom Model deployment is being replaced by the Workload API (target: end of July)** — treat this path as an interim/compatibility option, not the long-term target |
+| **B. `datarobot-agent-application` template** (recommended by DataRobot) | `agent/myagent.py`, `agent/neo4j_tools.py` | `dr-genai` / `dr-agent` runtime via the [`datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) template + `task deploy` | Aligns with DataRobot's native MCP server, LangGraph orchestration, governance/lineage tracking, and Agentic Memory Service. `task deploy` in this template is expected to move onto the Workload API once it ships |
+
+> **Roadmap note (DataRobot Workload API):** DataRobot has communicated that Custom Model deployment (Path A) is being phased out in favor of a **Workload API**, targeted for end of July. As of this writing the Workload API has no public SDK/spec we can integrate against yet, so no code changes are possible in this repo today. Once DataRobot publishes the Workload API (client library, auth model, deployment contract), Path A's `infra/agent.py deploy` should be replaced with a Workload API call, and Path B's `task deploy` step should be re-pointed at it as well. Until then, both paths remain on their current deployment mechanisms and this is tracked as a follow-up, not yet implemented.
 
 Both paths share the same Neo4j **companies** knowledge graph and can be extended with:
 
@@ -20,7 +22,7 @@ Both paths share the same Neo4j **companies** knowledge graph and can be extende
 
 ---
 
-## Architecture (Path A — DRUM custom model)
+## Architecture (Path A — Custom Model / DRUM, interim until Workload API)
 
 ```mermaid
 flowchart TD
