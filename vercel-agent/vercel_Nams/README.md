@@ -14,13 +14,12 @@ A production-ready Next.js chat application demonstrating **NAMS (Neo4j Agent Me
 ## Quick Start
 
 ```bash
-git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
-cd neo4j-agent-integrations/vercel-agent/vercel_Nams
-npm install
-cp .env.local.example .env.local
-# Edit .env.local: set MEMORY_API_KEY and OPENAI_API_KEY at minimum
-npm run dev
-# Open http://localhost:3000
+1) git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
+2) cd neo4j-agent-integrations/vercel-agent/vercel_Nams
+3) add directly to your `package.json`:"@neo4j-labs/nams-ai-provider": "file:../nams-provider"
+4) npm install --legacy-peer-deps
+5) cp .env.local.example .env.local # Edit .env.local: set MEMORY_API_KEY and OPENAI_API_KEY at minimum
+6) npm run dev # Open http://localhost:3000
 ```
 
 ### Option A — Provider Mode (default, recommended)
@@ -82,7 +81,7 @@ const { tools, close } = await nams.toolsWithMcp(
 │                                                                   │
 │  ┌──────────────────────┐  ┌──────────────────────────────────┐   │
 │  │  Memory Panel        │  │  Reasoning Trace Panel           │   │
-│  │  recent observations │  │  step 1 → step 2 → … → step N   │   │
+│  │  recent observations │  │  step 1 → step 2 → … → step N    │   │
 │  │  reasoning tab       │  │  reasoning / action / result     │   │
 │  └──────────────────────┘  └──────────────────────────────────┘   │
 └───────────────────────┬───────────────────────────────────────────┘
@@ -106,13 +105,13 @@ const { tools, close } = await nams.toolsWithMcp(
 │  NAMS  —  https://memory.neo4jlabs.com/v1                          │
 │  (@neo4j-labs/agent-memory SDK, backed by Neo4j AuraDB)            │
 │                                                                    │
-│  ┌──────────────────┐  ┌───────────────────┐  ┌────────────────┐  │
-│  │  Short-Term      │  │  Long-Term        │  │  Reasoning     │  │
-│  │  (conversation)  │  │  (graph entities) │  │  (step records)│  │
-│  │  • vector search │  │  • facts          │  │  • reasoning   │  │
-│  │  • per convId    │  │  • user_prefs     │  │  • actionTaken │  │
-│  │  • cross-session │  │  • patterns       │  │  • result      │  │
-│  └──────────────────┘  └───────────────────┘  └────────────────┘  │
+│  ┌──────────────────┐  ┌───────────────────┐  ┌────────────────┐   │
+│  │  Short-Term      │  │  Long-Term        │  │  Reasoning     │   │
+│  │  (conversation)  │  │  (graph entities) │  │  (step records)│   │
+│  │  • vector search │  │  • facts          │  │  • reasoning   │   │
+│  │  • per convId    │  │  • user_prefs     │  │  • actionTaken │   │
+│  │  • cross-session │  │  • patterns       │  │  • result      │   │
+│  └──────────────────┘  └───────────────────┘  └────────────────┘   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 

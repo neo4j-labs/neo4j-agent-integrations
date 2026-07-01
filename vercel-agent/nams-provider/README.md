@@ -41,42 +41,25 @@ User message
 
 > **Note:** This package is not yet published to npm. Use one of the options below.
 
-**Option A — Local path install (recommended for development)**
 
-```bash
-npm install /path/to/neo4j-agent-integrations/vercel-agent/nams-provider
-```
-
-Or add directly to your `package.json`:
-
-```json
-"@neo4j-labs/nams-ai-provider": "file:../nams-provider"
-```
-
-**Option B — Install from GitHub**
-
-```bash
-npm install github:neo4j-labs/neo4j-agent-integrations
-```
-
-**Option C — Publish to npm** (requires `@neo4j-labs` org access)
+**Publish to npm** (requires `@neo4j-labs` org access)
 
 ```bash
 cd vercel-agent/nams-provider
 npm run build
-npm publish --access public
+npm publish --access public #requires you to be logged in to https://registry.npmjs.org/
 ```
 
-Then install normally:
+Then install normally into your desired project:
 
 ```bash
-npm install @neo4j-labs/nams-ai-provider
+npm install @neo4j-labs/nams-ai-provider or npm install --legacy-peer-deps
 ```
 
 **2. Install peer dependencies** (if not already present)
 
 ```bash
-npm install ai @ai-sdk/provider @neo4j-labs/agent-memory zod
+npm install ai @ai-sdk/provider @neo4j-labs/agent-memory zod or npm install --legacy-peer-deps
 ```
 
 **3. Get a free API key** at [memory.neo4jlabs.com](https://memory.neo4jlabs.com)
