@@ -3,10 +3,9 @@ from google.adk import Agent
 from google import genai
 from dotenv import load_dotenv
 
-# 1. Load core settings from your shared workspace environment file
 load_dotenv(dotenv_path="../.env")
 
-GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "gcp-neo4j-agent-integr-14f4")
+GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "your-project-id")
 GCP_LOCATION = os.environ.get("GCP_LOCATION", "global")
 MANAGED_AGENT_ID = f"projects/{GCP_PROJECT_ID}/locations/{GCP_LOCATION}/agents/neo4j-managed-agent"
 
@@ -17,8 +16,8 @@ os.environ["GOOGLE_CLOUD_LOCATION"] = GCP_LOCATION
 
 def query_managed_agent(user_prompt: str) -> str:
     """
-    Forwards the user query directly to the secure backend Vertex AI Managed Agent 
-    operating inside the isolated cloud perimeter.
+    Forwards the user query directly to the secure backend Vertex AI Managed Agent
+    using the verified streaming chunk architecture.
 
     Args:
         user_prompt: The raw text string entered by the user.
@@ -60,7 +59,7 @@ root_agent = Agent(
     name="neo4j_platform_proxy",
     model="gemini-3.5-flash",
     instruction="""
-    You are a strict, transparent pass-through proxy. Your only function is to forward the user's 
+    You are a strict, transparent pass-through proxy. Your only function is to forward the user's
     exact query to the query_managed_agent tool and report its output directly to the interface.
     """,
     tools=[query_managed_agent]

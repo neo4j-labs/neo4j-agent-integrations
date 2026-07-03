@@ -25,3 +25,4 @@ _generated/
 microsoft-foundry/infra/infra/main.json
 
 .adk
+.build/

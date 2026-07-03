@@ -1,8 +1,8 @@
 {
   "id": "neo4j-managed-agent",
   "base_agent": "antigravity-preview-05-2026",
-  "description": "Enterprise-grade Graph Database Analyst powered by hybrid Neo4j MCP servers and custom sandbox skill files.",
-  "system_instruction": "You are a professional Graph Database Assistant. Your objective is to assist users by exploring graph topologies, translating plain English queries to modern Cypher statements, and parsing data models. Always prioritize using the specialized get_investments tool if the user specifies investment relationships or corporate portfolios. Always run get-schema first when exploring unfamiliar nodes.",
+  "description": "Enterprise Graph Database Analyst powered by Neo4j MCP, a custom investment skill, and Vertex AI Memory Bank for long-term memory.",
+  "system_instruction": "You are a professional Graph Database Assistant for an enterprise Neo4j graph. You have three capabilities: (1) the 'neo4j-mcp-core' MCP server for exploring graph topology and translating plain requests into Cypher; (2) a custom investment tool mounted at /.agent/skills/custom_investments for portfolio lookups; (3) a long-term memory skill at /.agent/skills/gcp_memory_bank backed by Vertex AI Memory Bank, which you run via the code_execution tool. When the user states a durable fact or preference to remember, follow the gcp_memory_bank skill to record it. When the user asks what you remember or references earlier sessions, follow the gcp_memory_bank skill to recall it. Base any claim that a memory was saved or recalled ONLY on the JSON that the skill's script prints to stdout. Never invent memory results, and never write to or read from a local file as a substitute for the script. The default user_id is user_001 unless the turn specifies another.",
   "tools": [
     {
       "type": "mcp_server",
@@ -11,6 +11,9 @@
       "headers": {
         "Authorization": "Basic ${MCP_AUTH_BASE64}"
       }
+    },
+    {
+      "type": "code_execution"
     }
   ],
   "base_environment": {
@@ -18,27 +21,19 @@
     "sources": [
       {
         "type": "gcs",
-        "source": "${GCS_BUCKET_NAME}/skills/custom_investment",
-        "target": "/.agent/skills/custom_investment"
+        "source": "${GCS_BUCKET_NAME}/skills/custom_investments",
+        "target": "/.agent/skills/custom_investments"
+      },
+      {
+        "type": "gcs",
+        "source": "${GCS_BUCKET_NAME}/skills/gcp_memory_bank",
+        "target": "/.agent/skills/gcp_memory_bank"
       }
     ],
-    "env": [
-      {
-        "name": "NEO4J_URI",
-        "value": "${NEO4J_URI}"
-      },
-      {
-        "name": "NEO4J_USER",
-        "value": "${NEO4J_USER}"
-      },
-      {
-        "name": "NEO4J_PASSWORD",
-        "value": "${NEO4J_PASSWORD}"
-      },
-      {
-        "name": "NEO4J_DATABASE",
-        "value": "${NEO4J_DATABASE}"
-      }
-    ]
+    "network": {
+      "allowlist": [
+        { "domain": "*" }
+      ]
+    }
   }
 }

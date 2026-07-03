@@ -1,41 +1,62 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Load local environment configuration if available
-if [ -f .env ]; then
-    echo "Loading active integration parameters out of local workspace .env file..."
-    export $(cat .env | grep -v '^#' | xargs)
-else
-    echo "[ERROR] Missing required .env file template inside work directory root path."
-    exit 1
+# ---- Load .env ----
+if [ ! -f .env ]; then
+  echo "[ERROR] Missing .env. Copy .env.example to .env and fill it in."
+  exit 1
+fi
+export $(grep -v '^#' .env | grep -v '^$' | xargs)
+
+# ---- Require everything ----
+: "${GCP_PROJECT_ID:?}" ; : "${GCP_LOCATION:?}" ; : "${GCS_BUCKET_NAME:?}"
+: "${MEMORY_BANK_ID:?}" ; : "${MEMORY_BANK_LOCATION:?}"
+: "${MCP_SERVER_URL:?}" ; : "${MCP_USER:?}" ; : "${MCP_PASSWORD:?}"
+: "${NEO4J_URI:?}" ; : "${NEO4J_USER:?}" ; : "${NEO4J_PASSWORD:?}" ; : "${NEO4J_DATABASE:?}"
+
+export MCP_AUTH_BASE64=$(printf '%s:%s' "$MCP_USER" "$MCP_PASSWORD" | base64 | tr -d '\n')
+export BASE_URL="https://aiplatform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}"
+
+# ---- Render skill scripts into .build/  ----
+echo "== Rendering skill scripts =="
+rm -rf .build && mkdir -p .build/skills
+cp -r skills/* .build/skills/
+
+# memory client
+sed -i \
+  -e "s|__PROJECT_ID__|${GCP_PROJECT_ID}|g" \
+  -e "s|__MEMORY_BANK_ID__|${MEMORY_BANK_ID}|g" \
+  -e "s|__MEMORY_BANK_LOCATION__|${MEMORY_BANK_LOCATION}|g" \
+  .build/skills/gcp_memory_bank/gcp_vertex_client.py
+
+# investment skill
+sed -i \
+  -e "s|__NEO4J_URI__|${NEO4J_URI}|g" \
+  -e "s|__NEO4J_USER__|${NEO4J_USER}|g" \
+  -e "s|__NEO4J_PASSWORD__|${NEO4J_PASSWORD}|g" \
+  -e "s|__NEO4J_DATABASE__|${NEO4J_DATABASE}|g" \
+  .build/skills/custom_investments/main.py
+
+if grep -rq "__[A-Z_]*__" .build/skills; then
+  echo "[ERROR] Unrendered placeholder remains:"; grep -rn "__[A-Z_]*__" .build/skills; exit 1
 fi
 
-export BASE_URL="https://aiplatform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}"
-export AUTH_HEADER="Authorization: Bearer $(gcloud auth print-access-token)"
+# ---- Sync to GCS ----
+echo "== Syncing skills to ${GCS_BUCKET_NAME} =="
+gcloud storage cp -r .build/skills/custom_investments "${GCS_BUCKET_NAME}/skills/"
+gcloud storage cp -r .build/skills/gcp_memory_bank     "${GCS_BUCKET_NAME}/skills/"
 
-echo "============= [1/2] Syncing Skills Matrix Assets to Storage ============="
-# Syncing the explicit singular directory path structure
-gcloud storage cp -r skills/custom_investment "${GCS_BUCKET_NAME}/skills/"
+# ---- Render + post agent config ----
+echo "== Deploying managed agent =="
+CURL_DATA=$(eval "echo \"$(sed 's/\"/\\\"/g' config/agent_config.json)\"")
 
-echo -e "\n✓ Skill code assets successfully synced to target cloud storage bucket."
-echo "------------------------------------------------------------------"
-
-echo "============= [2/2] Launching Managed Workspace Sandbox ============="
-
-# Dynamically calculate the Base64 auth string on the fly from environment parameters
-export MCP_AUTH_BASE64=$(echo -n "${MCP_USER}:${MCP_PASSWORD}" | base64)
-
-# Render environment metrics directly into the template blueprint
-CURL_DATA=$(eval "echo \"$(cat config/agent_config.json | sed 's/"/\\"/g')\"")
-
-OPERATION_RESPONSE=$(curl -s -X POST "${BASE_URL}/agents" \
+RESP=$(curl -s -X POST "${BASE_URL}/agents" \
   -H "Content-Type: application/json" \
-  -H "${AUTH_HEADER}" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -d "${CURL_DATA}")
 
-OPERATION_PATH=$(echo $OPERATION_RESPONSE | grep -o '"name": "[^"]*' | grep -o 'projects/.*' || echo "Conflict or configuration error observed.")
-
-echo -e "\nManaged Agent Deployment Successfully Activated."
-echo "Asynchronous Operation Tracking Path:"
-echo "--> ${OPERATION_PATH}"
-echo "========================================================================"
+echo "Raw API response:"; echo "${RESP}"
+if echo "${RESP}" | grep -q '"error"'; then
+  echo "[ERROR] Deploy failed."; exit 1
+fi
+echo "✓ Deploy submitted."
