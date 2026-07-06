@@ -202,6 +202,15 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 > - The `ServiceUnavailable` is the real failure — it's a **Neo4j driver routing** problem,
 >   not MCP-related, common in Codespaces/devcontainers. See the troubleshooting note under
 >   [Quick Start](#quick-start-local) — switch `NEO4J_URI` from `neo4j+s://` to `bolt+s://`.
+>
+> **Seeing `MCP list_tools failed (non-fatal): ... 405 Method Not Allowed`?** This means
+> Streamable HTTP failed silently and the client fell back to the older SSE transport, which
+> `neo4j-mcp-official`'s `/mcp` endpoint (POST-only) rejects. The most common cause is an
+> outdated `mcp` package — `streamable_http_client`'s current `http_client=` argument requires
+> `mcp>=1.24.0` (already pinned in `requirements.txt`); run `pip install -U -r requirements.txt`
+> to pick it up. As of this fix, the underlying Streamable HTTP failure is also now logged at
+> `WARNING` level (not just `DEBUG`) so the real cause is visible instead of only seeing the
+> downstream SSE 405.
 
 ---
 

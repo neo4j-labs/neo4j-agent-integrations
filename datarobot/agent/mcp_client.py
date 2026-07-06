@@ -110,7 +110,12 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
                     result = await session.list_tools()
                     return [_parse_tool(t) for t in result.tools]
         except Exception as exc:
-            logger.debug("StreamableHTTP failed, trying SSE: %s", _unwrap_exception(exc))
+            logger.warning(
+                "MCP StreamableHTTP transport failed (%s); falling back to SSE. "
+                "If this persists, check that the 'mcp' package is >=1.24.0 "
+                "(older versions use an incompatible streamable_http_client signature).",
+                _unwrap_exception(exc),
+            )
 
     async with sse_client(url, headers=headers) as (read, write):
         async with ClientSession(read, write) as session:
@@ -131,7 +136,12 @@ async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any
                     result = await session.call_tool(name, arguments)
                     return _parse_content(result.content)
         except Exception as exc:
-            logger.debug("StreamableHTTP failed for call_tool, trying SSE: %s", _unwrap_exception(exc))
+            logger.warning(
+                "MCP StreamableHTTP transport failed for call_tool (%s); falling back to SSE. "
+                "If this persists, check that the 'mcp' package is >=1.24.0 "
+                "(older versions use an incompatible streamable_http_client signature).",
+                _unwrap_exception(exc),
+            )
 
     async with sse_client(url, headers=headers) as (read, write):
         async with ClientSession(read, write) as session:
