@@ -63,8 +63,11 @@ class Neo4jResearchAgent:
             auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
         )
         self.tools = self._build_tools()
-        self._load_mcp_tools()
+        # tool_index must exist before _load_mcp_tools() runs: it uses
+        # tool_index to skip MCP tools that collide with a built-in name,
+        # and updates tool_index itself as it appends each MCP tool.
         self.tool_index = {tool.name: tool for tool in self.tools}
+        self._load_mcp_tools()
 
     def close(self) -> None:
         self.driver.close()
@@ -251,12 +254,14 @@ class Neo4jResearchAgent:
             if not name or name in self.tool_index:
                 continue
             schema = t.get("inputSchema") or {}
-            self.tools.append(ToolDefinition(
+            tool_def = ToolDefinition(
                 name=name,
                 description=t.get("description", ""),
                 parameters=schema,
                 func=self._make_mcp_func(name),
-            ))
+            )
+            self.tools.append(tool_def)
+            self.tool_index[name] = tool_def
             self._mcp_tool_names.add(name)
         if self._mcp_tool_names:
             import logging as _log
