@@ -47,6 +47,12 @@ except ImportError:
     _HAS_STREAMABLE = False
 
 
+# httpx's default timeout (5s) is too short for MCP servers reached through
+# corporate proxies or cold-starting cloud services; make it configurable via
+# MCP_HTTP_TIMEOUT (seconds) with a more forgiving default.
+_HTTP_TIMEOUT = float(os.environ.get("MCP_HTTP_TIMEOUT", "60"))
+
+
 def is_enabled() -> bool:
     return _HAS_MCP and bool(os.environ.get("MCP_SERVER_URL"))
 
@@ -103,8 +109,11 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
     headers = _auth_headers()
     if _HAS_STREAMABLE:
         try:
-            http_client = _httpx.AsyncClient(headers=headers)
-            async with streamable_http_client(url, http_client=http_client) as (read, write):
+            http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
+            # Newer mcp releases (>=1.10) yield a 3-tuple (read, write,
+            # get_session_id_callback); older ones yield only (read, write).
+            # The trailing "*_" absorbs the extra item on either version.
+            async with streamable_http_client(url, http_client=http_client) as (read, write, *_):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.list_tools()
@@ -117,7 +126,7 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
                 _unwrap_exception(exc),
             )
 
-    async with sse_client(url, headers=headers) as (read, write):
+    async with sse_client(url, headers=headers, timeout=_HTTP_TIMEOUT) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.list_tools()
@@ -129,8 +138,8 @@ async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any
     headers = _auth_headers()
     if _HAS_STREAMABLE:
         try:
-            http_client = _httpx.AsyncClient(headers=headers)
-            async with streamable_http_client(url, http_client=http_client) as (read, write):
+            http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
+            async with streamable_http_client(url, http_client=http_client) as (read, write, *_):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
@@ -143,7 +152,7 @@ async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any
                 _unwrap_exception(exc),
             )
 
-    async with sse_client(url, headers=headers) as (read, write):
+    async with sse_client(url, headers=headers, timeout=_HTTP_TIMEOUT) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool(name, arguments)

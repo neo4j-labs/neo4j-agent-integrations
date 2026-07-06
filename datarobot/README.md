@@ -230,6 +230,25 @@ MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package i
 > to pick it up. As of this fix, the underlying Streamable HTTP failure is also now logged at
 > `WARNING` level (not just `DEBUG`) so the real cause is visible instead of only seeing the
 > downstream SSE 405.
+>
+> **Update (verified against the real `mcp` SDK, not just raw JSON-RPC):** two further bugs were
+> found and fixed once actual SDK-based testing became possible (Python 3.9 previously forced
+> hand-rolled HTTP testing, since `mcp` requires Python ≥3.10):
+> 1. `mcp>=1.10` changed `streamable_http_client(...)` to yield a **3-tuple**
+>    `(read, write, get_session_id_callback)` instead of 2. The client unpacked only 2 values,
+>    raising `ValueError: too many values to unpack`, which was silently swallowed and treated as
+>    "StreamableHTTP failed" — falling back to the incompatible SSE transport and surfacing as the
+>    `405` above even on `mcp>=1.24.0`. Fixed by unpacking `as (read, write, *_)`.
+> 2. The internal `httpx.AsyncClient` used no explicit timeout, so it inherited httpx's default
+>    5s timeout — too short when the MCP server is reached through a corporate proxy or is a
+>    cold-starting Cloud Run instance, causing `ReadTimeout` (again misreported as a StreamableHTTP
+>    failure with SSE fallback). Fixed by adding a configurable `MCP_HTTP_TIMEOUT` env var
+>    (default `60` seconds) applied to both the Streamable HTTP and SSE clients.
+>
+> With both fixes, `list_tools()`/`call_tool()` against `neo4j-mcp-official` now succeed end-to-end
+> using the real Streamable HTTP transport (verified: `get-schema`, `read-cypher` tools listed and
+> invoked). Any remaining failure at the Cypher-execution step is the documented
+> `demo.neo4jlabs.com` certificate expiry above, not an MCP client bug.
 
 ---
 
@@ -515,5 +534,5 @@ Then in the DataRobot UI:
 - `myagent.py` (Path B) works on Python 3.9+ since it only depends on `langchain-core`/`langgraph`/`langchain-neo4j`; `datarobot_genai` itself requires the DataRobot template environment and is optional for local testing.
 - Path B was verified end-to-end locally: `graph_factory()` compiled as a LangGraph `StateGraph`, invoked with `ChatOpenAI`, and confirmed to call `neo4j_tools` via native tool-calling against the live `neo4j+s://demo.neo4jlabs.com` companies database.
 - Path C (`agent/server.py`) was verified end-to-end locally via `uvicorn` — `/healthz`, `/readyz`, and `/v1/chat/completions` all confirmed working against the live Neo4j database and a real OpenAI call. `infra/workload.py`'s actual `POST /api/v2/workloads/` call has not been exercised against a live DataRobot org (requires Workload API access), but follows DataRobot's published request/response contract.
-- **MCP protocol verified against the public `neo4j-mcp-official` server** (raw JSON-RPC handshake — `initialize` → `notifications/initialized` → `tools/list`): auth (Basic, per the auth table above), transport, and tool discovery all confirmed working, returning real `get-schema`/`read-cypher` tool definitions. `tools/call` itself could not be fully verified as of **2026-07-06** because the shared `demo.neo4jlabs.com` database's TLS certificate has expired (`x509: certificate has expired ... 2026-07-05T00:22:19Z`), confirmed independently from Google Cloud infrastructure (not just a local/corporate proxy issue) — this is a live infra issue with the shared public demo DB, unrelated to this repo's code. Retry once the certificate is renewed.
+- **MCP protocol verified against the public `neo4j-mcp-official` server**, using both raw JSON-RPC (initial pass, before Python ≥3.10 was available locally) and the **real `mcp` Python SDK** (`mcp==1.28.1` under Python 3.12, once installed): `list_tools()`/`call_tool()` succeed end-to-end via the real Streamable HTTP transport, returning real `get-schema`/`read-cypher` tool definitions. This testing uncovered and fixed two real client bugs invisible to raw-JSON-RPC testing — see the `405`/timeout troubleshooting note under [MCP Integration](#mcp-integration) for details (3-tuple unpacking with `mcp>=1.10`, and httpx's too-short default timeout). `tools/call`'s actual Cypher execution still fails as of **2026-07-06** because the shared `demo.neo4jlabs.com` database's TLS certificate has expired (`x509: certificate has expired ... 2026-07-05T00:22:19Z`), confirmed independently from Google Cloud infrastructure (not just a local/corporate proxy issue) — this is a live infra issue with the shared public demo DB, unrelated to this repo's code. Retry once the certificate is renewed.
 
