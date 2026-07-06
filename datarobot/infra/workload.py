@@ -87,6 +87,45 @@ def _client() -> "httpx.Client":
     )
 
 
+def _warn_missing_credential_mappings(credentials: dict[str, str]) -> None:
+    """Print a warning for each SECRET_ENV_VARS entry lacking a --credential
+    mapping. Deliberately isolated in its own function that never calls
+    ``os.environ`` and never touches a secret's value — only the fixed,
+    non-sensitive env var *names* declared in ``SECRET_ENV_VARS`` — so there
+    is no code path here through which secret material could reach stdout.
+    """
+    for secret_name in SECRET_ENV_VARS:
+        if secret_name not in credentials:
+            print(
+                f"  WARNING: {secret_name} has no --credential mapping; "
+                "falling back to a plaintext env var if set locally "
+                "(not recommended for production)."
+            )
+
+
+def _inject_credential_env_vars(
+    credentials: dict[str, str], env_vars: list[dict[str, Any]]
+) -> None:
+    """Append SECRET_ENV_VARS entries to ``env_vars``, preferring DataRobot
+    credential references over plaintext values. Isolated from any warning
+    or logging code so secret values here are only ever appended to the
+    request payload, never printed.
+    """
+    for secret_name in SECRET_ENV_VARS:
+        if secret_name in credentials:
+            cred_id, key = credentials[secret_name].split(":", 1)
+            env_vars.append({
+                "source": "dr-credential",
+                "name": secret_name,
+                "drCredentialId": cred_id,
+                "key": key,
+            })
+            continue
+        secret_value = os.environ.get(secret_name)
+        if secret_value:
+            env_vars.append({"name": secret_name, "value": secret_value})
+
+
 def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
     """Build the Workload API create-workload request body.
 
@@ -94,39 +133,15 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
     Any secret without a credential mapping falls back to a plaintext env var
     read from the local environment (demo convenience, not for production).
     """
+    _warn_missing_credential_mappings(credentials)
+
     env_vars: list[dict[str, Any]] = []
-    for name in PLAINTEXT_ENV_VARS:
-        plain_value = os.environ.get(name)
+    for plain_name in PLAINTEXT_ENV_VARS:
+        plain_value = os.environ.get(plain_name)
         if plain_value:
-            env_vars.append({"name": name, "value": plain_value})
+            env_vars.append({"name": plain_name, "value": plain_value})
 
-    # Warn about any secret lacking a --credential mapping BEFORE reading any
-    # secret material. This loop only ever touches `name` (a fixed env var
-    # name string) — never a secret's actual value — so it cannot leak
-    # sensitive data to stdout/logs even if this code is later refactored.
-    for name in SECRET_ENV_VARS:
-        if name not in credentials:
-            print(
-                f"  WARNING: {name} has no --credential mapping; "
-                "falling back to a plaintext env var if set locally "
-                "(not recommended for production)."
-            )
-
-    # Read and inject secret values. No logging/printing happens in this
-    # loop, by design, so a secret's value is never passed to a log sink.
-    for name in SECRET_ENV_VARS:
-        if name in credentials:
-            cred_id, key = credentials[name].split(":", 1)
-            env_vars.append({
-                "source": "dr-credential",
-                "name": name,
-                "drCredentialId": cred_id,
-                "key": key,
-            })
-            continue
-        secret_value = os.environ.get(name)
-        if secret_value:
-            env_vars.append({"name": name, "value": secret_value})
+    _inject_credential_env_vars(credentials, env_vars)
 
     return {
         "name": WORKLOAD_NAME,
