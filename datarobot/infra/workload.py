@@ -60,6 +60,7 @@ PLAINTEXT_ENV_VARS = (
     "AGENT_MAX_TOOL_STEPS",
     "MEMORY_WORKSPACE_ID",
     "MCP_SERVER_URL",
+    "MCP_HTTP_TIMEOUT",
 )
 # Secrets: forwarded as plaintext ONLY if no --credential mapping is given
 # for them. Strongly prefer wiring these through DataRobot credentials.
