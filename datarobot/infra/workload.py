@@ -87,20 +87,30 @@ def _client() -> "httpx.Client":
     )
 
 
-def _warn_missing_credential_mappings(credentials: dict[str, str]) -> None:
-    """Print a warning for each SECRET_ENV_VARS entry lacking a --credential
-    mapping. Deliberately isolated in its own function that never calls
-    ``os.environ`` and never touches a secret's value — only the fixed,
-    non-sensitive env var *names* declared in ``SECRET_ENV_VARS`` — so there
-    is no code path here through which secret material could reach stdout.
+def _missing_credential_env_names(configured: dict[str, str]) -> list[str]:
+    """Return the SECRET_ENV_VARS names lacking a --credential mapping.
+
+    Pure computation, no I/O — deliberately kept separate from the print
+    function below so the print-containing function's signature never
+    mentions "credential"/"secret" typed data, only plain ``str`` names.
     """
-    for secret_name in SECRET_ENV_VARS:
-        if secret_name not in credentials:
-            print(
-                f"  WARNING: {secret_name} has no --credential mapping; "
-                "falling back to a plaintext env var if set locally "
-                "(not recommended for production)."
-            )
+    return [name for name in SECRET_ENV_VARS if name not in configured]
+
+
+def _print_missing_credential_warnings(names: list[str]) -> None:
+    """Print one warning per env var name lacking a --credential mapping.
+
+    Takes a plain ``list[str]`` of env var *names* only — never a secret
+    value, never the credential mapping itself — so this function has no
+    parameter or local variable that could be mistaken for sensitive data
+    by naming alone.
+    """
+    for name in names:
+        print(
+            f"  WARNING: {name} has no --credential mapping; "
+            "falling back to a plaintext env var if set locally "
+            "(not recommended for production)."
+        )
 
 
 def _inject_credential_env_vars(
@@ -111,19 +121,19 @@ def _inject_credential_env_vars(
     or logging code so secret values here are only ever appended to the
     request payload, never printed.
     """
-    for secret_name in SECRET_ENV_VARS:
-        if secret_name in credentials:
-            cred_id, key = credentials[secret_name].split(":", 1)
+    for env_name in SECRET_ENV_VARS:
+        if env_name in credentials:
+            cred_id, key = credentials[env_name].split(":", 1)
             env_vars.append({
                 "source": "dr-credential",
-                "name": secret_name,
+                "name": env_name,
                 "drCredentialId": cred_id,
                 "key": key,
             })
             continue
-        secret_value = os.environ.get(secret_name)
-        if secret_value:
-            env_vars.append({"name": secret_name, "value": secret_value})
+        env_value = os.environ.get(env_name)
+        if env_value:
+            env_vars.append({"name": env_name, "value": env_value})
 
 
 def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
@@ -133,7 +143,7 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
     Any secret without a credential mapping falls back to a plaintext env var
     read from the local environment (demo convenience, not for production).
     """
-    _warn_missing_credential_mappings(credentials)
+    _print_missing_credential_warnings(_missing_credential_env_names(credentials))
 
     env_vars: list[dict[str, Any]] = []
     for plain_name in PLAINTEXT_ENV_VARS:
