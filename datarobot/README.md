@@ -115,6 +115,19 @@ cp .env.example .env
 python run_local.py "Give me a competitive snapshot of Google"
 ```
 
+> **Troubleshooting: `neo4j.exceptions.ServiceUnavailable: Unable to retrieve routing information`**
+> This means the driver connected but couldn't complete its routing-table handshake — common in
+> GitHub Codespaces / devcontainers / restrictive corporate networks where the `ROUTE` bolt
+> message is blocked/mangled even though a direct connection on port 7687 works fine. Fix by
+> switching the URI scheme from routing (`neo4j+s://`) to direct (`bolt+s://`) in `.env`, which
+> skips the routing-table fetch entirely:
+> ```
+> NEO4J_URI=bolt+s://demo.neo4jlabs.com:7687
+> ```
+> (The `401 Unauthorized` you may also see from `MCP list_tools failed (non-fatal): ...` in the
+> same run is expected/harmless if `MCP_SERVER_URL`/`MCP_AUTH_TOKEN` aren't configured — MCP is
+> optional and fails open.)
+
 ---
 
 ## Neo4j Agent Memory (NAMS)
