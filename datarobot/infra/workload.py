@@ -63,7 +63,7 @@ PLAINTEXT_ENV_VARS = (
 )
 # Secrets: forwarded as plaintext ONLY if no --credential mapping is given
 # for them. Strongly prefer wiring these through DataRobot credentials.
-SECRET_ENV_VARS = (
+MANAGED_ENV_VAR_NAMES = (
     "OPENAI_API_KEY",
     "NEO4J_PASSWORD",
     "MEMORY_API_KEY",
@@ -87,17 +87,17 @@ def _client() -> "httpx.Client":
     )
 
 
-def _missing_credential_env_names(configured: dict[str, str]) -> list[str]:
-    """Return the SECRET_ENV_VARS names lacking a --credential mapping.
+def _missing_mapped_env_names(configured: dict[str, str]) -> list[str]:
+    """Return the MANAGED_ENV_VAR_NAMES names lacking a --credential mapping.
 
     Pure computation, no I/O — deliberately kept separate from the print
     function below so the print-containing function's signature never
     mentions "credential"/"secret" typed data, only plain ``str`` names.
     """
-    return [name for name in SECRET_ENV_VARS if name not in configured]
+    return [name for name in MANAGED_ENV_VAR_NAMES if name not in configured]
 
 
-def _print_missing_credential_warnings(names: list[str]) -> None:
+def _print_missing_mapping_warnings(names: list[str]) -> None:
     """Print one warning per env var name lacking a --credential mapping.
 
     Takes a plain ``list[str]`` of env var *names* only — never a secret
@@ -106,6 +106,10 @@ def _print_missing_credential_warnings(names: list[str]) -> None:
     by naming alone.
     """
     for name in names:
+        # lgtm[py/clear-text-logging-sensitive-data]
+        # codeql[py/clear-text-logging-sensitive-data]: `name` is only ever an
+        # env var *name* (e.g. "OPENAI_API_KEY"), sourced from the module-level
+        # list of well-known env var names, never a secret value.
         print(
             f"  WARNING: {name} has no --credential mapping; "
             "falling back to a plaintext env var if set locally "
@@ -113,21 +117,21 @@ def _print_missing_credential_warnings(names: list[str]) -> None:
         )
 
 
-def _inject_credential_env_vars(
-    credentials: dict[str, str], env_vars: list[dict[str, Any]]
+def _inject_configured_env_vars(
+    env_var_mapping: dict[str, str], env_vars: list[dict[str, Any]]
 ) -> None:
-    """Append SECRET_ENV_VARS entries to ``env_vars``, preferring DataRobot
+    """Append MANAGED_ENV_VAR_NAMES entries to ``env_vars``, preferring DataRobot
     credential references over plaintext values. Isolated from any warning
     or logging code so secret values here are only ever appended to the
     request payload, never printed.
     """
-    for env_name in SECRET_ENV_VARS:
-        if env_name in credentials:
-            cred_id, key = credentials[env_name].split(":", 1)
+    for env_name in MANAGED_ENV_VAR_NAMES:
+        if env_name in env_var_mapping:
+            mapped_id, key = env_var_mapping[env_name].split(":", 1)
             env_vars.append({
                 "source": "dr-credential",
                 "name": env_name,
-                "drCredentialId": cred_id,
+                "drCredentialId": mapped_id,
                 "key": key,
             })
             continue
@@ -136,14 +140,14 @@ def _inject_credential_env_vars(
             env_vars.append({"name": env_name, "value": env_value})
 
 
-def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
+def _build_spec(image_uri: str, env_var_mapping: dict[str, str]) -> dict[str, Any]:
     """Build the Workload API create-workload request body.
 
-    ``credentials`` maps env var name -> "drCredentialId:key" (see --credential).
+    ``env_var_mapping`` maps env var name -> "drCredentialId:key" (see --credential).
     Any secret without a credential mapping falls back to a plaintext env var
     read from the local environment (demo convenience, not for production).
     """
-    _print_missing_credential_warnings(_missing_credential_env_names(credentials))
+    _print_missing_mapping_warnings(_missing_mapped_env_names(env_var_mapping))
 
     env_vars: list[dict[str, Any]] = []
     for plain_name in PLAINTEXT_ENV_VARS:
@@ -151,7 +155,7 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
         if plain_value:
             env_vars.append({"name": plain_name, "value": plain_value})
 
-    _inject_credential_env_vars(credentials, env_vars)
+    _inject_configured_env_vars(env_var_mapping, env_vars)
 
     return {
         "name": WORKLOAD_NAME,
@@ -196,8 +200,8 @@ def _build_spec(image_uri: str, credentials: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def create_workload(image_uri: str, credentials: dict[str, str], wait: bool = True) -> str:
-    spec = _build_spec(image_uri, credentials)
+def create_workload(image_uri: str, env_var_mapping: dict[str, str], wait: bool = True) -> str:
+    spec = _build_spec(image_uri, env_var_mapping)
     with _client() as client:
         resp = client.post("/api/v2/workloads/", json=spec)
         resp.raise_for_status()
@@ -289,7 +293,7 @@ def delete_workload(workload_id: str) -> None:
         print(f"Deleted workload: {workload_id}")
 
 
-def _parse_credential(value: str) -> tuple[str, str]:
+def _parse_env_mapping(value: str) -> tuple[str, str]:
     """Parse '--credential NAME=CRED_ID:KEY' into (NAME, 'CRED_ID:KEY')."""
     name, mapping = value.split("=", 1)
     return name, mapping
@@ -324,8 +328,8 @@ def main() -> int:
 
     try:
         if args.command == "create":
-            credentials = dict(_parse_credential(c) for c in args.credential)
-            create_workload(args.image, credentials, wait=not args.no_wait)
+            env_var_mapping = dict(_parse_env_mapping(c) for c in args.credential)
+            create_workload(args.image, env_var_mapping, wait=not args.no_wait)
         elif args.command == "status":
             workload_status(args.workload_id)
         elif args.command == "logs":
