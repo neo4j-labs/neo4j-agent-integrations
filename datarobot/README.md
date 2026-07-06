@@ -129,19 +129,23 @@ python run_local.py "Give me a competitive snapshot of Google"
 > optional and fails open.)
 >
 > **Still failing with `ssl.SSLCertVerificationError: certificate has expired` /
-> `BoltSecurityError`?** This is a **corporate TLS-inspecting proxy** (e.g. Zscaler), not a
-> problem with the demo server or this repo. Networks that MITM-inspect TLS terminate the real
-> connection to `demo.neo4jlabs.com` and re-sign it with their own intercept certificate; if
-> that proxy's own certificate has expired, every TLS handshake through it fails verification
-> regardless of the target server. Confirm with:
+> `BoltSecurityError`?** As of **2026-07-06**, `demo.neo4jlabs.com`'s TLS certificate has
+> expired (confirmed via `openssl s_client` from multiple independent networks, including
+> Google Cloud infrastructure — this is a live issue with the shared demo database, not a
+> per-user network problem). Corporate TLS-inspecting proxies (e.g. Zscaler) can produce an
+> identical-looking error for a different reason — they re-sign connections with their own
+> intercept certificate, which can itself have expired independently. Confirm which case you're
+> in with:
 > ```
 > echo | openssl s_client -connect demo.neo4jlabs.com:7687 -servername demo.neo4jlabs.com \
 >   2>/dev/null | openssl x509 -noout -dates -issuer
 > ```
-> If `issuer` shows your company's name (e.g. `O=Zscaler Inc.`) instead of a public CA, this is
-> a network/IT issue — ask your IT/security team to renew the proxy's intercept certificate, or
-> run from a network without TLS inspection for `*.neo4jlabs.com`. No `.env` or code change can
-> fix this from within the repo.
+> If `issuer` shows your company's name (e.g. `O=Zscaler Inc.`), it's your corporate proxy —
+> ask IT to renew the intercept certificate, or run from a network without TLS inspection for
+> `*.neo4jlabs.com`. If `issuer` shows a public CA, the demo database's own certificate has
+> expired — this needs to be renewed by whoever manages `demo.neo4jlabs.com`; no `.env` or code
+> change in this repo can fix it. Either way, this is external to the agent code — once the
+> relevant certificate is renewed, no further changes are needed here.
 
 ---
 
@@ -511,3 +515,5 @@ Then in the DataRobot UI:
 - `myagent.py` (Path B) works on Python 3.9+ since it only depends on `langchain-core`/`langgraph`/`langchain-neo4j`; `datarobot_genai` itself requires the DataRobot template environment and is optional for local testing.
 - Path B was verified end-to-end locally: `graph_factory()` compiled as a LangGraph `StateGraph`, invoked with `ChatOpenAI`, and confirmed to call `neo4j_tools` via native tool-calling against the live `neo4j+s://demo.neo4jlabs.com` companies database.
 - Path C (`agent/server.py`) was verified end-to-end locally via `uvicorn` — `/healthz`, `/readyz`, and `/v1/chat/completions` all confirmed working against the live Neo4j database and a real OpenAI call. `infra/workload.py`'s actual `POST /api/v2/workloads/` call has not been exercised against a live DataRobot org (requires Workload API access), but follows DataRobot's published request/response contract.
+- **MCP protocol verified against the public `neo4j-mcp-official` server** (raw JSON-RPC handshake — `initialize` → `notifications/initialized` → `tools/list`): auth (Basic, per the auth table above), transport, and tool discovery all confirmed working, returning real `get-schema`/`read-cypher` tool definitions. `tools/call` itself could not be fully verified as of **2026-07-06** because the shared `demo.neo4jlabs.com` database's TLS certificate has expired (`x509: certificate has expired ... 2026-07-05T00:22:19Z`), confirmed independently from Google Cloud infrastructure (not just a local/corporate proxy issue) — this is a live infra issue with the shared public demo DB, unrelated to this repo's code. Retry once the certificate is renewed.
+
