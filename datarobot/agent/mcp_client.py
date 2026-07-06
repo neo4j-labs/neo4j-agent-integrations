@@ -48,9 +48,12 @@ except ImportError:
 
 
 # httpx's default timeout (5s) is too short for MCP servers reached through
-# corporate proxies or cold-starting cloud services; make it configurable via
-# MCP_HTTP_TIMEOUT (seconds) with a more forgiving default.
-_HTTP_TIMEOUT = float(os.environ.get("MCP_HTTP_TIMEOUT", "60"))
+# corporate proxies or cold-starting cloud services. Tool calls that execute
+# a Neo4j query server-side can also take a while if the DB is unreachable
+# (e.g. neo4j-mcp-official retries for up to ~30s before giving up), so the
+# default here needs headroom above that. Configurable via MCP_HTTP_TIMEOUT
+# (seconds).
+_HTTP_TIMEOUT = float(os.environ.get("MCP_HTTP_TIMEOUT", "90"))
 
 
 def is_enabled() -> bool:
