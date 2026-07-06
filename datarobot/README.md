@@ -193,6 +193,16 @@ MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
 
 MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
 
+> **Seeing `MCP list_tools failed (non-fatal): ... 401 Unauthorized` followed by
+> `neo4j.exceptions.ServiceUnavailable: Unable to retrieve routing information`?**
+> These are two unrelated issues that often show up together while testing MCP:
+> - The `401` on `list_tools` is expected/harmless if your MCP server requires auth you
+>   haven't configured yet (see the auth table above) — MCP fails open, so it doesn't stop
+>   the agent.
+> - The `ServiceUnavailable` is the real failure — it's a **Neo4j driver routing** problem,
+>   not MCP-related, common in Codespaces/devcontainers. See the troubleshooting note under
+>   [Quick Start](#quick-start-local) — switch `NEO4J_URI` from `neo4j+s://` to `bolt+s://`.
+
 ---
 
 ## Path B — `datarobot-agent-application` template (`myagent.py`)
