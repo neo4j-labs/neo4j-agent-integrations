@@ -1,19 +1,38 @@
 """Neo4j Agent Memory (NAMS) — optional, non-blocking integration.
 
 Uses the official neo4j-agent-memory Python SDK (>= 0.4.0).
-For most production NAMS API keys the workspace is implicit in the key itself.
-Some NAMS deployments (e.g. dev/staging services that scope by header rather
-than encoding the workspace in the key) additionally require MEMORY_WORKSPACE_ID
-to be set — the SDK's MemorySettings picks this up from the environment
-automatically. If it's required but missing, NAMS calls fail with a
+Some NAMS deployments require MEMORY_WORKSPACE_ID in addition to
+MEMORY_API_KEY (see the "workspace_not_provisioned" note below) — the
+SDK's MemorySettings picks this up from the environment automatically.
+If it's required but missing, NAMS calls fail with a
 "workspace_not_provisioned" error, which is surfaced below as a one-time
 warning (see _warn_once) rather than being silently swallowed.
+
+IMPORTANT — NAMS conversation IDs are server-assigned, not client-chosen:
+`POST /conversations` ignores any id we pass and always mints a fresh UUID
+(the SDK's `create_conversation(session_id=...)` only echoes our value back
+into the *local* `Conversation.session_id` field for Pydantic compatibility
+— it is never sent to, or honored by, the server). Passing our own
+locally-derived id (see `session_id_from_params`) straight through to
+`add_message`/`get_context` therefore targets a conversation that was never
+actually created, failing every call with a 404. Filtering
+`list_conversations` by `user_identifier` was verified during end-to-end
+testing to not reliably scope results server-side either, so it can't be
+used to look up "our" conversation among others without risking
+cross-session context leakage. Instead, `_resolve_conversation_id` keeps a
+small local JSON cache mapping our local key -> the real NAMS conversation
+UUID, created once via `create_conversation` and reused on every later
+call. This gives stable per-key continuity for a single process/replica;
+in a multi-replica deployment each replica keeps its own cache, so memory
+continuity is scoped per-replica — a documented limitation, not a
+correctness bug.
 
 If neo4j-agent-memory is not installed or MEMORY_API_KEY is absent,
 all functions are silent no-ops so the agent works normally.
 """
 from __future__ import annotations
-import hashlib, logging, os
+import hashlib, json, logging, os
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -26,6 +45,36 @@ except ImportError:
     _HAS_MEMORY = False
 
 _warned_this_process = False
+
+_CONVERSATION_CACHE_PATH = Path(__file__).resolve().parents[1] / ".nams_conversation_cache.json"
+
+
+def _load_conversation_cache() -> dict[str, str]:
+    try:
+        return json.loads(_CONVERSATION_CACHE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_conversation_cache(cache: dict[str, str]) -> None:
+    try:
+        _CONVERSATION_CACHE_PATH.write_text(json.dumps(cache))
+    except Exception as exc:
+        logger.debug("Could not persist NAMS conversation cache (non-fatal): %s", exc)
+
+
+async def _resolve_conversation_id(client: Any, local_key: str) -> str:
+    """Map our local session key to a real NAMS conversation UUID, creating one if needed."""
+    cache = _load_conversation_cache()
+    real_id = cache.get(local_key)
+    if real_id:
+        return real_id
+
+    conv = await client.short_term.create_conversation(local_key, user_identifier=local_key)
+    real_id = str(conv.id)
+    cache[local_key] = real_id
+    _save_conversation_cache(cache)
+    return real_id
 
 
 def _warn_once(exc: BaseException) -> None:
@@ -77,12 +126,8 @@ def get_context(user_query: str, conversation_id: str) -> str:
 
     async def _fetch() -> str:
         async with MemoryClient() as client:
-            # Ensure conversation exists (idempotent on NAMS)
-            try:
-                await client.short_term.create_conversation(conversation_id)
-            except Exception:
-                pass  # already exists
-            ctx = await client.get_context(user_query, session_id=conversation_id)
+            real_id = await _resolve_conversation_id(client, conversation_id)
+            ctx = await client.get_context(user_query, session_id=real_id)
             return ctx or ""
 
     try:
@@ -106,13 +151,10 @@ def save_turn(conversation_id: str, user_message: str, assistant_response: str) 
 
     async def _save() -> None:
         async with MemoryClient() as client:
-            try:
-                await client.short_term.create_conversation(conversation_id)
-            except Exception:
-                pass
+            real_id = await _resolve_conversation_id(client, conversation_id)
             # NAMS SDK: add_message(conversation_id, role, content)
-            await client.short_term.add_message(conversation_id, "user", user_message)
-            await client.short_term.add_message(conversation_id, "assistant", assistant_response)
+            await client.short_term.add_message(real_id, "user", user_message)
+            await client.short_term.add_message(real_id, "assistant", assistant_response)
 
     try:
         import asyncio

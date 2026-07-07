@@ -153,8 +153,8 @@ python run_local.py "Give me a competitive snapshot of Google"
 
 ```bash
 # Get a free key at https://memory.neo4jlabs.com
-# MEMORY_WORKSPACE_ID is the segment between the first two underscores in your key:
-#   e.g. nams_<WORKSPACE_ID>_<secret>
+# MEMORY_WORKSPACE_ID is issued alongside your key from the NAMS dashboard/console —
+# it is NOT reliably derivable from the key string itself (see note below).
 MEMORY_API_KEY=nams_... MEMORY_WORKSPACE_ID=<workspace-id> python run_local.py "Tell me about Apple"
 # Next session will have context from the first one
 ```
@@ -170,7 +170,9 @@ How it works in `custom.py`:
 
 Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op. If `MEMORY_API_KEY` **is** set but a NAMS call still fails (bad key, missing workspace, network issue), `memory.py` logs a one-time `WARNING` (visible even with no logging configuration) explaining the failure instead of swallowing it silently — the agent still keeps running without memory context.
 
-> **`MEMORY_WORKSPACE_ID`** — required when using NAMS. Set it to the workspace ID portion of your key (`nams_<WORKSPACE_ID>_<secret>`). The SDK sends it as the `X-Workspace-Id` header to scope all memory to your workspace. If you see `503: workspace_not_provisioned` in the warning above, this is almost always the cause — double-check `MEMORY_WORKSPACE_ID` is set and matches your key.
+> **`MEMORY_WORKSPACE_ID`** — required by some NAMS deployments (sent as the `X-Workspace-Id` header). **This is a real workspace ID issued by NAMS, not a segment you can parse out of the API key** — during end-to-end testing, guessing the workspace ID from the key's `nams_<segment>_<secret>` shape produced a `403: this key is bound to a different workspace` error; the correct value was an unrelated UUID from the NAMS dashboard. If you see `503: workspace_not_provisioned` in the warning above, double-check `MEMORY_WORKSPACE_ID` against your NAMS dashboard/console rather than guessing it from the key.
+>
+> **Conversation IDs are server-assigned, not client-chosen.** NAMS's `POST /conversations` always mints its own UUID regardless of any id passed in — it does not accept our locally-derived `session_id` as the real conversation identifier. `memory.py` accounts for this by keeping a small local cache (`.nams_conversation_cache.json`, gitignored) mapping each local session key to the real NAMS-issued UUID, created once and reused on every later call. This gives correct multi-turn continuity for a single process/replica; in a multi-replica deployment, memory continuity is scoped per-replica since each keeps its own cache.
 
 ---
 
