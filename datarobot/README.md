@@ -212,6 +212,18 @@ MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
 
 MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
 
+> **Set `MCP_SERVER_URL` correctly, but seeing zero MCP tools and no error/warning at all?**
+> The `mcp` package requires **Python ≥3.10**. If it's not importable (wrong Python version, or
+> `pip install -r requirements.txt` wasn't run in that interpreter), MCP silently disables itself —
+> `list_tools()` returns `[]` with no feedback, indistinguishable from MCP being intentionally off.
+> As of this fix, this now logs a `WARNING` telling you the `mcp` package isn't importable and
+> which Python version is actually running. Check with `python --version` / `python -c "import mcp"`
+> and reinstall with a Python ≥3.10 interpreter if needed.
+>
+> Also double-check `MCP_SERVER_URL` for stray characters — a trailing `%27` (URL-encoded single
+> quote) or similar copy-paste artifact from a chat/markdown link will silently turn a valid URL
+> into a `404 Not Found`. Compare byte-for-byte with the URL you intend to use.
+
 > **Seeing `MCP list_tools failed (non-fatal): ... 401 Unauthorized` followed by
 > `neo4j.exceptions.ServiceUnavailable: Unable to retrieve routing information`?**
 > These are two unrelated issues that often show up together while testing MCP:

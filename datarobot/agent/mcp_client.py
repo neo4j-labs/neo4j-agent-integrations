@@ -26,6 +26,7 @@ import base64
 import logging
 import os
 import shlex
+import sys
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,28 @@ _HTTP_TIMEOUT = float(os.environ.get("MCP_HTTP_TIMEOUT", "90"))
 
 def is_enabled() -> bool:
     return _HAS_MCP and bool(os.environ.get("MCP_SERVER_URL"))
+
+
+def _warn_if_configured_but_unavailable() -> None:
+    """Warn once if MCP_SERVER_URL is set but the ``mcp`` package couldn't be
+    imported, instead of silently returning [] with zero feedback.
+
+    Without this, a user who sets MCP_SERVER_URL but is on Python <3.10 (the
+    ``mcp`` package's minimum) or simply forgot to install requirements sees
+    zero tools and zero errors/warnings — indistinguishable from MCP being
+    intentionally disabled. This has caused real confusion during testing.
+    """
+    if _HAS_MCP or not os.environ.get("MCP_SERVER_URL"):
+        return
+    logger.warning(
+        "MCP_SERVER_URL is set to '%s' but the 'mcp' package is not "
+        "importable, so MCP is disabled and list_tools()/call_tool() will "
+        "silently return no results. The 'mcp' package requires Python "
+        ">=3.10 (current interpreter: %s). Run 'pip install -r "
+        "requirements.txt' with a Python >=3.10 interpreter to enable MCP.",
+        os.environ.get("MCP_SERVER_URL", ""),
+        sys.version.split()[0],
+    )
 
 
 def _is_http(url: str) -> bool:
@@ -189,6 +212,7 @@ async def _call_tool_async(url: str, name: str, arguments: dict[str, Any]) -> An
 def list_tools() -> list[dict[str, Any]]:
     """Fetch tool definitions from the MCP server. Returns [] on any error."""
     if not is_enabled():
+        _warn_if_configured_but_unavailable()
         return []
     url = os.environ["MCP_SERVER_URL"]
     try:
@@ -201,6 +225,7 @@ def list_tools() -> list[dict[str, Any]]:
 def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     """Call a tool on the MCP server. Returns error dict on failure."""
     if not is_enabled():
+        _warn_if_configured_but_unavailable()
         return {"error": "MCP not configured"}
     url = os.environ["MCP_SERVER_URL"]
     try:
