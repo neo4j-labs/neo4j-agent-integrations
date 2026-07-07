@@ -449,7 +449,15 @@ class Neo4jResearchAgent:
                     result = mcp_client.call_tool(tool_name, arguments)
                 else:
                     tool = self.tool_index[tool_name]
-                    result = tool.func(**arguments)
+                    try:
+                        result = tool.func(**arguments)
+                    except Exception as exc:
+                        # A single bad/unsupported Cypher call (e.g. a schema
+                        # mismatch on a non-demo database) shouldn't crash the
+                        # whole agent run. Surface the failure to the LLM as a
+                        # tool error, same as mcp_client.call_tool() does, so
+                        # it can explain the problem or try another tool.
+                        result = {"error": f"{type(exc).__name__}: {exc}"}
                 messages.append(
                     {
                         "role": "tool",

@@ -405,6 +405,21 @@ If no `--credential` mapping is given for a secret, `infra/workload.py` falls ba
 | `get_article` | Full article body by article_id |
 | `companies_in_article` | Organizations mentioned in an article |
 
+> **These tools assume the Neo4jLabs "companies" demo graph schema** — `Organization`,
+> `Person`, `IndustryCategory`, `City`, `Country`, `Article` nodes, plus a **fulltext index
+> named `entity`** (used by `search_companies`) and a **vector index** (used by `search_news`).
+> `demo.neo4jlabs.com` (the default `NEO4J_URI`) already has both. If you point `NEO4J_URI`/
+> `NEO4J_DATABASE` at your own Neo4j instance without this schema, tool calls that depend on it
+> will fail — most commonly as:
+> ```
+> Neo.ClientError.Procedure.ProcedureCallFailed: ... There is no such fulltext schema index: entity
+> ```
+> As of this fix, that failure is caught and returned to the LLM as a tool error (so the agent
+> explains the problem instead of crashing with a raw stack trace), but the underlying cause is
+> still a schema mismatch — either point at a database with this schema, or adapt the Cypher in
+> `agent.py`'s tool methods to your own graph model. Path B (`neo4j_tools.py`) already had this
+> same try/except protection from the start, since `run_cypher_query()` wraps every query.
+
 ## Neo4j LangChain tools (Path B — `neo4j_tools.py`)
 
 | Tool | Description |
@@ -538,4 +553,5 @@ Then in the DataRobot UI:
 - Path C (`agent/server.py`) was verified end-to-end locally via `uvicorn` — `/healthz`, `/readyz`, and `/v1/chat/completions` all confirmed working against the live Neo4j database and a real OpenAI call. `infra/workload.py`'s actual `POST /api/v2/workloads/` call has not been exercised against a live DataRobot org (requires Workload API access), but follows DataRobot's published request/response contract.
 - **MCP protocol verified against the public `neo4j-mcp-official` server**, using both raw JSON-RPC (initial pass, before Python ≥3.10 was available locally) and the **real `mcp` Python SDK** (`mcp==1.28.1` under Python 3.12, once installed): `list_tools()`/`call_tool()` succeed end-to-end via the real Streamable HTTP transport, returning real `get-schema`/`read-cypher` tool definitions. This testing uncovered and fixed two real client bugs invisible to raw-JSON-RPC testing — see the `405`/timeout troubleshooting note under [MCP Integration](#mcp-integration) for details (3-tuple unpacking with `mcp>=1.10`, and httpx's too-short default timeout). `tools/call`'s actual Cypher execution still fails as of **2026-07-06** because the shared `demo.neo4jlabs.com` database's TLS certificate has expired (`x509: certificate has expired ... 2026-07-05T00:22:19Z`), confirmed independently from Google Cloud infrastructure (not just a local/corporate proxy issue) — this is a live infra issue with the shared public demo DB, unrelated to this repo's code. Retry once the certificate is renewed.
 - All GitHub Advanced Security / CodeQL "clear-text logging of sensitive information" alerts on `infra/workload.py` are resolved (alerts #15–#18). CodeQL's query appears to key partly off identifier *naming* (e.g. any variable/parameter containing "secret" or "credential") reaching a `print`/log call, not purely genuine dataflow — each fix isolated the warning `print()` further until it and its whole call chain (function names, parameters, the `SECRET_ENV_VARS` constant itself) contained no sensitive-sounding identifiers, only plain env var name strings. Secret *values* were never actually logged at any point; this was a false-positive-prone heuristic, not a real leak.
+- **Fixed a real crash bug in Path A**: `agent.py`'s `run()` loop called built-in tool functions (`tool.func(**arguments)`) with no exception handling, so any Cypher error (e.g. a missing `entity` fulltext index when pointed at a non-demo database — see [Built-in Neo4j tools](#built-in-neo4j-tools-path-a--agentpy)) crashed the whole agent run with a raw traceback instead of being reported back to the user gracefully. Fixed by wrapping the call in try/except and returning `{"error": ...}` to the LLM as a tool result, matching the pattern `mcp_client.call_tool()` already used. Path B (`neo4j_tools.py`) was never affected — every query there already went through `run_cypher_query()`'s own try/except.
 
