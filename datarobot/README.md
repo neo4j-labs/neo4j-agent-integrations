@@ -168,9 +168,9 @@ How it works in `custom.py`:
 | Context found | Prepended as a `system` message so the LLM knows prior interactions |
 | Post-run | `memory.save_turn()` persists user message + response to NAMS |
 
-Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op.
+Memory is **non-blocking** — if `MEMORY_API_KEY` is absent or the package is not installed, every call is a silent no-op. If `MEMORY_API_KEY` **is** set but a NAMS call still fails (bad key, missing workspace, network issue), `memory.py` logs a one-time `WARNING` (visible even with no logging configuration) explaining the failure instead of swallowing it silently — the agent still keeps running without memory context.
 
-> **`MEMORY_WORKSPACE_ID`** — required when using NAMS. Set it to the workspace ID portion of your key (`nams_<WORKSPACE_ID>_<secret>`). The SDK sends it as the `X-Workspace-Id` header to scope all memory to your workspace.
+> **`MEMORY_WORKSPACE_ID`** — required when using NAMS. Set it to the workspace ID portion of your key (`nams_<WORKSPACE_ID>_<secret>`). The SDK sends it as the `X-Workspace-Id` header to scope all memory to your workspace. If you see `503: workspace_not_provisioned` in the warning above, this is almost always the cause — double-check `MEMORY_WORKSPACE_ID` is set and matches your key.
 
 ---
 
