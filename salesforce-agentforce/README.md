@@ -87,13 +87,43 @@ Three integration tracks — implementations of "Salesforce Bindings":
  - External Service Actions
  - Apex Actions
 
-### Track A: Native MCP Client 
+### Track A: Native MCP Client
 
-**⚠️ THIS SECTION IS A WORK IN PROGRESS**
+Salesforce Agentforce supports custom MCP (Model Context Protocol) servers. After you register a Neo4j MCP server and allowlist its tools, Salesforce creates reusable MCP actions in the Agentforce Asset Library. You then attach the required actions to a dedicated subagent; registering the server alone does not make its tools available to that agent.
 
-Agentforce now includes a native MCP (Model Context Protocol) client. Register any MCP server — including Neo4j's — and it becomes available as an agent tool with no custom code.
+#### Basic configuration
 
-⚠️ Custom MCP server support in Salesforce is currently in beta and not available for general use (Pilot July 2025, Beta October 2025, GA April 2026).
+1. Register the Neo4j MCP server in Salesforce Setup and select the tools that agents may use. For the first implementation, add only `read-cypher`; add `get-schema` and `list-gds-procedures` later if the use case requires them.
+
+   ![Selecting Neo4j MCP tools in Salesforce Agentforce](images/creating_mcp_server.png)
+
+2. Confirm that Salesforce created the selected MCP actions under `Setup → Agentforce → Agentforce Assets → Actions`. MCP actions are named using the pattern `<Tool Name> <Server Name>`.
+3. Open an editable draft of the agent in Agentforce Studio and create a dedicated subagent, such as `Company Intelligence`. Give it a routing description covering company profiles, competitors, suppliers, subsidiaries, executives, industries, locations, and related news.
+4. Under the subagent's `Actions`, select `Add from Asset Library`, add the `read-cypher` action, and save. Salesforce adds the action both to the subagent and to the actions available to its reasoning engine.
+5. Verify in Script view that the action appears in both the subagent-level `actions:` block and `reasoning.actions:`. Also verify that the Agent Router can transition to the subagent. Let Salesforce generate the MCP action reference; do not write the MCP target manually.
+6. Use **Live Test**, rather than Simulate, to verify the real MCP call. The trace should show the router transition, the available `read-cypher` action, its invocation and result, and the final grounded response.
+
+See the [`examples/track-a/agentscript.yaml`](examples/track-a/agentscript.yaml) for a captured `Company Intelligence` subagent configuration. Salesforce generates the action identifiers and MCP target for each org; do not copy those values into another org.
+
+#### Reasoning instructions
+
+Keep the root agent/router instruction-light, but give the Neo4j subagent focused instructions for query safety, grounding, and presentation:
+
+```text
+Use the Read Cypher action to retrieve facts from the Neo4j company knowledge graph.
+
+The graph contains Organization nodes representing companies. Organization relationships include HAS_COMPETITOR, HAS_SUPPLIER, HAS_SUBSIDIARY, HAS_CEO, HAS_BOARD_MEMBER, HAS_INVESTOR, HAS_CATEGORY, and incoming MENTIONS relationships from Article nodes.
+
+Match company names case-insensitively. Generate only read-only Cypher queries. Never generate CREATE, MERGE, DELETE, SET, REMOVE, DROP, or other modifying operations.
+
+Limit returned collections to at most 10 results unless the user explicitly requests otherwise. Prefer parameterized queries where practical.
+
+Use the graph results as factual grounding. Never invent companies, relationships, people, or articles that aren't present in the action result. If no matching organization is found, explain this and ask the user for a more precise company name.
+
+Summarize the graph results for a business user. Clearly distinguish facts returned from Neo4j from your interpretation of why those facts might matter.
+```
+
+These instructions belong to the dedicated subagent, not the root router. This keeps routing simple while giving the graph tool the domain context and safety constraints it needs.
 
 ### Track B: External Service Actions  
 
