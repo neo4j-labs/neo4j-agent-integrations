@@ -91,6 +91,8 @@ Three integration tracks — implementations of "Salesforce Bindings":
 
 Salesforce Agentforce supports custom MCP (Model Context Protocol) servers. After you register a Neo4j MCP server and allowlist its tools, Salesforce creates reusable MCP actions in the Agentforce Asset Library. You then attach the required actions to a dedicated subagent; registering the server alone does not make its tools available to that agent.
 
+The complete walkthrough of this track — including authentication options, the demo authentication bridge, live-test troubleshooting, and Agentforce Gateway policies — is in [Agentforce integration with Neo4j over MCP](agentforce-mcp.md). The steps below are the condensed version.
+
 #### Basic configuration
 
 1. Register the Neo4j MCP server in Salesforce Setup and select the tools that agents may use. For the first implementation, add only `read-cypher`; add `get-schema` and `list-gds-procedures` later if the use case requires them.
@@ -173,6 +175,7 @@ See the [`examples/`](https://github.com/neo4j-labs/neo4j-agent-integrations/tre
 | File | Description |
 | --- | --- |
 | [`examples/agent.yaml`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/salesforce-agentforce/examples/agent.yaml) | YAML script defining the agent |
+| [`examples/track-a/agentscript.yaml`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/salesforce-agentforce/examples/track-a/agentscript.yaml) | Captured `Company Intelligence` subagent with a generated MCP action |
 | [`examples/track-c/apex/`](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/salesforce-agentforce/examples/track-c/apex) | Apex files with tests |
 | [`examples/track-b/neo4j-bridge/index.ts`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/salesforce-agentforce/examples/track-b/neo4j-bridge/index.ts) | A sample Neo4j bridge server |
 
