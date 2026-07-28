@@ -81,6 +81,8 @@ datarobot/
 ├── .env.example
 ├── README.md
 ├── requirements.txt
+├── requirements-nat.txt    ← [Path D] NeMo Agent Toolkit / dragent dependencies
+├── pyproject.toml          ← [Path D] packages agent/nat_tools.py + nat_memory.py as a NAT plugin
 ├── run_local.py            ← local CLI test for Path A (mirrors DataRobot DRUM execution)
 ├── datarobot_agent.ipynb   ← Jupyter demo notebook (Path A)
 ├── Dockerfile               ← [Path C] linux/amd64 image for the Workload API container
@@ -95,6 +97,9 @@ datarobot/
 │   ├── myagent.py          ← [Path B] LangGraph agent for datarobot-agent-application template
 │   ├── neo4j_tools.py      ← [Path B] LangChain-compatible Neo4j tools (7 tools)
 │   ├── server.py            ← [Path C] FastAPI wrapper around custom.py::chat() for the Workload API
+│   ├── nat_tools.py        ← [Path D] Neo4j tools registered as native NAT functions (MCP-servable)
+│   ├── nat_memory.py       ← [Path D] NAMS-backed NAT MemoryEditor plugin (neo4j_agent_memory)
+│   ├── workflow.yaml       ← [Path D] NeMo Agent Toolkit workflow (llm + memory + tools + agent)
 │   └── requirements.txt    ← deps bundled in DataRobot ZIP (all paths)
 └── infra/
     ├── __init__.py
@@ -571,13 +576,49 @@ Then in the DataRobot UI:
 - **Fixed a real Cypher injection vulnerability in `neo4j_tools.py`** (Path B), flagged in code review: `search_companies`, `query_company_profile`, `list_industries`, `companies_in_industry`, `analyze_company_relationships`, and `people_at_company` all built queries by string-interpolating tool-call arguments directly into Cypher text (naive `str.replace("'", "\\'")` "escaping" or unescaped `f"..."` substitution), which is bypassable and unsafe. All six now pass user-supplied values through Neo4j's native query parameters (`graph.query(query, params={...})`) instead of interpolating them into the query text — verified with adversarial inputs (`x' OR 1=1 //`, `Apple' OR '1'='1`, `x'}) DETACH DELETE n //`) against the live database: each is now treated as inert literal search/match text rather than altering query structure. The one remaining bounded exception is `analyze_company_relationships`'s `max_depth`, which Cypher cannot parameterize inside a variable-length relationship pattern (`-[*1..N]-`); it stays interpolated but is coerced to `int` and clamped to `1–4` before use, so it cannot carry injected text. `run_cypher_query` (Path B's raw-Cypher passthrough tool) is unaffected by this fix — it is intentionally a "run this literal Cypher" tool, same trust model as Path A's `run_cypher_query` built-in.
 - **Fixed a missing runtime parameter in Path A**: `custom.py`'s `RUNTIME_PARAMETER_KEYS` tuple (the list DRUM copies from DataRobot runtime parameters into `os.environ` on `load_model()`/`chat()`) was missing `OPENAI_BASE_URL`, even though `agent.py` reads it from the environment and `model-metadata.yaml` already declared it as a deployable field. In a real DataRobot deployment this meant setting the `OPENAI_BASE_URL` runtime parameter (e.g. to point at DataRobot's LLM Gateway/proxy or Azure OpenAI) would silently have no effect. Added `OPENAI_BASE_URL` to `RUNTIME_PARAMETER_KEYS`; all 13 fields declared in `model-metadata.yaml` now have a matching entry in `custom.py`.
 
-### Architecture feedback from the DataRobot team (acknowledged, not yet implemented)
+## Path D — NeMo Agent Toolkit (`dragent`) `workflow.yaml`
 
-DataRobot engineers (`tsdaemon`, `jpclemens0`, `rabih-datarobot`) reviewed this PR and raised platform-alignment points that are bigger than line-level bugs. Recorded here rather than silently dropped, and left as explicit follow-up work rather than an unverified rewrite in this PR:
+DataRobot engineers (`tsdaemon`, `jpclemens0`, `rabih-datarobot`) reviewed this PR and asked for a migration off DRUM's `custom.py`/`model-metadata.yaml` convention (Path A) toward DataRobot's current agent stack: a `workflow.yaml` composed with **NeMo Agent Toolkit (NAT)**, Neo4j tools exposed in a framework-portable/MCP-servable way instead of LangChain-only, and NAMS memory adapted into a composable memory plugin (the pattern of DataRobot's own `dr_mem0_memory` example). This is now implemented as **Path D** and tested end-to-end against the live Neo4j database and OpenAI — not just documented as a plan.
 
-- **DRUM is deprecated on DataRobot's side.** DataRobot agents have moved to a `dragent` frontserver composed via **NeMo Agent Toolkit** and a `workflow.yaml` file, not DRUM's `custom.py`/`model-metadata.yaml` convention that Path A (`agent/custom.py`) uses. DataRobot suggests following the [`af.datarobot.com/guides/zero-vibe`](https://af.datarobot.com/guides/zero-vibe/) tutorial and the [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) component pattern instead.
-- **Prefer forking/extending DataRobot's own templates** — [`datarobot-agent-application`](https://github.com/datarobot-community/datarobot-agent-application) (agent + MCP) or [`datarobot-mcp-template`](https://github.com/datarobot-community/datarobot-mcp-template) (deployable MCP server) — rather than maintaining parallel custom infra (`infra/agent.py`, `infra/workload.py`). DataRobot's template also ships a `task deploy` Taskfile target that could replace the custom packaging/deploy automation in `infra/agent.py`.
-- **Neo4j tools should be framework-portable.** Path B's `neo4j_tools.py` uses LangChain-specific `@tool` decorators, which locks the tools to one agent framework. DataRobot suggests exposing them as MCP tools (so any agent flavor can use them) and/or as a NeMo Agent Toolkit tool plugin, rather than (or in addition to) LangChain tool functions.
-- **NAMS memory should become a NeMo Agent Toolkit plugin.** The retrieve-context → enrich-prompt → run-agent → save-results flow currently hand-rolled in `custom.py::chat()` / `memory.py` matches the pattern of DataRobot's own example `dr_mem0_memory` streaming-memory-agent plugin; DataRobot suggests adapting the Neo4j memory client into an equivalent composable plugin driven from `workflow.yaml`.
-- **Why this isn't done in this PR**: each of the above is a full framework migration (new deployment target, new manifest format, new plugin SDK) that depends on DataRobot-internal template repos and a live `dragent`-capable DataRobot org to build and verify against — neither of which could be exercised end-to-end from this environment. Rather than land an unverified rewrite, the concrete, verifiable issues from the same review round (the Cypher injection bug and the missing `OPENAI_BASE_URL` runtime parameter, both above) were fixed and tested against the live Neo4j database. The NeMo Agent Toolkit / `workflow.yaml` / template-fork migration is tracked as the natural next collaborative step with the DataRobot team, who have the internal tooling and org access to validate it.
+**Files**: `agent/nat_tools.py`, `agent/nat_memory.py`, `agent/workflow.yaml`, `pyproject.toml`, `requirements-nat.txt`.
+
+- **`agent/nat_tools.py`** registers the same 7 parameterized-Cypher functions from `neo4j_tools.py` (Path B) as native NAT `@register_function` components, via `.invoke()` on the existing LangChain tool — no query logic is duplicated. Because they're plain NAT functions (not LangChain-specific), they can be wired into *any* NAT agent type, and served over MCP directly (see below) — this is the concrete answer to "tools should be framework-portable."
+- **`agent/nat_memory.py`** implements NAT's `MemoryEditor` interface (`add_items`/`search`/`remove_items`) as `neo4j_agent_memory`, wrapping the existing NAMS session-cache logic from `agent/memory.py` (no duplicated conversation-ID logic) — modeled directly on DataRobot's own `dr_mem0_memory`/`DRMem0Editor` reference implementation, including its `UnconfiguredMemoryEditor` no-op fallback when `MEMORY_API_KEY`/`MEMORY_WORKSPACE_ID` aren't set.
+- **`agent/workflow.yaml`** wires an LLM, the NAMS memory plugin, the 7 Neo4j tool functions, NAT's built-in `tool_calling_agent` as the inner agent, and NAT's `auto_memory_agent` as the top-level workflow — the retrieve-context → enrich-prompt → run-agent → save-results flow DataRobot asked for.
+- **`pyproject.toml`** packages `nat_tools.py`/`nat_memory.py` as a local, installable NAT plugin (`[project.entry-points.'nat.plugins']`), the exact mechanism `datarobot-genai[dragent]`'s own plugins use — install with `pip install -e .`, and NAT auto-discovers all 7 tools + the memory plugin (verified via `nat info components`).
+
+**Setup**:
+```bash
+pip install --prefer-binary -r requirements-nat.txt   # see note on --prefer-binary below
+pip install -e .                                       # registers agent/nat_tools.py + nat_memory.py as a NAT plugin
+```
+`--prefer-binary` forces prebuilt wheels; without it, `litellm` (a `datarobot-genai` transitive dependency) tries to build its Rust extension from source via `cargo`, which fails behind corporate proxies that block `crates.io` (confirmed in this environment — unrelated to the package itself).
+
+**Run and verify locally**:
+```bash
+# Run the full workflow (tools + NAMS memory) against a single input
+nat run --config_file agent/workflow.yaml --input "Tell me about Apple"
+
+# Serve the same workflow.yaml over MCP — exposes all 7 Neo4j tools,
+# the inner tool-calling agent, and the memory-wrapped workflow as MCP tools
+nat mcp serve --config_file agent/workflow.yaml --port 9901
+
+# From another shell, using NAT's own MCP client:
+nat mcp client tool list --url http://localhost:9901/mcp
+nat mcp client tool call neo4j_search_companies --url http://localhost:9901/mcp --json-args '{"search": "Tesla"}'
+```
+
+**What was actually tested (this session, against live credentials)**:
+- `nat info components` — confirmed all 7 tool functions + `neo4j_agent_memory` are discovered as installed NAT components.
+- `nat run --config_file agent/workflow.yaml --input "Tell me about Apple"` — real, correct answer synthesized from live Neo4j data via the tool-calling agent, wrapped by `auto_memory_agent`.
+- `nat mcp serve` + `nat mcp client tool list` — all 9 functions (7 tools + inner agent + memory-wrapped workflow) listed as real MCP tools over Streamable HTTP.
+- `nat mcp client tool call neo4j_search_companies --json-args '{"search": "Tesla"}'` — returned real results from the live database (`Tesla`, `Ericsson Nikola Tesla`) through the MCP protocol, proving the tools are genuinely MCP-servable, not just declared as such.
+- NAMS memory calls (`add_items`/`search`) currently fail with `workspace_not_provisioned` — confirmed via a direct `curl` against the NAMS API that this specific `MEMORY_WORKSPACE_ID` is server-side `"status":"deprovisioned"` (an external NAMS account state, not a bug in `nat_memory.py` or this workflow). `nat_memory.py`'s error handling was itself validated by this: `add_items`/`search` failures are caught and logged as warnings, and the workflow completes normally without memory rather than crashing — re-run once the workspace is (re-)provisioned to confirm the full round-trip.
+
+**One design deviation from the original ask, found by testing, not assumption**: DataRobot's own `streaming_memory_agent` (the literal `dr_mem0_memory`-pattern wrapper, from `datarobot-genai[dragent]`) requires its inner agent to emit dragent's own `DRAgentEventResponse` event stream via `astream()` — only agents composed inside DataRobot's own dragent AG-UI runtime produce that. Wiring a plain NAT `tool_calling_agent` into it fails with `'ChatResponseChunk' object has no attribute 'events'`. `workflow.yaml` uses NAT's own upstream `auto_memory_agent` instead — the same retrieve/inject/save memory flow, but calling the inner agent's plain `ainvoke()`, so it works with any NAT agent outside the dragent runtime. Swap `workflow._type` back to `streaming_memory_agent` if/when this is composed as a native dragent agent inside DataRobot's own template (see comment in `workflow.yaml`).
+
+**What remains genuinely blocked (not implemented, and can't be from here)** — the "why didn't you just deploy it on the platform" answer, backed by evidence, not assumption:
+- **Forking `datarobot-agent-application`/`datarobot-mcp-template` and running `task deploy`** requires a live DataRobot org: `task deploy` runs `dr auth check` then `pulumi up` against the `pulumi-datarobot` provider, making real REST calls to a DataRobot org, and references hardcoded platform Execution Environment Version IDs that must already exist in that org.
+- **`dr start`**, which mints the API token and writes `pulumi_config.json` (a hard prerequisite for `task deploy`), is an interactive, browser-based onboarding wizard — human-in-the-loop by design, not something an agent can drive.
+- Everything else — `datarobot-genai[dragent]`, `nvidia-nat`, the `workflow.yaml`, the plugin registration, `nat run`, and `nat mcp serve` — is public, pip-installable (Apache-2.0), and was built and verified entirely locally against live Neo4j + OpenAI credentials, as shown above. Path D is structured to be a near-drop-in fit if/when this is forked into `datarobot-agent-application`'s own `agent/` layout: the only remaining step is `dr start` + `task deploy` inside a real DataRobot org, run by someone with that access.
 

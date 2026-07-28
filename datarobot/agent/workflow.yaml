@@ -1,0 +1,97 @@
+general:
+  # Front end for local dev/testing (nat run) and for `nat serve` (chat API).
+  # To deploy under DataRobot's dragent runtime instead, set front_end._type
+  # to `dragent_fastapi` (provided by datarobot-genai[dragent]) — this is
+  # the same workflow.yaml either way, only the front end changes, per
+  # DataRobot's dragent/NeMo Agent Toolkit pattern (see README "Path D").
+  front_end:
+    _type: fastapi
+
+# LLM used by the tool-calling agent. `openai` works standalone with a
+# plain OPENAI_API_KEY (and optional OPENAI_BASE_URL to point at DataRobot's
+# LLM Gateway or another OpenAI-compatible endpoint) so this workflow can be
+# built/tested outside a DataRobot org. When run under dragent inside a real
+# DataRobot deployment, swap `_type: openai` for DataRobot's own
+# `datarobot-llm-component` (from datarobot-genai[dragent]) to route through
+# the platform's managed LLM Gateway instead.
+llms:
+  agent_llm:
+    _type: openai
+    model_name: gpt-4o-mini
+
+# NAMS-backed memory (see agent/nat_memory.py). Declared unconditionally,
+# same as DataRobot's own dr_mem0_memory pattern: if MEMORY_API_KEY /
+# MEMORY_WORKSPACE_ID aren't set, this yields a no-op editor and the agent
+# runs normally without memory.
+memory:
+  neo4j_memory:
+    _type: neo4j_agent_memory
+
+# Neo4j company-graph tools (see agent/nat_tools.py) — the same
+# parameterized-Cypher implementations used by neo4j_tools.py (Path B),
+# registered as native NAT functions so they can be wired into any NAT
+# agent type and/or served over MCP via `nat mcp serve` without any
+# LangChain-specific wrapping.
+functions:
+  neo4j_search_companies:
+    _type: neo4j_search_companies
+  neo4j_query_company_profile:
+    _type: neo4j_query_company_profile
+  neo4j_list_industries:
+    _type: neo4j_list_industries
+  neo4j_companies_in_industry:
+    _type: neo4j_companies_in_industry
+  neo4j_analyze_company_relationships:
+    _type: neo4j_analyze_company_relationships
+  neo4j_people_at_company:
+    _type: neo4j_people_at_company
+  neo4j_run_cypher_query:
+    _type: neo4j_run_cypher_query
+
+  # The inner tool-calling agent that actually answers questions using the
+  # Neo4j tools above. Wrapped by the auto_memory_agent below, which
+  # handles the retrieve-context / enrich-prompt / run-agent / save-results
+  # flow (matching DataRobot's dr_mem0_memory example pattern).
+  neo4j_tool_calling_agent:
+    _type: tool_calling_agent
+    llm_name: agent_llm
+    system_prompt: >
+      You are a research assistant with access to a Neo4j knowledge graph of
+      companies, industries, and people. Use the available tools to answer
+      questions about companies, their industries, locations, leadership,
+      and relationships to other companies. Cite the company_id when you
+      find one, since other tools need it as input.
+    tool_names:
+      - neo4j_search_companies
+      - neo4j_query_company_profile
+      - neo4j_list_industries
+      - neo4j_companies_in_industry
+      - neo4j_analyze_company_relationships
+      - neo4j_people_at_company
+      - neo4j_run_cypher_query
+
+# The top-level workflow: the same "retrieve context -> enrich prompt ->
+# run agent -> save results" pattern jpclemens0 pointed to in review (PR
+# #67) for dr_mem0_memory, via NAT's own `auto_memory_agent` wrapper (the
+# upstream, non-dragent-specific counterpart to DataRobot's
+# `streaming_memory_agent`). `streaming_memory_agent` itself requires its
+# inner agent to emit dragent's own `DRAgentEventResponse` event stream
+# (via `astream()`), which only DataRobot's own dragent-composed agents
+# produce — a plain NAT `tool_calling_agent` is not directly compatible
+# with it outside the dragent AG-UI runtime (confirmed by testing: it
+# fails with `'ChatResponseChunk' object has no attribute 'events'`).
+# `auto_memory_agent` calls the inner agent's plain `ainvoke()` instead, so
+# it works with any NAT agent — including this workflow's
+# `neo4j_tool_calling_agent` — while still performing the identical
+# capture/retrieve/inject/save memory flow. Swap `_type` to
+# `streaming_memory_agent` if/when the inner agent is composed as a native
+# dragent agent (e.g. under DataRobot's own template) to get token-level
+# streaming through the dragent AG-UI front end.
+workflow:
+  _type: auto_memory_agent
+  llm_name: agent_llm
+  description: >
+    Neo4j company-research agent with NAMS-backed conversation memory
+    (retrieve context, run tool-calling agent, save turn).
+  memory_name: neo4j_memory
+  inner_agent_name: neo4j_tool_calling_agent

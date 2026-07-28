@@ -13,3 +13,7 @@ litellm>=1.40.0
 # HTTP server for the Workload API container (Path C, agent/server.py)
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
+
+# Path D: NeMo Agent Toolkit (dragent) workflow.yaml (agent/nat_tools.py,
+# agent/nat_memory.py, agent/workflow.yaml) has its own, larger dependency
+# set — see requirements-nat.txt. Not required for Path A/B/C.

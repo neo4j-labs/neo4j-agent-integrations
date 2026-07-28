@@ -1,0 +1,19 @@
+# Path D: NeMo Agent Toolkit (dragent) workflow dependencies.
+#
+# This is separate from requirements.txt because it's a large, optional
+# dependency set only needed to run agent/workflow.yaml (Path D) — it is
+# not required for Path A (custom.py/DRUM), Path B (myagent.py), or
+# Path C (server.py).
+#
+# Install with:
+#   pip install --prefer-binary -r requirements-nat.txt
+#
+# --prefer-binary forces prebuilt wheels instead of building from source.
+# This matters because litellm (a transitive dependency of
+# datarobot-genai) ships a Rust extension that some corporate proxies
+# can't build (crates.io access blocked), even though a prebuilt wheel is
+# available on PyPI.
+-r requirements.txt
+nvidia-nat>=1.8.0
+nvidia-nat-langchain>=1.7.0
+datarobot-genai[langgraph,dragent]>=0.26.12
