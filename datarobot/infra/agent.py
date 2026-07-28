@@ -156,13 +156,30 @@ def package_agent() -> Path:
     return PACKAGE_PATH
 
 
+def _normalize_dr_endpoint(endpoint: str) -> str:
+    """
+    Return the DataRobot app base URL with no trailing slash and no
+    trailing /api/v2, regardless of which form DATAROBOT_ENDPOINT was set
+    to. DataRobot's own docs/SDKs are inconsistent about whether this env
+    var should already include /api/v2 (e.g. https://app.datarobot.com vs.
+    https://app.datarobot.com/api/v2), so callers that append /api/v2
+    themselves (validate_datarobot_access, deploy_to_datarobot) would
+    otherwise silently build a broken .../api/v2/api/v2/... URL if a user
+    supplied the /api/v2 form.
+    """
+    normalized = endpoint.rstrip("/")
+    if normalized.endswith("/api/v2"):
+        normalized = normalized[: -len("/api/v2")]
+    return normalized
+
+
 def validate_datarobot_access(timeout: int = 20) -> tuple[bool, str]:
     """Verify DATAROBOT_ENDPOINT + DATAROBOT_API_TOKEN work."""
     endpoint = os.environ.get("DATAROBOT_ENDPOINT")
     token = os.environ.get("DATAROBOT_API_TOKEN")
     if not endpoint or not token:
         return False, "DATAROBOT_ENDPOINT or DATAROBOT_API_TOKEN is missing."
-    url = f"{endpoint.rstrip('/')}/api/v2/account/info/"
+    url = f"{_normalize_dr_endpoint(endpoint)}/api/v2/account/info/"
     try:
         payload = _dr_request("GET", url, token, timeout=timeout)
         username = payload.get("username") or payload.get("uid") or "unknown"
@@ -199,7 +216,7 @@ def deploy_to_datarobot(dry_run: bool = False) -> None:
     7. Create a deployment from the registered model
     8. Print the deployment prediction URL
     """
-    endpoint = os.environ.get("DATAROBOT_ENDPOINT", "").rstrip("/")
+    endpoint = os.environ.get("DATAROBOT_ENDPOINT", "")
     token = os.environ.get("DATAROBOT_API_TOKEN", "")
     model_name = os.environ.get("DR_MODEL_NAME", "Neo4j DataRobot Agent")
 
@@ -207,7 +224,7 @@ def deploy_to_datarobot(dry_run: bool = False) -> None:
         print("ERROR: DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN must be set.")
         sys.exit(1)
 
-    base = f"{endpoint}/api/v2"
+    base = f"{_normalize_dr_endpoint(endpoint)}/api/v2"
 
     # ── 1. Package ────────────────────────────────────────────────────────
     print("\n[1/7] Packaging agent files...")
@@ -242,7 +259,7 @@ def deploy_to_datarobot(dry_run: bool = False) -> None:
 
     # ── 4. Create version and upload files ────────────────────────────────
     print("\n[4/7] Finding Python 3 execution environment...")
-    env_id = _find_execution_environment(endpoint, token)
+    env_id = _find_execution_environment(_normalize_dr_endpoint(endpoint), token)
     print(f"  execution_environment_id = {env_id}")
 
     print("  Creating custom model version and uploading files...")
@@ -325,7 +342,7 @@ def deploy_to_datarobot(dry_run: bool = False) -> None:
 
     # ── Done ──────────────────────────────────────────────────────────────
     prediction_url = (
-        f"{endpoint}/api/v2/deployments/{deployment_id}/chatCompletions/"
+        f"{_normalize_dr_endpoint(endpoint)}/api/v2/deployments/{deployment_id}/chatCompletions/"
     )
     print("\n" + "=" * 60)
     print("Deployment complete!")
