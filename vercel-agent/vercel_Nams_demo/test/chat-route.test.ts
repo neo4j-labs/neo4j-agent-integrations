@@ -17,6 +17,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const holder = vi.hoisted(() => ({
   agentCtorArgs: [] as any[],
+  executeFns: [] as any[],
+  finalText: 'answer',
+  finalFinishReason: 'stop',
   createNamsProvider: vi.fn(),
   createNams: vi.fn(),
   languageModel: vi.fn(),
@@ -24,9 +27,11 @@ const holder = vi.hoisted(() => ({
   toolsWithMcp: vi.fn(),
   makeClient: vi.fn(),
   resolveConversation: vi.fn(),
+  enforceQueryMemory: vi.fn(() => ({ __prepareStep: true })),
   getNeo4jMcpTools: vi.fn(),
   getNamsMcpConfig: vi.fn(),
   isMcpConfigured: vi.fn(),
+  explainMcpError: vi.fn(async (err: any) => err?.message ?? String(err)),
 }));
 
 vi.mock('@ai-sdk/openai', () => ({
@@ -36,9 +41,16 @@ vi.mock('@ai-sdk/openai', () => ({
 vi.mock('ai', () => ({
   ToolLoopAgent: vi.fn().mockImplementation(function (this: any, args: any) {
     holder.agentCtorArgs.push(args);
-    this.stream = vi.fn().mockResolvedValue({ toUIMessageStream: () => new ReadableStream() });
+    this.stream = vi.fn().mockResolvedValue({
+      toUIMessageStream: () => new ReadableStream(),
+      text: Promise.resolve(holder.finalText),
+      finishReason: Promise.resolve(holder.finalFinishReason),
+    });
   }),
-  createUIMessageStream: vi.fn(({ execute }: any) => ({ __execute: execute })),
+  createUIMessageStream: vi.fn(({ execute }: any) => {
+    holder.executeFns.push(execute);
+    return { __execute: execute };
+  }),
   createUIMessageStreamResponse: vi.fn(() => new Response(null, { status: 200 })),
   stepCountIs: vi.fn((n: number) => ({ __stepCountIs: n })),
 }));
@@ -48,12 +60,14 @@ vi.mock('@neo4j-labs/nams-ai-provider', () => ({
   createNams: holder.createNams,
   makeClient: holder.makeClient,
   resolveConversation: holder.resolveConversation,
+  enforceQueryMemory: holder.enforceQueryMemory,
 }));
 
 vi.mock('@/lib/neo4j-mcp', () => ({
   getNeo4jMcpTools: holder.getNeo4jMcpTools,
   getNamsMcpConfig: holder.getNamsMcpConfig,
   isMcpConfigured: holder.isMcpConfigured,
+  explainMcpError: holder.explainMcpError,
 }));
 
 import { POST } from '../app/api/chat/route';
@@ -64,6 +78,9 @@ const chatRequest = (body: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   holder.agentCtorArgs.length = 0;
+  holder.executeFns.length = 0;
+  holder.finalText = 'answer';
+  holder.finalFinishReason = 'stop';
 
   process.env.MEMORY_API_KEY = 'test-key';
   delete process.env.MEMORY_WORKSPACE_ID;
@@ -195,6 +212,80 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(200);
     expect(holder.toolsWithMcp).toHaveBeenCalledTimes(2);
     expect(holder.toolsWithMcp).toHaveBeenNthCalledWith(2, { userId: 'u1', conversationId: undefined });
+  });
+
+  it('builds the DATABASE ACCESS prompt from the tool names the server actually returned', async () => {
+    process.env.NAMS_MODE = 'tools';
+    holder.toolsWithMcp.mockResolvedValue({
+      tools: { query_memory: {}, store_memory: {}, get_neo4j_schema: {}, read_neo4j_cypher: {} },
+      close: vi.fn(),
+    });
+
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    const { instructions } = holder.agentCtorArgs[0];
+    expect(instructions).toContain('DATABASE ACCESS');
+    expect(instructions).toContain('get_neo4j_schema');
+    expect(instructions).toContain('read_neo4j_cypher');
+    // memory tools are not database tools
+    expect(instructions).not.toMatch(/• query_memory/);
+  });
+
+  it('omits the DATABASE ACCESS prompt when MCP is configured but did not connect', async () => {
+    process.env.NAMS_MODE = 'tools';
+    holder.isMcpConfigured.mockReturnValue(true);
+    holder.toolsWithMcp
+      .mockRejectedValueOnce(new Error('HTTP 401'))
+      .mockResolvedValueOnce({ tools: { query_memory: {}, store_memory: {} }, close: vi.fn() });
+
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    expect(holder.agentCtorArgs[0].instructions).not.toContain('DATABASE ACCESS');
+    expect(holder.explainMcpError).toHaveBeenCalled();
+  });
+
+  it('guards the tool loop with enforceQueryMemory in tools mode only', async () => {
+    process.env.NAMS_MODE = 'tools';
+
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    expect(holder.enforceQueryMemory).toHaveBeenCalledWith({ graceSteps: 2 });
+    expect(holder.agentCtorArgs[0].prepareStep).toEqual({ __prepareStep: true });
+
+    process.env.NAMS_MODE = 'provider';
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    expect(holder.agentCtorArgs[1].prepareStep).toBeUndefined();
+  });
+
+  it('emits fallback text when the tool loop finishes without producing an answer', async () => {
+    holder.finalText = '';
+    holder.finalFinishReason = 'tool-calls';
+
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    const writer = { merge: vi.fn(), write: vi.fn() };
+    await holder.executeFns[0]({ writer });
+
+    expect(writer.merge).toHaveBeenCalledTimes(1);
+    expect(writer.write).toHaveBeenCalledTimes(3);
+    expect(writer.write).toHaveBeenNthCalledWith(1, { type: 'text-start', id: 'fallback-text' });
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'text-delta',
+      id: 'fallback-text',
+      delta: expect.stringContaining('ran out of steps'),
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(3, { type: 'text-end', id: 'fallback-text' });
+  });
+
+  it('does not emit fallback text when the agent produced an answer', async () => {
+    await POST(chatRequest({ messages: [], userId: 'u1' }));
+
+    const writer = { merge: vi.fn(), write: vi.fn() };
+    await holder.executeFns[0]({ writer });
+
+    expect(writer.merge).toHaveBeenCalledTimes(1);
+    expect(writer.write).not.toHaveBeenCalled();
   });
 
   it('persists the step trace after the agent finishes via makeClient()/resolveConversation()', async () => {

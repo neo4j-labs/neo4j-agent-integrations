@@ -20,6 +20,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
   const submittedAtRef    = useRef<number | null>(null);
   const prevStepCountRef  = useRef<number>(0);
   const resolvedConvIdRef = useRef<string | undefined>(undefined);
+  const baselineRef       = useRef<Promise<void> | null>(null);
 
   const sessionId = useRef('');
   if (!sessionId.current) {
@@ -48,15 +49,15 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
         submittedAtRef.current = null;
         setThinkingTimes(prev => ({ ...prev, [message.id]: ms }));
       }
-      const msgId     = message.id;
-      const prevCount = prevStepCountRef.current;
-      const params    = new URLSearchParams({ userId: sessionId.current });
+      const msgId  = message.id;
+      const params = new URLSearchParams({ userId: sessionId.current });
       if (resolvedConvIdRef.current) params.set('conversationId', resolvedConvIdRef.current);
-      fetch(`/api/reasoning?${params}`)
+      Promise.resolve(baselineRef.current)
+        .then(() => fetch(`/api/reasoning?${params}`))
         .then(r => r.ok ? r.json() : null)
         .then((data: { steps?: ReasoningStep[] } | null) => {
           const steps    = data?.steps ?? [];
-          const newSteps = steps.slice(prevCount);
+          const newSteps = steps.slice(prevStepCountRef.current);
           prevStepCountRef.current = steps.length;
           if (newSteps.length > 0) setMsgReasoningSteps(prev => ({ ...prev, [msgId]: newSteps }));
         })
@@ -69,6 +70,15 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
       }
     },
   });
+
+  useEffect(() => {
+    baselineRef.current = fetch(`/api/reasoning?${new URLSearchParams({ userId: sessionId.current })}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { steps?: ReasoningStep[] } | null) => {
+        prevStepCountRef.current = data?.steps?.length ?? 0;
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (status === 'submitted') submittedAtRef.current = Date.now();

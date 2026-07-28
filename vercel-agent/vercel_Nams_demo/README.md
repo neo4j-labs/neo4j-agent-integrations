@@ -376,16 +376,19 @@ Send: "My name is Alex and I like TypeScript"
 → query_memory returns found=true; model answers from memory
 ```
 
-**Path B — Tools mode + MCP** (set `MCP_URL`, `MCP_NEO4J_USERNAME`, `MCP_NEO4J_PASSWORD`)
+**Path B — Tools mode + MCP** (set `MCP_URL` plus `MCP_BEARER_TOKEN` *or* `MCP_NEO4J_USERNAME` / `MCP_NEO4J_PASSWORD`)
 
 Exercises `createNams().toolsWithMcp(scope, mcpConfig)` — NAMS + Neo4j tools merged.
 
 ```
 Send: "What nodes are in my Neo4j database?"
-→ Server log: [nams:tools] MCP connected — tools: get-schema, read-cypher, write-cypher
-→ Server log: [chat] tools=5  (2 NAMS + 3 MCP)
-→ Agent calls get-schema, then read-cypher, then stores findings in memory
+→ Server log: [nams:tools] MCP connected — tools: get_neo4j_schema, read_neo4j_cypher, …
+→ Server log: [chat] tools=5  db=[get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher]
+→ Agent calls the schema tool, then the read tool, then stores findings in memory
 ```
+
+Exact tool names vary by server; the DATABASE ACCESS prompt is built from
+whatever the server reports, so it never advertises a tool the model can't call.
 
 **Path C — Provider mode** (`NAMS_MODE=provider`)
 
@@ -495,9 +498,15 @@ OPENAI_MODEL=gpt-4o-mini       # or gpt-4o for better tool-call reliability
 # Optional MCP — connect to a live Neo4j database
 MCP_URL=https://your-mcp-server/mcp
 # MCP_PORT=8443                # alternative: local server on this port
-MCP_NEO4J_USERNAME=
+
+# Auth — pick ONE. Bearer wins if both are set.
+MCP_BEARER_TOKEN=              # OAuth 2.1 servers (hosted Aura / NeoCompanion endpoints)
+MCP_NEO4J_USERNAME=            # Basic auth (self-hosted mcp-neo4j-cypher behind a proxy)
 MCP_NEO4J_PASSWORD=
 ```
+
+Not sure which your server wants? `curl -i -X POST $MCP_URL` and read the
+`WWW-Authenticate` header: `Bearer …` means a token, `Basic …` means user/password.
 
 ### 3. Run
 
@@ -564,10 +573,13 @@ curl "http://localhost:3000/api/reasoning?userId=<your-session-id>"
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | LLM model ID |
 | `MCP_URL` | No | — | Neo4j MCP server URL (enables live graph access) |
 | `MCP_PORT` | No | — | Local MCP server port (`http://localhost:{PORT}/mcp`) |
+| `MCP_BEARER_TOKEN` | No | — | MCP server token (`Authorization: Bearer`) — takes precedence |
 | `MCP_NEO4J_USERNAME` | No | — | MCP server username (Basic Auth) |
 | `MCP_NEO4J_PASSWORD` | No | — | MCP server password (Basic Auth) |
 
-MCP is disabled when `MCP_NEO4J_USERNAME` / `MCP_NEO4J_PASSWORD` are blank.
+MCP is disabled unless `MCP_URL` (or `MCP_PORT`) is set **and** one auth pair is
+supplied: either `MCP_BEARER_TOKEN`, or both `MCP_NEO4J_USERNAME` and
+`MCP_NEO4J_PASSWORD`.
 
 ---
 
@@ -601,8 +613,19 @@ MCP is disabled when `MCP_NEO4J_USERNAME` / `MCP_NEO4J_PASSWORD` are blank.
 - Check server logs: `[chat] tools=N` should show N ≥ 2
 
 **MCP connection fails**
-- Verify `MCP_URL`, `MCP_NEO4J_USERNAME`, and `MCP_NEO4J_PASSWORD` are all set
+- Verify `MCP_URL` and one auth pair are set (see the env table above)
+- **HTTP 401** — usually the wrong auth *scheme*, not wrong credentials. The route
+  re-probes the endpoint on a 401 and logs the server's `WWW-Authenticate`
+  challenge, e.g. `server requires bearer auth, but the MCP_* env vars produced
+  basic`. Hosted Aura / NeoCompanion endpoints are OAuth 2.1 — mint a token
+  against their `/api/mcp/auth/token` endpoint and set `MCP_BEARER_TOKEN`
 - The route falls back to NAMS tools only when MCP is unavailable — check logs for the warning
+
+**Model answers from memory instead of querying the database**
+- Check `[chat] tools=N db=[...]` in the logs. No `db=[...]` means no MCP tools were
+  attached, so the model *cannot* query — fix the connection first
+- The DATABASE ACCESS prompt block is generated from the tool names the server
+  reports at connect time, so it always matches what the model can actually call
 
 **HTTP 503 / `MEMORY_API_KEY` not set**
 - Generate a free key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com)
