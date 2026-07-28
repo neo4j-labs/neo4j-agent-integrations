@@ -36,14 +36,16 @@ def _get_graph():
     )
 
 
-@tool
-def run_cypher_query(
-    cypher_query: Annotated[str, Field(description="A valid Cypher query to run against the Neo4j knowledge graph.")],
-) -> str:
-    """Execute a Cypher query against the Neo4j companies knowledge graph and return results."""
+def _run_query(query: str, params: dict | None = None) -> str:
+    """Execute a parameterized Cypher query and format the result as a string.
+
+    All values from tool arguments must be passed via ``params`` (Neo4j
+    parameter placeholders, e.g. ``$search``) rather than interpolated into
+    the query text, to avoid Cypher injection.
+    """
     try:
         graph = _get_graph()
-        result = graph.query(cypher_query)
+        result = graph.query(query, params=params or {})
         if not result:
             return "No data found for this query."
         return str(result)
@@ -52,19 +54,28 @@ def run_cypher_query(
 
 
 @tool
+def run_cypher_query(
+    cypher_query: Annotated[str, Field(description="A valid Cypher query to run against the Neo4j knowledge graph.")],
+) -> str:
+    """Execute a Cypher query against the Neo4j companies knowledge graph and return results."""
+    return _run_query(cypher_query)
+
+
+@tool
 def search_companies(
     search: Annotated[str, Field(description="Company name search text (partial name or keyword).")],
     limit: Annotated[int, Field(description="Maximum results to return.")] = 10,
 ) -> str:
     """Full-text search for companies in the Neo4j knowledge graph by name or keyword."""
-    query = f"""
-        CALL db.index.fulltext.queryNodes('entity', $search, {{limit: $limit}})
+    safe_limit = max(1, min(int(limit), 100))
+    query = """
+        CALL db.index.fulltext.queryNodes('entity', $search, {limit: $limit})
         YIELD node AS c, score
         WHERE c:Organization
         RETURN c.id AS company_id, c.name AS name, c.summary AS summary, score
         ORDER BY score DESC
     """
-    return run_cypher_query.invoke({"cypher_query": query.replace("$search", f"'{search}'").replace("$limit", str(limit))})
+    return _run_query(query, {"search": search, "limit": safe_limit})
 
 
 @tool
@@ -72,10 +83,9 @@ def query_company_profile(
     company_name: Annotated[str, Field(description="Company name to look up (exact or approximate).")],
 ) -> str:
     """Fetch a company profile including summary, industries, locations, and leadership from Neo4j."""
-    safe = company_name.replace("'", "\\'")
-    query = f"""
+    query = """
         MATCH (o:Organization)
-        WHERE toLower(o.name) CONTAINS toLower('{safe}')
+        WHERE toLower(o.name) CONTAINS toLower($company_name)
         OPTIONAL MATCH (o)-[:HAS_CATEGORY]->(c:IndustryCategory)
         OPTIONAL MATCH (o)-[:IN_CITY]->(city:City)
         OPTIONAL MATCH (city)-[:IN_COUNTRY]->(country:Country)
@@ -84,12 +94,12 @@ def query_company_profile(
         RETURN o.id AS company_id, o.name AS name, o.summary AS summary,
                collect(DISTINCT c.name)[..5] AS industries,
                collect(DISTINCT city.name)[..3] + collect(DISTINCT country.name)[..3] AS locations,
-               [p IN collect(DISTINCT {{name: ceo.name, title: 'CEO'}})
-                      + collect(DISTINCT {{name: board.name, title: 'Board Member'}})
+               [p IN collect(DISTINCT {name: ceo.name, title: 'CEO'})
+                      + collect(DISTINCT {name: board.name, title: 'Board Member'})
                 WHERE p.name IS NOT NULL][..8] AS leadership
         LIMIT 1
     """
-    return run_cypher_query.invoke({"cypher_query": query})
+    return _run_query(query, {"company_name": company_name})
 
 
 @tool
@@ -97,7 +107,9 @@ def list_industries(
     limit: Annotated[int, Field(description="Maximum number of industry categories to return.")] = 50,
 ) -> str:
     """List all industry categories available in the Neo4j knowledge graph."""
-    return run_cypher_query.invoke({"cypher_query": f"MATCH (i:IndustryCategory) RETURN i.name AS industry ORDER BY industry LIMIT {limit}"})
+    safe_limit = max(1, min(int(limit), 500))
+    query = "MATCH (i:IndustryCategory) RETURN i.name AS industry ORDER BY industry LIMIT $limit"
+    return _run_query(query, {"limit": safe_limit})
 
 
 @tool
@@ -105,12 +117,12 @@ def companies_in_industry(
     industry: Annotated[str, Field(description="Exact industry category name (use list_industries first).")],
 ) -> str:
     """Find companies that belong to a specific industry category in Neo4j."""
-    safe = industry.replace("'", "\\'")
-    return run_cypher_query.invoke({"cypher_query": f"""
-        MATCH (:IndustryCategory {{name: '{safe}'}})<-[:HAS_CATEGORY]-(c:Organization)
+    query = """
+        MATCH (:IndustryCategory {name: $industry})<-[:HAS_CATEGORY]-(c:Organization)
         RETURN c.id AS company_id, c.name AS name, c.summary AS summary
         ORDER BY c.name LIMIT 10
-    """})
+    """
+    return _run_query(query, {"industry": industry})
 
 
 @tool
@@ -119,16 +131,18 @@ def analyze_company_relationships(
     max_depth: Annotated[int, Field(description="Graph traversal depth (1-4).")] = 2,
 ) -> str:
     """Explore organization-to-organization relationships (subsidiaries, investors, competitors) in Neo4j."""
-    safe = company_name.replace("'", "\\'")
+    # Variable-length relationship hop counts cannot be parameterized in Cypher,
+    # so the depth is validated and coerced to a bounded int before interpolation.
     depth = max(1, min(int(max_depth), 4))
-    return run_cypher_query.invoke({"cypher_query": f"""
-        MATCH path = (o1:Organization {{name: '{safe}'}})-[*1..{depth}]-(o2:Organization)
+    query = f"""
+        MATCH path = (o1:Organization {{name: $company_name}})-[*1..{depth}]-(o2:Organization)
         WHERE o1 <> o2
         RETURN DISTINCT o2.id AS company_id, o2.name AS organization,
                [rel IN relationships(path) | type(rel)] AS relationships,
                length(path) AS distance
         ORDER BY distance, organization LIMIT 20
-    """})
+    """
+    return _run_query(query, {"company_name": company_name})
 
 
 @tool
@@ -136,13 +150,13 @@ def people_at_company(
     company_id: Annotated[str, Field(description="Internal company_id from search_companies or query_company_profile.")],
 ) -> str:
     """List executives and board members at a company by its internal company_id."""
-    safe = company_id.replace("'", "\\'")
-    return run_cypher_query.invoke({"cypher_query": f"""
-        MATCH (c:Organization {{id: '{safe}'}})-[role]-(p:Person)
+    query = """
+        MATCH (c:Organization {id: $company_id})-[role]-(p:Person)
         RETURN replace(type(role), 'HAS_', '') AS role,
                p.name AS person_name, c.id AS company_id, c.name AS company_name
         ORDER BY role, person_name
-    """})
+    """
+    return _run_query(query, {"company_id": company_id})
 
 
 def get_all_tools() -> list:

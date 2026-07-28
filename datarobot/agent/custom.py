@@ -32,6 +32,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 RUNTIME_PARAMETER_KEYS = (
     "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
     "OPENAI_MODEL",
     "OPENAI_EMBEDDING_MODEL",
     "NEO4J_URI",
