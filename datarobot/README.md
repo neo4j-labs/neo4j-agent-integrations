@@ -407,6 +407,34 @@ If no `--credential` mapping is given for a secret, `infra/workload.py` falls ba
 
 > **Tested:** `agent/server.py` was run locally with `uvicorn`, and `/healthz`, `/readyz`, and `/v1/chat/completions` were all verified against the live Neo4j `companies` database and a real OpenAI call — confirmed a 200 response with a correct tool-calling answer. The actual `POST /api/v2/workloads/` deployment call in `infra/workload.py` follows DataRobot's documented Workload API contract but has not been run against a live DataRobot Workload API endpoint (requires DataRobot platform access with the Workload API enabled for the org); the container/server logic it deploys has been fully tested.
 
+### Hosted demo (Google Cloud Run)
+
+The same `Dockerfile` / `agent/server.py` used above for the Workload API is deployed and publicly reachable on Google Cloud Run, so anyone can exercise the full agent (Neo4j graph + OpenAI + agent memory) without running anything locally:
+
+```
+https://neo4j-datarobot-agent-1008050579172.us-central1.run.app
+```
+
+The service requires a **Bearer token** on every request (`--no-allow-unauthenticated`) — there is no anonymous access. Two ways to get a token:
+
+**A. You already have `gcloud` access to the project**
+
+```bash
+TOKEN=$(gcloud auth print-identity-token)
+curl -X POST "https://neo4j-datarobot-agent-1008050579172.us-central1.run.app/v1/chat/completions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What products does Neo4j offer?"}]}'
+```
+
+**B. You don't have project access** — ask to be granted the `roles/run.invoker` IAM role on the `neo4j-datarobot-agent` Cloud Run service (or request an OIDC identity token minted for you), then use the same `curl` pattern above.
+
+Endpoints:
+- `GET /readyz` — readiness probe, returns `{"status": "ready"}` once startup config has loaded.
+- `POST /v1/chat/completions` — OpenAI-compatible chat endpoint, same request/response shape as Path C above.
+
+> **Note:** `GET /healthz` is not reachable through the public `*.run.app` URL — requests to that specific path are intercepted at Google's front-end edge before reaching the container (confirmed via Cloud Run request logs: `/`, `/readyz`, `/docs`, and `/v1/chat/completions` all show up in the container's own logs, `/healthz` never does). This is a platform routing quirk, not an application bug — use `/readyz` for external health checks; `/healthz` still works fine for local/in-cluster checks that don't go through the public edge.
+
 ---
 
 ## Built-in Neo4j tools (Path A — `agent.py`)
