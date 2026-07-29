@@ -23,6 +23,12 @@ cp .env.example .env   # fill in OPENAI_API_KEY, NEO4J_*, MCP_*, and MEMORY_API_
 npm install
 ```
 
+> **Note:** `@neo4j-labs/nams-ai-provider@0.1.0` declares a peer dependency on
+> `zod@~3.0.0`, which is narrower than the `zod@^3.25.x` this project (and the
+> rest of the AI SDK) actually uses. The package works correctly with 3.25.x
+> in practice, so the included `.npmrc` sets `legacy-peer-deps=true` to keep
+> plain `npm install` working — no extra flags needed.
+
 ## Running
 
 ```bash
