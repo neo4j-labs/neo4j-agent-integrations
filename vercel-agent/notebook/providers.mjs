@@ -17,19 +17,22 @@
  */
 
 const PROVIDER_DEFAULTS = {
-  openai:    'gpt-5.4',
+  openai:    'gpt-4o-mini',
   google:    'gemini-2.0-flash',
   anthropic: 'claude-3-5-sonnet-20241022',
   mistral:   'mistral-large-latest',
 };
 
 /**
- * Returns a model instance for the currently configured provider.
+ * Returns the provider factory itself plus the resolved model id.
+ * Needed by NAMS provider mode, which wraps a provider rather than a model
+ * instance (`createNamsProvider({ baseProvider, ... })`).
+ *
  * Loads the provider package lazily so unused providers don't need to be installed.
  *
- * @returns {Promise<import('ai').LanguageModelV1>}
+ * @returns {Promise<{ provider: (modelId: string) => any, modelName: string, providerName: string }>}
  */
-export async function getModel() {
+export async function getProvider() {
   const providerName = process.env.AI_PROVIDER || 'openai';
   const modelName    = process.env.AI_MODEL     || PROVIDER_DEFAULTS[providerName];
 
@@ -78,5 +81,15 @@ export async function getModel() {
   }
 
   console.log(`LLM: ${providerName} / ${modelName}`);
+  return { provider, modelName, providerName };
+}
+
+/**
+ * Returns a model instance for the currently configured provider.
+ *
+ * @returns {Promise<import('ai').LanguageModel>}
+ */
+export async function getModel() {
+  const { provider, modelName } = await getProvider();
   return provider(modelName);
 }
