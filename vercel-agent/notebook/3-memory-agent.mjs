@@ -1,5 +1,10 @@
 /**
- * 3-memory-agent.mjs — Neo4j Agent with @neo4j-labs/agent-memory
+ * 3-memory-agent.mjs — Neo4j Agent with @neo4j-labs/agent-memory (low-level client)
+ *
+ * The hand-rolled version of memory: you own the before/after hooks. For the
+ * packaged equivalent — the same memory wired in as a provider, middleware, or
+ * a pair of tools — see 4-nams-provider-agent.mjs, which is what the Next.js
+ * demo in ../vercel_Nams_demo runs.
  *
  * Demonstrates persistent memory using the official Neo4j Agent Memory Service
  * (NAMS) via the @neo4j-labs/agent-memory TypeScript client. Memory is split into:
@@ -21,7 +26,7 @@
  *             discussed without being told again.
  *
  * Prerequisites:
- *   - neo4j-mcp-server running or MCP_URL set to a hosted server
+ *   - MCP_URL (hosted) or MCP_PORT (local neo4j-mcp-server), plus MCP auth vars
  *   - MEMORY_API_KEY set (get a free key at memory.neo4jlabs.com)
  *   - All other env vars set (copy .env.example → .env)
  *
@@ -33,53 +38,52 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { generateText, stepCountIs } from 'ai';
-import { createMCPClient } from '@ai-sdk/mcp';
 import { MemoryClient } from '@neo4j-labs/agent-memory';
 import { getModel } from './providers.mjs';
+import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const PORT   = process.env.MCP_PORT || '8443';
-const mcpUrl = process.env.MCP_URL  || `http://localhost:${PORT}/mcp`;
-const creds  = Buffer.from(
-  `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
-).toString('base64');
-
 const MEMORY_API_KEY = process.env.MEMORY_API_KEY;
 const MEMORY_WORKSPACE_ID = process.env.MEMORY_WORKSPACE_ID;
 const MEMORY_ENDPOINT = process.env.MEMORY_ENDPOINT; // optional: override default NAMS endpoint
-const DEMO_USER_ID   = process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
+const DEMO_USER_ID   = process.env.DEMO_USER_ID || process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
 
 if (!MEMORY_API_KEY) {
   console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
   process.exit(1);
 }
 
-if (!MEMORY_WORKSPACE_ID) {
-  console.error('ERROR: MEMORY_WORKSPACE_ID is not set. Get it from https://memory.neo4jlabs.com/workspaces');
+// ── NAMS memory client ────────────────────────────────────────────────────────
+// workspaceId belongs on the client — it is sent as the X-Workspace-Id header on
+// every request. Passing it to createConversation() does nothing: that call only
+// accepts { userId, metadata }. Leave MEMORY_WORKSPACE_ID unset for the default
+// workspace attached to the API key.
+const memoryClient = new MemoryClient({
+  apiKey: MEMORY_API_KEY,
+  ...(MEMORY_WORKSPACE_ID ? { workspaceId: MEMORY_WORKSPACE_ID } : {}),
+  ...(MEMORY_ENDPOINT     ? { endpoint:    MEMORY_ENDPOINT }     : {}),
+});
+
+// Create a new conversation session for this run
+const conv = await memoryClient.shortTerm.createConversation({ userId: DEMO_USER_ID });
+const convId = conv.id;
+console.log(`Memory session: ${convId} (workspace: ${MEMORY_WORKSPACE_ID || 'default'})`);
+
+// ── MCP client (Neo4j knowledge graph tools) ──────────────────────────────────
+// Bearer or Basic auth, resolved from the MCP_* env vars by mcp.mjs.
+if (!isMcpConfigured()) {
+  console.error(
+    'ERROR: MCP is not configured. Set MCP_URL (or MCP_PORT) plus either\n' +
+    '       MCP_BEARER_TOKEN, or MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD.'
+  );
   process.exit(1);
 }
 
-// ── NAMS memory client ────────────────────────────────────────────────────────
-const memoryClient = new MemoryClient(
-  MEMORY_ENDPOINT ? { apiKey: MEMORY_API_KEY, endpoint: MEMORY_ENDPOINT } : { apiKey: MEMORY_API_KEY }
-);
-
-// Create a new conversation session for this run
-const conv = await memoryClient.shortTerm.createConversation({ workspace_id: MEMORY_WORKSPACE_ID, userId: DEMO_USER_ID });
-const convId = conv.id;
-console.log(`Memory session: ${convId}`);
-
-// ── MCP client (Neo4j knowledge graph tools) ──────────────────────────────────
-// Set MCP_URL to use a hosted remote MCP server; defaults to local.
-const mcpClient = await createMCPClient({
-  transport: {
-    type:    'http',
-    url:     mcpUrl,
-    headers: { Authorization: `Basic ${creds}` },
-  },
+const mcp = await getMcpTools().catch(async (err) => {
+  console.error('ERROR: Neo4j MCP connection failed:', await explainMcpError(err));
+  process.exit(1);
 });
-const mcpTools = await mcpClient.tools();
-console.log('Connected to Neo4j MCP ✓\n');
+console.log('');
 
 // ── Agent setup ───────────────────────────────────────────────────────────────
 const model = await getModel();
@@ -134,7 +138,7 @@ async function runWithMemory(query) {
     model,
     system:   systemWithContext,
     prompt:   query,
-    tools:    mcpTools,
+    tools:    mcp.tools,
     stopWhen: stepCountIs(10),
   });
 
@@ -154,4 +158,4 @@ await runWithMemory(
   "Based on our conversation, what subsidiaries of the company we discussed appear in the database?"
 );
 
-await mcpClient.close();
+await mcp.close();

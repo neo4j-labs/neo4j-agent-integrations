@@ -5,8 +5,12 @@
  * agentic query. The agent automatically decides which MCP tools to call
  * (get-schema, read-cypher, etc.) to answer the user's question.
  *
+ * Auth is handled by mcp.mjs — bearer token for hosted OAuth 2.1 servers,
+ * Basic auth for a self-hosted mcp-neo4j-cypher. Same helper shape as
+ * lib/neo4j-mcp.ts in ../vercel_Nams_demo.
+ *
  * Prerequisites:
- *   - neo4j-mcp-server running on MCP_PORT (see README for start command)
+ *   - MCP_URL (hosted) or MCP_PORT (local neo4j-mcp-server), plus MCP auth vars
  *   - Environment variables set (copy .env.example → .env and fill in values)
  *
  * Run:
@@ -17,30 +21,23 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { generateText, stepCountIs } from 'ai';
-import { createMCPClient } from '@ai-sdk/mcp';
 import { getModel } from './providers.mjs';
-
-// ── Configuration ─────────────────────────────────────────────────────────────
-const PORT   = process.env.MCP_PORT || '8443';
-const mcpUrl = process.env.MCP_URL  || `http://localhost:${PORT}/mcp`;
-const creds = Buffer.from(
-  `${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`
-).toString('base64');
+import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
+import { GRAPH_SYSTEM_PROMPT } from './prompts.mjs';
 
 // ── Connect to Neo4j MCP server ───────────────────────────────────────────────
-// Set MCP_URL to use a hosted remote MCP server; defaults to local.
-// Credentials are passed per-request via Basic Auth (not as env vars on the server process).
-const mcpClient = await createMCPClient({
-  transport: {
-    type:    'http',
-    url:     mcpUrl,
-    headers: { Authorization: `Basic ${creds}` },
-  },
-});
+if (!isMcpConfigured()) {
+  console.error(
+    'ERROR: MCP is not configured. Set MCP_URL (or MCP_PORT) plus either\n' +
+    '       MCP_BEARER_TOKEN, or MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD.'
+  );
+  process.exit(1);
+}
 
-const mcpTools = await mcpClient.tools();
-console.log('Connected to Neo4j MCP ✓');
-console.log('Available tools:', Object.keys(mcpTools).join(', '), '\n');
+const mcp = await getMcpTools().catch(async (err) => {
+  console.error('ERROR: Neo4j MCP connection failed:', await explainMcpError(err));
+  process.exit(1);
+});
 
 // ── Agent helper ──────────────────────────────────────────────────────────────
 function createAgent({ model, name, instruction, tools }) {
@@ -67,19 +64,14 @@ const model = await getModel();
 const mcpAgent = createAgent({
   model,
   name:        'neo4j_explorer',
-  instruction: `You are a graph database assistant. Your job is to answer user questions by querying Neo4j.
-Always run 'get-schema' first if you are unfamiliar with the graph structure.
-Use Cypher queries to retrieve data.
-After running a query, always provide a clear text summary of the results.
-If the data is not found, state that clearly.`,
-  tools: mcpTools,
+  instruction: GRAPH_SYSTEM_PROMPT,
+  tools:       mcp.tools,
 });
 
 console.log(`Agent:  ${mcpAgent.name}`);
-console.log(`Model:  ${process.env.AI_PROVIDER || 'openai'} / ${process.env.AI_MODEL || 'gpt-5.4'}`);
 console.log(`Tools:  ${Object.keys(mcpAgent.tools).join(', ')}\n`);
 
 // ── Run example query ─────────────────────────────────────────────────────────
 await askGraph(mcpAgent, 'How many organizations are in the database?');
 
-await mcpClient.close();
+await mcp.close();
