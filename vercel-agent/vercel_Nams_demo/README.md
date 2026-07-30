@@ -24,7 +24,7 @@ cp .env.local.example .env.local  # set MEMORY_API_KEY and OPENAI_API_KEY at min
 npm run dev                       # http://localhost:3000
 ```
 
-`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.2.0` in `package.json`, built for AI SDK v7) — nothing to build or link locally.
+`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.1.0` in `package.json` — the only version currently published to npm) — nothing to build or link locally. This package's peer dependencies target **Vercel AI SDK v6** (`ai@~6.0.0`, `@ai-sdk/mcp@~1.0.0`), so this demo pins matching `ai`/`@ai-sdk/*` versions rather than the newer v7 line. A `.npmrc` with `legacy-peer-deps=true` is included to smooth over a minor `zod` peer-range mismatch — plain `npm install` works out of the box.
 
 ---
 
@@ -430,6 +430,13 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 **HTTP 503 / `MEMORY_API_KEY is not set`**
 - Generate a free key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) and restart `npm run dev`
 
+**`400 string_above_max_length` from OpenAI, or a vague "I was not able to produce an answer"**
+- A `read-cypher` call without a `LIMIT` clause can return a very large result set, exceeding OpenAI's per-request size limit and failing the whole turn. `lib/neo4j-mcp.ts`'s `capToolOutputs()` truncates any tool result over 50,000 characters and nudges the model to add a `LIMIT` clause — if you still hit this, ask a narrower question or add `LIMIT 25` yourself
+
+### Known limitation (upstream package)
+
+During end-to-end testing with two different `userId`s sharing one NAMS workspace, a brand-new user's very first turn occasionally surfaced a fact stored under a *different* user minutes earlier. `route.ts` passes a correctly-scoped `{ userId, conversationId }` to both `createNamsProvider(...)` and `createNams(...).wrap(...)`, so this behavior appears to originate inside `@neo4j-labs/nams-ai-provider`/`@neo4j-labs/agent-memory`'s conversation/entity retrieval rather than in this demo's code. If you see unexpected cross-user recall, pass an explicit `conversationId` per user/session and report the observation upstream at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory).
+
 ---
 
 ## Dependencies
@@ -438,7 +445,7 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 |---------|------|
 | `@neo4j-labs/nams-ai-provider` | NAMS integration — `createNams()`, `createNamsProvider()`, `enforceQueryMemory()` |
 | `@neo4j-labs/agent-memory` | NAMS REST client used by the provider |
-| `ai` (Vercel AI SDK v7) | `ToolLoopAgent`, `createUIMessageStream`, `toUIMessageStream`, `DefaultChatTransport` |
+| `ai` (Vercel AI SDK v6) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
 | `@ai-sdk/openai` | OpenAI model provider |
 | `@ai-sdk/react` | `useChat` React hook |
 | `@ai-sdk/mcp` | MCP client used by `lib/neo4j-mcp.ts` |

@@ -107,3 +107,57 @@ export function isMcpConfigured(): boolean {
   );
   return hasUrl && hasAuth;
 }
+
+// An unbounded Cypher query (e.g. `MATCH (n) RETURN n` with no LIMIT) can
+// return megabytes of JSON from read-cypher. Fed straight back as a tool
+// result, that alone can exceed the model provider's per-field request-body
+// limit (e.g. OpenAI's 10 MiB `input[].output[].text` cap), which fails the
+// *entire* turn with an opaque 400 — surfacing to the user as a generic
+// "I was not able to produce an answer" with no indication why. Cap tool
+// output size here so a too-broad query degrades to a truncated result the
+// model can react to (and be nudged to add a LIMIT) instead of a hard failure.
+const MAX_TOOL_OUTPUT_CHARS = 50_000;
+
+function truncateText(text: string): string {
+  if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text;
+  return (
+    text.slice(0, MAX_TOOL_OUTPUT_CHARS) +
+    `\n\n[…truncated: result was ${text.length.toLocaleString()} characters, showing the first ` +
+    `${MAX_TOOL_OUTPUT_CHARS.toLocaleString()}. Add a LIMIT clause to your Cypher query to see the ` +
+    `rest, or ask a more specific question.]`
+  );
+}
+
+/** Shrinks any oversized text found in an MCP tool result to a safe size. */
+function capMcpOutput(output: unknown): unknown {
+  if (output && typeof output === 'object' && Array.isArray((output as { content?: unknown }).content)) {
+    const withContent = output as { content: Array<{ type?: string; text?: string }> };
+    return {
+      ...withContent,
+      content: withContent.content.map(item =>
+        item?.type === 'text' && typeof item.text === 'string'
+          ? { ...item, text: truncateText(item.text) }
+          : item,
+      ),
+    };
+  }
+  if (typeof output === 'string') return truncateText(output);
+  return output;
+}
+
+/**
+ * Wraps every tool's `execute` so oversized results get capped before they
+ * reach the model. Safe to apply to any ToolSet (MCP tools, NAMS memory
+ * tools, or a merge of both) — tools without an `execute` pass through
+ * unchanged.
+ */
+export function capToolOutputs<T extends Record<string, unknown>>(tools: T): T {
+  const capped: Record<string, unknown> = {};
+  for (const [name, t] of Object.entries(tools)) {
+    const original = (t as { execute?: (...args: unknown[]) => unknown })?.execute;
+    capped[name] = typeof original === 'function'
+      ? { ...(t as object), execute: async (...args: unknown[]) => capMcpOutput(await original(...args)) }
+      : t;
+  }
+  return capped as T;
+}
