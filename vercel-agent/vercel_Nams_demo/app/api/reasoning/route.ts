@@ -1,6 +1,5 @@
 import { makeClient, findExistingConversation } from '@neo4j-labs/nams-ai-provider';
 
-export const runtime = 'nodejs';
 
 const json = (data: unknown, status: number) =>
   new Response(JSON.stringify(data), {

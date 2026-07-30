@@ -4,6 +4,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   stepCountIs,
+  toUIMessageStream,
   type UIMessage,
   type ToolSet,
   type PrepareStepFunction,
@@ -33,7 +34,6 @@ import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError } 
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const runtime = 'nodejs';
 
 const MAX_STEPS = 10;
 const MODEL_ID = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -196,7 +196,7 @@ export async function POST(req: Request) {
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         const result = await agent.stream({ messages: coreMessages });
-        writer.merge(result.toUIMessageStream());
+        writer.merge(toUIMessageStream({ stream: result.stream }));
         const [text, finishReason] = await Promise.all([
           Promise.resolve(result.text).catch(() => ''),
           Promise.resolve(result.finishReason).catch(() => 'unknown' as const),

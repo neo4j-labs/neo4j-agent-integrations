@@ -24,7 +24,7 @@ cp .env.local.example .env.local  # set MEMORY_API_KEY and OPENAI_API_KEY at min
 npm run dev                       # http://localhost:3000
 ```
 
-`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.1.0` in `package.json`) — nothing to build or link locally.
+`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.2.0` in `package.json`, built for AI SDK v7) — nothing to build or link locally.
 
 ---
 
@@ -40,7 +40,7 @@ NAMS_MODE=tools        # model calls query_memory / store_memory explicitly
 
 | Mode | Call | Memory handling | Tool calls visible in UI | Analogy |
 |------|------|-----------------|--------------------------|---------|
-| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV3Middleware` injected by the provider | No | Mem0 / Letta |
+| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No | Mem0 / Letta |
 | **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No | Mem0 / Letta |
 | **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes | Supermemory |
 
@@ -50,7 +50,7 @@ Choose **provider** when you construct models from a provider and want a drop-in
 
 ### Mode 1 — Provider (transparent)
 
-`createNamsProvider()` returns a `ProviderV3`-compatible provider. Every `languageModel(id)` call resolves through the base provider and wraps the result with a `LanguageModelV3Middleware`: memories are retrieved and injected into the prompt before the call, and the turn is persisted after it.
+`createNamsProvider()` returns a `ProviderV4`-compatible provider. Every `languageModel(id)` call resolves through the base provider and wraps the result with a `LanguageModelV4Middleware`: memories are retrieved and injected into the prompt before the call, and the turn is persisted after it.
 
 ```typescript
 // app/api/chat/route.ts
@@ -438,7 +438,7 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 |---------|------|
 | `@neo4j-labs/nams-ai-provider` | NAMS integration — `createNams()`, `createNamsProvider()`, `enforceQueryMemory()` |
 | `@neo4j-labs/agent-memory` | NAMS REST client used by the provider |
-| `ai` (Vercel AI SDK v6) | `ToolLoopAgent`, `createUIMessageStream`, `DefaultChatTransport` |
+| `ai` (Vercel AI SDK v7) | `ToolLoopAgent`, `createUIMessageStream`, `toUIMessageStream`, `DefaultChatTransport` |
 | `@ai-sdk/openai` | OpenAI model provider |
 | `@ai-sdk/react` | `useChat` React hook |
 | `@ai-sdk/mcp` | MCP client used by `lib/neo4j-mcp.ts` |

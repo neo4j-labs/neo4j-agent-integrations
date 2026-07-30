@@ -1,5 +1,5 @@
 /**
- * neo4j-mcp.ts — Neo4j MCP client helper for the Vercel AI SDK.
+ * neo4j-mcp.ts — Neo4j MCP client helper for just the demo.
  *
  * Auth: set MCP_BEARER_TOKEN for servers behind OAuth 2.1 (hosted Aura /
  * NeoCompanion endpoints advertise `WWW-Authenticate: Bearer`), or

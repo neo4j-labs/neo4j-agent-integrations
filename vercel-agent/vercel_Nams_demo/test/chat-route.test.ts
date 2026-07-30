@@ -42,7 +42,7 @@ vi.mock('ai', () => ({
   ToolLoopAgent: vi.fn().mockImplementation(function (this: any, args: any) {
     holder.agentCtorArgs.push(args);
     this.stream = vi.fn().mockResolvedValue({
-      toUIMessageStream: () => new ReadableStream(),
+      stream: new ReadableStream(),
       text: Promise.resolve(holder.finalText),
       finishReason: Promise.resolve(holder.finalFinishReason),
     });
@@ -53,6 +53,7 @@ vi.mock('ai', () => ({
   }),
   createUIMessageStreamResponse: vi.fn(() => new Response(null, { status: 200 })),
   stepCountIs: vi.fn((n: number) => ({ __stepCountIs: n })),
+  toUIMessageStream: vi.fn(({ stream }: any) => stream),
 }));
 
 vi.mock('@neo4j-labs/nams-ai-provider', () => ({
