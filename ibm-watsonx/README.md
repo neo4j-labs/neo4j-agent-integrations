@@ -94,6 +94,11 @@ Individual scripts live in [`scripts/`](scripts/) if you would rather run the co
 │   ├── get_investments.py        curated Python tool
 │   └── requirements.txt          exact-pinned dependencies
 ├── scripts/                      01_env … 05_agent
+├── memory-agent/                 LangGraph memory + graph agent
+│   ├── agent.py                  recall → agent(+tools) → persist graph
+│   ├── agent.yaml                agent package definition
+│   ├── requirements.txt
+│   └── setup.sh                  connections + import + connect
 └── docs/
     ├── console-agent-setup.md    the one manual step
     ├── known-issues.md           errors and their causes
@@ -112,10 +117,79 @@ Individual scripts live in [`scripts/`](scripts/) if you would rather run the co
 
 ---
 
-## Next phase
+## Memory + graph (cross-session, LangGraph)
 
-- **Memory** (`client.memory.add_messages` / `search`, user-scoped) — appears to require a runs-on LangGraph agent via `--experimental-package-root` rather than a native agent.
-- **Multi-agent collaboration** — a supervisor delegating to `neo4j_explorer`.
+The `memory-agent/` folder contains a second, independent agent that adds two
+capabilities a native YAML agent cannot: **long-term memory** and **LLM-routed
+graph queries**, in one code-based agent. It is a **LangGraph agent imported
+into Orchestrate** (running inside the platform runtime) that uses Neo4j as
+*both* layers — the **Neo4j Agent Memory Service (NAMS)** for what it remembers,
+and the companies graph for what it knows.
+
+### How it works
+
+```
+recall  → read relevant facts from the NAMS entity graph
+agent   → LLM answers, optionally emitting graph tool calls
+   │ tools_condition
+   ├─ (tool calls) → tools → agent      loop until the LLM is done
+   └─ (no calls)   → persist → END
+```
+
+Memory is recalled every turn (cheap, workspace-scoped) and injected into the
+prompt. The **companies graph is queried only when the LLM decides it is
+needed** — the graph is exposed as two tools (`get_graph_schema`,
+`run_graph_query`) bound to the model, and `tools_condition` routes to them
+only when the model emits a tool call. A question answerable from memory alone
+runs no graph query; a company question does; a question needing both pulls the
+preference from memory and filters the graph query accordingly.
+
+Memory lives in NAMS rather than the agent's own state, which matters because
+imported LangGraph agents only persist messages between turns, not custom
+state. Because memory is external and workspace-scoped, it carries across
+separate chat sessions.
+
+### Setup
+
+Two connections supply credentials (Orchestrate injects them as
+`{app_id}_{credential_type}`); the companies graph uses the public Neo4j demo
+database and needs no connection.
+
+| Connection | Injected key | Value |
+|---|---|---|
+| `nams_api` | `nams_api_api_key` | NAMS API key (memory.neo4jlabs.com/dashboard) |
+| `nams_workspace` | `nams_workspace_api_key` | NAMS workspace id (`X-Workspace-Id`) |
+| `llm_openai` | `llm_openai_api_key` | OpenAI API key for the agent's LLM |
+
+```bash
+cd memory-agent
+export NAMS_API_KEY=...
+export NAMS_WORKSPACE_ID=...
+export OPENAI_API_KEY=...
+./setup.sh
+```
+
+`setup.sh` creates the connections, imports the agent with
+`orchestrate agents import --package-root .`, and attaches the connections with
+`orchestrate agents connect`. Unlike the Phase 1 agent, this one imports fully
+from the CLI — the toolkit limitation does not apply to imported LangGraph
+agents.
+
+### Demonstrating it
+
+Memory works **across sessions**, so use two separate chats:
+
+1. **Session A** — state a fact: *"Remember that John is working on opportunities in cyber security domain."* The agent acknowledges it.
+2. **Wait.** NAMS extracts entities asynchronously — a few seconds to a few minutes. You can watch entities appear in the NAMS dashboard.
+3. **Session B** (new chat) — ask: *"What companies should I look at?"* The agent recalls the fintech preference and queries the companies graph filtered to fintech — memory and graph together.
+
+### A note on consistency
+
+Writes are acknowledged immediately, but entity extraction runs in the
+background, so memory is **eventually consistent** — a fact is not always
+retrievable in the same turn it was stated. This is a characteristic of the
+NAMS extraction pipeline, not of watsonx Orchestrate or the agent. The
+cross-session demo is unaffected, since time passes between sessions.
 
 ---
 
