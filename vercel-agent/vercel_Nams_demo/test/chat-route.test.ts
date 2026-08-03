@@ -136,7 +136,7 @@ describe('POST /api/chat', () => {
         scope: { userId: 'u1', conversationId: undefined },
       }),
     );
-    expect(holder.languageModel).toHaveBeenCalledWith('gpt-4o-mini');
+    expect(holder.languageModel).toHaveBeenCalledWith('gpt-5.4-mini');
     expect(holder.createNams).not.toHaveBeenCalled();
 
     const agentArgs = holder.agentCtorArgs[0];
@@ -161,7 +161,7 @@ describe('POST /api/chat', () => {
     );
 
     const agentArgs = holder.agentCtorArgs[0];
-    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-4o-mini' });
+    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.4-mini' });
     expect(agentArgs.tools).toEqual({ query_memory: {}, store_memory: {} });
   });
 
@@ -176,14 +176,14 @@ describe('POST /api/chat', () => {
     expect(holder.createNamsProvider).not.toHaveBeenCalled();
     expect(holder.createNams).toHaveBeenCalledWith({ apiKey: 'test-key', workspaceId: undefined });
     expect(holder.wrap).toHaveBeenCalledWith(
-      { __brand: 'openai-model', modelId: 'gpt-4o-mini' },
+      { __brand: 'openai-model', modelId: 'gpt-5.4-mini' },
       { userId: 'u1', conversationId: undefined },
     );
 
     const agentArgs = holder.agentCtorArgs[0];
     expect(agentArgs.model).toEqual({
       __brand: 'middleware-wrapped-model',
-      wraps: { __brand: 'openai-model', modelId: 'gpt-4o-mini' },
+      wraps: { __brand: 'openai-model', modelId: 'gpt-5.4-mini' },
     });
     expect(agentArgs.tools).toBeUndefined();
   });

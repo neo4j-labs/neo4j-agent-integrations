@@ -62,7 +62,7 @@ const model = createNamsProvider({
   workspaceId:  process.env.MEMORY_WORKSPACE_ID,
   baseProvider: openai,
   scope:        { userId, conversationId },
-}).languageModel('gpt-4o-mini');
+}).languageModel('gpt-5.4-mini');
 ```
 
 Options worth knowing: `maxMemories` (default 6) caps how many memories are injected per turn, `persistInteractions` (default true) toggles write-back, and `extractionModel` builds a real entity graph per stored turn at the cost of one extra model call.
@@ -76,7 +76,7 @@ import { createNams } from '@neo4j-labs/nams-ai-provider';
 import { openai } from '@ai-sdk/openai';
 
 const nams  = createNams({ apiKey: process.env.MEMORY_API_KEY! });
-const model = nams.wrap(openai('gpt-4o-mini'), { userId, conversationId });
+const model = nams.wrap(openai('gpt-5.4-mini'), { userId, conversationId });
 ```
 
 ### Mode 3 — Tools (model-driven)
@@ -94,7 +94,7 @@ const { tools, close } = await createNams({ apiKey })
   .toolsWithMcp({ userId, conversationId }, getNamsMcpConfig());
 
 const agent = new ToolLoopAgent({
-  model:        openai('gpt-4o-mini'),
+  model:        openai('gpt-5.4-mini'),
   instructions: SYSTEM_PROMPT,
   tools,
   prepareStep:  enforceQueryMemory({ graceSteps: 2 }),
@@ -103,7 +103,7 @@ const agent = new ToolLoopAgent({
 });
 ```
 
-`enforceQueryMemory({ graceSteps: 2 })` is a `prepareStep` guard: if the model hasn't called `query_memory` within the first two steps, the loop forces it. Without it, `gpt-4o-mini` regularly answers from conversation history alone and skips memory entirely. It is applied in tools mode only — the other two modes have no memory tools to enforce.
+`enforceQueryMemory({ graceSteps: 2 })` is a `prepareStep` guard: if the model hasn't called `query_memory` within the first two steps, the loop forces it. Without it, smaller models regularly answer from conversation history alone and skip memory entirely. It is applied in tools mode only — the other two modes have no memory tools to enforce.
 
 Calling `toolsWithMcp(scope)` with no second argument returns NAMS memory tools only, and `close()` is a no-op.
 
@@ -281,7 +281,7 @@ npm run dev
 | `OPENAI_API_KEY` | Yes | — | OpenAI API key, read by `@ai-sdk/openai` |
 | `NAMS_MODE` | No | `provider` | `provider`, `middleware`, or `tools` |
 | `MEMORY_WORKSPACE_ID` | No | _(key default)_ | Pin to a specific NAMS workspace |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` | LLM model ID |
+| `OPENAI_MODEL` | No | `gpt-5.4-mini` | LLM model ID |
 | `MCP_URL` | No | — | Neo4j MCP server URL (enables live graph access) |
 | `MCP_PORT` | No | — | Used as `http://localhost:{PORT}/mcp` when `MCP_URL` is unset |
 | `MCP_BEARER_TOKEN` | No | — | `Authorization: Bearer` — takes precedence over Basic |
@@ -316,7 +316,7 @@ Exercises `createNams().toolsWithMcp(scope, mcpConfig)` — memory + database to
 
 ```
 Send: "What nodes are in my Neo4j database?"
-→ [chat] model=gpt-4o-mini  maxSteps=10  tools=5  db=[get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher]
+→ [chat] model=gpt-5.4-mini  maxSteps=10  tools=5  db=[get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher]
 → Agent calls the schema tool, then the read tool, then offers to store findings
 ```
 
@@ -392,10 +392,10 @@ import { openai } from '@ai-sdk/openai';
 
 // Provider mode — transparent
 const model = createNamsProvider({ apiKey, baseProvider: openai, scope: { userId } })
-  .languageModel('gpt-4o-mini');
+  .languageModel('gpt-5.4-mini');
 
 // Middleware mode — transparent, wraps an existing model
-const wrapped = createNams({ apiKey }).wrap(openai('gpt-4o-mini'), { userId });
+const wrapped = createNams({ apiKey }).wrap(openai('gpt-5.4-mini'), { userId });
 
 // Tools mode — model-driven, tool calls visible in the UI
 const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
@@ -413,7 +413,7 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 **Model never calls memory tools (tools mode)**
 - Confirm `NAMS_MODE=tools` and that the server restarted
 - `enforceQueryMemory` forces `query_memory` after 2 steps, so a total absence usually means the tools weren't attached — check `[chat] … tools=N` shows N ≥ 2
-- Try `OPENAI_MODEL=gpt-4o` — `gpt-4o-mini` is unreliable with multi-tool cycles
+- Try a larger model, e.g. `OPENAI_MODEL=gpt-5.4` — smaller models are less reliable with multi-tool cycles
 
 **MCP connection fails**
 - Verify a URL and one complete auth pair are set (see the env table)
@@ -425,7 +425,7 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 - The DATABASE ACCESS prompt block is generated from the tool names the server reports at connect time, so it always matches what the model can actually call
 
 **"I ran out of steps…" in the chat**
-- The tool loop hit `maxSteps=10` without producing text. Usually a model looping on `query_memory` with reworded keywords — try `gpt-4o`, or check whether the question actually needs database tools that aren't connected
+- The tool loop hit `maxSteps=10` without producing text. Usually a model looping on `query_memory` with reworded keywords — try a larger model, or check whether the question actually needs database tools that aren't connected
 
 **HTTP 503 / `MEMORY_API_KEY is not set`**
 - Generate a free key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) and restart `npm run dev`
