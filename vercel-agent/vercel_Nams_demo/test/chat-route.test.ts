@@ -45,6 +45,7 @@ vi.mock('ai', () => ({
       stream: new ReadableStream(),
       text: Promise.resolve(holder.finalText),
       finishReason: Promise.resolve(holder.finalFinishReason),
+      toUIMessageStream: vi.fn(() => new ReadableStream()),
     });
   }),
   createUIMessageStream: vi.fn(({ execute }: any) => {
@@ -53,7 +54,6 @@ vi.mock('ai', () => ({
   }),
   createUIMessageStreamResponse: vi.fn(() => new Response(null, { status: 200 })),
   stepCountIs: vi.fn((n: number) => ({ __stepCountIs: n })),
-  toUIMessageStream: vi.fn(({ stream }: any) => stream),
 }));
 
 vi.mock('@neo4j-labs/nams-ai-provider', () => ({
@@ -69,6 +69,7 @@ vi.mock('@/lib/neo4j-mcp', () => ({
   getNamsMcpConfig: holder.getNamsMcpConfig,
   isMcpConfigured: holder.isMcpConfigured,
   explainMcpError: holder.explainMcpError,
+  capToolOutputs: vi.fn((tools: unknown) => tools),
 }));
 
 import { POST } from '../app/api/chat/route';

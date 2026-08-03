@@ -4,14 +4,13 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   stepCountIs,
-  toUIMessageStream,
   type UIMessage,
   type ToolSet,
   type PrepareStepFunction,
 } from 'ai';
 import { createNams, createNamsProvider, enforceQueryMemory, type NamsMode } from '@neo4j-labs/nams-ai-provider';
-import { SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
-import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError } from '@/lib/neo4j-mcp';
+import { SYSTEM_PROMPT, TRANSPARENT_SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
+import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError, capToolOutputs } from '@/lib/neo4j-mcp';
 
 // ─── Integration mode
 //
@@ -126,7 +125,8 @@ export async function POST(req: Request) {
       })
     : null;
 
-  const tools = (namsResult?.tools ?? mcpResult?.tools) as ToolSet | undefined;
+  const rawTools = (namsResult?.tools ?? mcpResult?.tools) as ToolSet | undefined;
+  const tools = rawTools ? capToolOutputs(rawTools) : undefined;
 
   // Derive the DB tool names from what actually came back, rather than inferring
   // "connected" from the env vars — a 401 still leaves mcpEnabled true.
@@ -134,9 +134,12 @@ export async function POST(req: Request) {
     name => name !== 'query_memory' && name !== 'store_memory',
   );
   const hasDbTools = dbToolNames.length > 0;
+  // provider/middleware: memory tools don't exist, model must never be told to call them.
+  // tools: query_memory/store_memory are real tools the model drives explicitly.
+  const basePrompt = mode === 'tools' ? SYSTEM_PROMPT : TRANSPARENT_SYSTEM_PROMPT;
   const systemPrompt = hasDbTools
-    ? `${SYSTEM_PROMPT}\n\n${buildDbToolsPrompt(dbToolNames)}`
-    : SYSTEM_PROMPT;
+    ? `${basePrompt}\n\n${buildDbToolsPrompt(dbToolNames)}`
+    : basePrompt;
 
   if (mcpEnabled && !hasDbTools) {
     console.warn('[chat]   Neo4j MCP is configured but NOT connected — database questions cannot be answered.');
@@ -196,7 +199,7 @@ export async function POST(req: Request) {
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         const result = await agent.stream({ messages: coreMessages });
-        writer.merge(toUIMessageStream({ stream: result.stream }));
+        writer.merge(result.toUIMessageStream());
         const [text, finishReason] = await Promise.all([
           Promise.resolve(result.text).catch(() => ''),
           Promise.resolve(result.finishReason).catch(() => 'unknown' as const),
