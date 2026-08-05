@@ -14,6 +14,11 @@
 # can't build (crates.io access blocked), even though a prebuilt wheel is
 # available on PyPI.
 -r requirements.txt
-nvidia-nat>=1.8.0
-nvidia-nat-langchain>=1.7.0
+# NOTE: nvidia-nat is pinned to exactly 1.7.0 because datarobot-genai[dragent]
+# (all versions through 0.26.21, the latest as of this writing) requires
+# nvidia-nat==1.7.0 as a hard dependency; a >= constraint here causes pip's
+# resolver to fail with "ResolutionImpossible". Bump this only after
+# confirming the datarobot-genai[dragent] version in use supports it.
+nvidia-nat==1.7.0
+nvidia-nat-langchain==1.7.0
 datarobot-genai[langgraph,dragent]>=0.26.12
