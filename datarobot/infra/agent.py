@@ -249,7 +249,8 @@ def deploy_to_datarobot(dry_run: bool = False) -> None:
         token,
         body={
             "name": model_name,
-            "targetType": "agenticWorkflow",
+            "targetType": "AgenticWorkflow",
+            "customModelType": "inference",
             "description": "Neo4j Research Agent with NAMS memory and MCP tool support.",
             "language": "Python",
         },
