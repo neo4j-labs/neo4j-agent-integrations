@@ -1,6 +1,6 @@
-# Bringing Neo4j Knowledge Graphs into DataRobot: An End-to-End Agent Integration Journey
+# Teaching DataRobot to Think in Graphs: A Memory-Enabled Neo4j Agent, Four Ways to Deploy
 
-*How we took a single-file DataRobot custom model idea and turned it into a fully tested, memory-enabled, MCP-compatible, cloud-hosted Neo4j research agent — and what we learned integrating with a partner platform we don't fully control.*
+*How we took a single-file DataRobot custom model idea and turned it into a fully tested, memory-enabled, MCP-compatible, cloud-hosted Neo4j research agent — stress-tested it end-to-end twice — and what we learned integrating with a partner platform we don't fully control.*
 
 ---
 
@@ -97,7 +97,7 @@ The result, verified live:
 
 (One small, purely cosmetic finding along the way: `GET /healthz` returns a 404 when hit through Cloud Run's public edge, even though it's defined identically to `/readyz` in the FastAPI app and works fine locally. Checking the container's own request logs confirmed the request never even reaches the app — `/`, `/readyz`, `/docs`, and the chat endpoint all show up in-container, `/healthz` never does. It's a Cloud Run edge-routing quirk on that specific path, not an application bug, and `/readyz` serves the same purpose reliably.)
 
-**Live demo:** `https://neo4j-datarobot-agent-1008050579172.us-central1.run.app`. Every request needs a Google-issued Bearer identity token in the `Authorization` header:
+**Live demo:** `https://neo4j-datarobot-agent-1008050579172.us-central1.run.app`. Every request needs a Google-issued Bearer token in the `Authorization` header:
 
 ```bash
 TOKEN=$(gcloud auth print-identity-token)
@@ -108,6 +108,25 @@ curl -s https://neo4j-datarobot-agent-1008050579172.us-central1.run.app/v1/chat/
 ```
 
 Full setup and auth details live in the repo's [`datarobot/README.md`](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/datarobot/README.md#hosted-demo-google-cloud-run).
+
+---
+
+## "It's not working" — the re-test that almost wasn't
+
+Here's the part that doesn't usually make it into engineering blog posts: some time after this integration merged, a colleague reported it wasn't working. That's an uncomfortable sentence to hear about something you already shipped and tested. So instead of patching the one thing that was reported broken and calling it done, we went back and re-tested **every single path, end-to-end, against live credentials, a second time** — plus every edge case we could think of.
+
+The honest findings:
+
+- **Path A (DRUM custom model)** — still solid. Re-ran the basic prompt, `--json` output mode, an empty prompt, an invalid OpenAI key (confirmed the resulting crash is DRUM's own *intended* error-handling behavior, not a bug), an unreachable MCP server URL (clean, non-fatal fallback), and a full round-trip against a real, live MCP server. All passed.
+- **Path B (the `datarobot-agent-application` template, `myagent.py`)** — this one had quietly never been exercised end-to-end locally, because installing its dependencies (`litellm`, transitively) had been failing on a Rust build step. Once that was fixed (see below), Path B's LangGraph workflow compiled and ran a real query against the live graph for the first time. That's a real gap closed, not just a re-confirmation.
+- **Path C (the live Cloud Run demo)** — re-tested the happy path plus three deliberately adversarial edge cases: a malformed JSON body (clean `422`, not a crash), an empty `messages` array (graceful fallback instead of an error), and a request with no auth header at all (a clean `403` from Cloud Run's own IAM layer, before the request ever reaches the app).
+- **Path D (NeMo Agent Toolkit)** — this is where the real, previously-invisible bug was hiding: **`requirements-nat.txt` pinned a version range for `nvidia-nat` that was *impossible to install*.** Every published version of the underlying `datarobot-genai[dragent]` package hard-requires an exact different version. Anyone following the README from a clean environment would have hit a wall of dependency-resolver errors before ever running a line of agent code — which lines up uncomfortably well with "it's not working." Pinning the exact compatible version fixed it, and as a bonus, unblocked Path B's dependencies too, since they overlap.
+
+We also went back and independently re-verified a subtler, easy-to-miss detail: `model-metadata.yaml` declares its target type in lowercase (`agenticworkflow`), while the DataRobot REST API used by our deploy script expects PascalCase (`AgenticWorkflow`). Cross-checking against DataRobot's own published agent templates confirmed the lowercase form in `model-metadata.yaml` is correct as-is — a DRUM-specific convention, unrelated to (and easy to confuse with) the REST API's enum. Worth documenting explicitly so the next person doesn't "fix" something that isn't broken.
+
+The one thing that's still genuinely out of our hands: deploying to a live DataRobot org via `infra/agent.py deploy` now runs cleanly all the way up until DataRobot's own API rejects it with a `422`, because this specific tenant doesn't have the `AgenticWorkflow` custom-model entitlement enabled. That's a support-ticket problem, not a code problem — everything downstream of that API call is implemented and dry-run-verified, ready to go the moment the entitlement is granted.
+
+**The lesson**: "it works on my machine, once, during initial development" and "it works, reproducibly, for a stranger following the README from scratch six months later" are two different bars. The gap between them is exactly where dependency pins rot, template paths go unexercised, and support requests like "it's not working" come from. Re-testing the whole surface area — not just the reported symptom — is what actually closes that gap.
 
 ---
 
