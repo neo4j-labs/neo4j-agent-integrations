@@ -12,6 +12,8 @@ Put those two together and you get something genuinely useful: an LLM agent that
 
 ![High-level architecture: a user request flows through DataRobot's runtime into the agent, which optionally consults memory, calls Neo4j and MCP tools, then returns an answer](diagrams/overview.svg)
 
+**What's in this picture:** a chat request lands on whichever DataRobot runtime is hosting the agent (DRUM, the agent-application template, the Workload API, or NAT — more on that shortly). The runtime hands the request to the same `Neo4jResearchAgent` core regardless of which one it is. That core does three things in order: it asks the **Memory** layer (NAMS) for relevant context from past conversations, if configured; it runs its tool-calling loop against **Neo4j** and any connected **MCP** servers to gather facts; and it returns a normal OpenAI-shaped chat completion. Memory and MCP sit off to the side deliberately — they're consulted, not required, which is the point of Lesson 3 below.
+
 At the core of all of this sits one deceptively simple function. Everything else in this post is really commentary on the lessons we learned building the scaffolding *around* it:
 
 ```python
@@ -53,6 +55,8 @@ The lesson that stuck: **don't couple your core logic to any one platform's depl
 
 ![Four deployment paths — A (DRUM), B (agent-application template), C (Workload API / Cloud Run), D (NeMo Agent Toolkit) — all wrapping the same core Neo4j agent logic](diagrams/paths.svg)
 
+**What's in this picture:** four independent entry points, all converging on the same `Neo4jResearchAgent` box in the middle. Nothing about the agent's tool-calling logic, Cypher queries, or memory handling changes based on which path is active — only the outermost layer (how a request physically arrives and how a response is physically returned) differs. That's why a fix made once, like the Cypher parameterization in Lesson 4, is automatically present in all four paths instead of needing to be reapplied four times.
+
 - **Path A — DRUM custom model.** The original shape: `custom.py`'s `load_model()`/`chat()`, deployed via DRUM.
 - **Path B — `datarobot-agent-application` template.** DataRobot's own LangGraph-based scaffolding (`myagent.py`), for teams that want to stay inside DataRobot's opinionated agent framework.
 - **Path C — Workload API.** A plain container (FastAPI + Dockerfile) deployed as a managed, autoscaling workload via REST API — no DRUM runtime at all. This is the one we also stood up as a public demo on Google Cloud Run.
@@ -89,6 +93,12 @@ memory_context = mem.get_context(user_message, session_id)
 # ... run the agent with memory_context injected as a system message ...
 mem.save_turn(session_id, user_message, result)
 ```
+
+But "simple on paper" hid a protocol detail that only became visible once we traced an actual conversation end-to-end:
+
+![Sequence diagram: the agent looks up a local session key in its cache; on a cache miss it calls NAMS POST /conversations, which always returns a fresh server-assigned UUID regardless of any client-supplied id, and the agent caches that mapping before fetching context and saving the turn](diagrams/memory-flow.svg)
+
+**What's in this picture:** three participants — the DataRobot agent, a small local cache, and the NAMS memory API. On every turn, the agent first checks its local cache for a mapping from its own session key to a real NAMS conversation ID. If it's a cache miss (first turn of a new session), the agent calls NAMS to create a conversation — and NAMS's response is the only source of truth for what that conversation's real ID is, regardless of anything the client sent. The agent stores that real ID locally so every subsequent turn in the same session reuses it correctly. Only after that resolution step does the normal `get_context` / run agent / `save_turn` sequence happen. Skipping the resolution step — which is what our first implementation did — silently created a brand-new, disconnected conversation on every single turn instead of one continuous conversation.
 
 The lesson came from what's *underneath* that simple call. Our first implementation assumed we could pick our own conversation ID client-side and use it consistently. We were wrong — NAMS's `POST /conversations` **ignores whatever id you pass** and always mints a fresh server-side UUID. We only found this by reading the actual TypeScript SDK that had just been merged into `agent-memory`, not by guessing at the API shape from documentation. The fix was to keep a small local cache mapping our own session key to the real, server-assigned UUID:
 
@@ -143,6 +153,12 @@ class MCPToolClient:
             return []
 ```
 
+Put together, the graceful-degradation path for both features looks like this:
+
+![Flowchart: at agent startup, if MEMORY_API_KEY is unset, get_context silently returns an empty string; if set, the agent calls NAMS and falls back to an empty context with a logged warning on error. In parallel, if MCP_SERVER_URL is unset, list_tools returns an empty list; if set, the agent discovers MCP tools and falls back to an empty tool list with a logged warning on error. Either way, the Neo4j Research Agent runs](diagrams/optional-features-flow.svg)
+
+**What's in this picture:** two parallel decision trees that both terminate at the same place — "the agent runs regardless." For memory: no API key means an instant, silent empty string, no network call attempted at all. An API key that's set but fails at runtime (wrong key, unreachable host) logs a warning and still returns an empty context rather than raising. For MCP: the same two-track logic applies to tool discovery — no server URL means an empty tool list immediately; a configured-but-unreachable server logs a warning and falls back to an empty list rather than crashing startup. Both trees are symmetrical on purpose: an operator should never be able to tell, from the agent's behavior alone, whether a feature was "not configured" or "configured but failing," except by checking the logs — and either way, the core Neo4j functionality is unaffected.
+
 This is the same symmetry that makes Path D interesting: because NeMo Agent Toolkit can host our own Neo4j tools *as* an MCP server (`nat mcp serve`), the exact same tool implementations can act as either an MCP **client** (pulling in someone else's tools) or an MCP **server** (exposing our tools to someone else's agent). The lesson generalizes well beyond this project: **an integration that degrades gracefully when a dependency is absent is far more valuable than one that assumes the dependency is always there.** Every optional feature in this codebase was tested by deliberately *not* configuring it, not just by configuring it correctly.
 
 ---
@@ -171,6 +187,10 @@ query = """
 """
 graph.query(query, params={"search": search, "limit": safe_limit})
 ```
+
+![Flowchart: user input crosses a trust boundary; the before-fix path built query text via string interpolation, so adversarial input like x' OR 1=1 could alter query structure; the after-fix path passes the same input as a query parameter, so the query text stays static and any input, however adversarial, is treated as an inert literal value](diagrams/cypher-trust-boundary.svg)
+
+**What's in this picture:** the same user-controlled input taking two different paths through the same trust boundary. On the left branch (the bug), that input becomes part of the query's *text* — so anything shaped like Cypher syntax inside it changes what the query actually does. On the right branch (the fix), the input never touches the query text at all; it's handed to the driver separately as a named parameter, and Neo4j's own parser guarantees a parameter value can only ever be interpreted as a value, never as syntax. The diagram is really the entire security lesson in one picture: everything to the left of "trust boundary" is attacker-controlled, and the only safe designs are ones where attacker-controlled data can never influence the shape of what runs on the right.
 
 We verified the fix against actual adversarial payloads (`x' OR 1=1 //`, `x'}) DETACH DELETE n //`) run through the live tool — each is now treated as inert literal search text rather than altering the query. The one case Cypher genuinely can't parameterize is a variable-length relationship depth (`-[*1..N]-`), which we instead coerce to an integer and clamp to a safe range before use.
 
@@ -219,6 +239,8 @@ Anyone following the README from scratch would have hit a wall of dependency-res
 Testing locally proves the logic works. It doesn't prove the integration is usable by someone who isn't sitting at your terminal. So the last part of this project was standing up a real, publicly reachable deployment of Path C on Google Cloud Run:
 
 ![Deployment flow: gcloud CLI builds via Cloud Build into Artifact Registry, deploys to Cloud Run with secrets from Secret Manager, and serves Bearer-token-authenticated requests that call out to Neo4j, OpenAI, and NAMS](diagrams/deployment.svg)
+
+**What's in this picture:** the same container image traveling through three managed Google Cloud services before it ever handles a real request. Cloud Build compiles the Dockerfile and pushes the resulting image to Artifact Registry; Cloud Run pulls that image and runs it as an autoscaling, HTTPS-terminated service, injecting secrets (API keys, database passwords) from Secret Manager as environment variables rather than baking them into the image; and every inbound request must carry a Google-issued identity token that Cloud Run's own IAM layer verifies before the container ever sees the request. From there, the container talks outward to Neo4j, OpenAI, and NAMS exactly as it would in any other environment — none of those three integration points know or care that they're being called from Cloud Run instead of DataRobot.
 
 ```bash
 # Build and push the same Dockerfile used for DataRobot's Workload API —
