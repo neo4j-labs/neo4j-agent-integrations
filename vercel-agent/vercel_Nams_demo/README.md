@@ -38,11 +38,11 @@ NAMS_MODE=middleware   # transparent memory, wraps a model instance
 NAMS_MODE=tools        # model calls query_memory / store_memory explicitly
 ```
 
-| Mode | Call | Memory handling | Tool calls visible in UI | Analogy |
+| Mode | Call | Memory handling | Tool calls visible in UI |  |
 |------|------|-----------------|--------------------------|---------|
-| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No | Mem0 / Letta |
-| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No | Mem0 / Letta |
-| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes | Supermemory |
+| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No | |
+| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |  |
+| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |  |
 
 Choose **provider** when you construct models from a provider and want a drop-in replacement. Choose **middleware** when the base model is already resolved (e.g. it isn't always `openai`). Choose **tools** when you want the memory cycle to be explicit and inspectable.
 
@@ -282,6 +282,7 @@ npm run dev
 | `NAMS_MODE` | No | `provider` | `provider`, `middleware`, or `tools` |
 | `MEMORY_WORKSPACE_ID` | No | _(key default)_ | Pin to a specific NAMS workspace |
 | `OPENAI_MODEL` | No | `gpt-5.4-mini` | LLM model ID |
+| `NAMS_EXTRACTION_MODEL` | No | _(off)_ | When set, builds a real entity graph per stored memory (one extra model call). Applies in all three modes |
 | `MCP_URL` | No | — | Neo4j MCP server URL (enables live graph access) |
 | `MCP_PORT` | No | — | Used as `http://localhost:{PORT}/mcp` when `MCP_URL` is unset |
 | `MCP_BEARER_TOKEN` | No | — | `Authorization: Bearer` — takes precedence over Basic |

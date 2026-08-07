@@ -3,7 +3,9 @@ import {
   ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  defaultSettingsMiddleware,
   stepCountIs,
+  wrapLanguageModel,
   type UIMessage,
   type ToolSet,
   type PrepareStepFunction,
@@ -11,31 +13,25 @@ import {
 import { createNams, createNamsProvider, enforceQueryMemory, type NamsMode } from '@neo4j-labs/nams-ai-provider';
 import { SYSTEM_PROMPT, TRANSPARENT_SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
 import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError, capToolOutputs } from '@/lib/neo4j-mcp';
-
-// ─── Integration mode
-//
-//   NAMS_MODE=provider  (default)
-//     createNamsProvider({ baseProvider: openai, ... }).languageModel(id) —
-//     a registrable ProviderV3; memory is retrieved and injected into the prompt
-//     before each call, and the turn is persisted after. The model never sees
-//     tool definitions; no `tools:` field is needed. Closest to the Mem0 / Letta
-//     pattern.
-//
-//   NAMS_MODE=middleware
-//     createNams().wrap(model, scope) — the same transparent memory as provider
-//     mode, but decorating an existing model instance instead of a provider.
-//     Useful when the base model is already resolved (e.g. not always `openai`).
-//
-//   NAMS_MODE=tools
-//     createNams().tools(scope) — query_memory + store_memory as AI SDK tool()s.
-//     The model decides when to call them. Pair with SYSTEM_PROMPT that instructs
-//     query → answer → store. Closest to the Supermemory pattern.
-//
-// ─────────────────────────────────────────────────────────────────────────────
-
+import { ensureStored } from '@/lib/nams-enrich';
 
 const MAX_STEPS = 10;
 const MODEL_ID = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
+
+// Optional entity extraction. When set, every stored memory is decomposed into
+// graph entities and relationships — "Alex works at TechCorp" becomes
+// (Alex:Person)-[:WORKS_AT]->(TechCorp:Organization) — at the cost of one extra
+// model call per stored memory. Off by default, matching the package default.
+const EXTRACTION_MODEL_ID = process.env.NAMS_EXTRACTION_MODEL?.trim();
+
+const extractionModel = EXTRACTION_MODEL_ID
+  ? wrapLanguageModel({
+    model: openai(EXTRACTION_MODEL_ID),
+    middleware: defaultSettingsMiddleware({
+      settings: { providerOptions: { openai: { strictJsonSchema: false } } },
+    }),
+  })
+  : undefined;
 
 function trim(text: string, max = 80): string {
   const s = text.replace(/\s+/g, ' ').trim();
@@ -94,11 +90,18 @@ export async function POST(req: Request) {
   const mcpEnabled = isMcpConfigured();
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`[chat] POST /api/chat  mode=${mode}  mcp=${mcpEnabled}`);
+  console.log(
+    `[chat] POST /api/chat  mode=${mode}  mcp=${mcpEnabled}  ` +
+    `extraction=${EXTRACTION_MODEL_ID ?? 'off'}`,
+  );
   console.log(`[chat]   userId=${userId}  conv=${conversationId ?? 'auto'}  query="${trim(userText)}"`);
 
   const scope = { userId, conversationId };
-  const memoryConfig = { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID };
+  const memoryConfig = {
+    apiKey,
+    workspaceId: process.env.MEMORY_WORKSPACE_ID,
+    ...(extractionModel ? { extractionModel } : {}),
+  };
 
   //
   const resolvedModel = mode === 'provider'
@@ -169,6 +172,10 @@ export async function POST(req: Request) {
         );
         if (usage) console.log(`[chat]   tokens in=${usage.inputTokens} out=${usage.outputTokens}`);
         if (text) console.log(`[chat]   response="${trim(text)}"`);
+        if (namsResult && stores === 0) {
+          const wrote = await ensureStored(tools, userText);
+          if (wrote) console.log('[chat]   store_memory skipped by model — persisted turn in onFinish');
+        }
 
         if (steps.length > 0) {
           const { makeClient: mk, resolveConversation: rc } = await import('@neo4j-labs/nams-ai-provider');
