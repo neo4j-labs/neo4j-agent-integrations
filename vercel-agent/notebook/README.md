@@ -97,7 +97,8 @@ providers via `AI_PROVIDER`:
 
 ## Notes
 
-- AI SDK v6 replaced `maxSteps` with `stopWhen: stepCountIs(N)` — all scripts use the new API
+- AI SDK v6 replaced `maxSteps` with `stopWhen: stepCountIs(N)` — all scripts use the new API. v7 renames it to `isStepCount` but keeps `stepCountIs` as a literal alias (same function object), so no change was needed
+- On AI SDK v7, `tool()` takes three type parameters (`tool<INPUT, OUTPUT, CONTEXT>`). These scripts are plain JS and pass no explicit generics, so inference from `inputSchema` still works. In TypeScript, an explicit two-argument `tool<In, Out>` now binds to the `tool<INPUT, CONTEXT>` overload and infers `OUTPUT = never` — it surfaces as `not assignable to type 'undefined'` on `execute`, not as an arity error. Add the third parameter or drop the generics
 - MCP uses `createMCPClient` from `@ai-sdk/mcp` (stable API, replaces `experimental_createMCPClient`)
 - `workspaceId` belongs on the `MemoryClient` config (sent as `X-Workspace-Id`), not on `createConversation()`, which only accepts `{ userId, metadata }`
 - Script 4 records each agent step via `client.reasoning.recordStep`, so past reasoning is recallable in later sessions — the same trace the demo's reasoning panel renders

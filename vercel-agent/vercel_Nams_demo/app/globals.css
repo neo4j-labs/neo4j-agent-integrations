@@ -1,0 +1,23 @@
+:root {
+    --app-header-height: 64px;
+    --app-header-padding: 0 16px;
+    --app-logo-height: 32px;
+    --toolbar-height: 56px;
+    --toolbar-padding: 0 16px;
+    --toolbar-gap: 12px;
+}
+
+@media (max-width: 767px) {
+    :root {
+        --app-header-height: 52px;
+        --app-header-padding: 0 8px;
+        --app-logo-height: 26px;
+        --toolbar-height: 48px;
+        --toolbar-padding: 0 8px;
+        --toolbar-gap: 8px;
+    }
+}
+
+.full-width-content {
+    --content-extra-light-max-width: 100%;
+}
