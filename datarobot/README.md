@@ -201,6 +201,13 @@ MCP_SERVER_URL=https://my-mcp-server.example.com/mcp \
 
 # stdio MCP server
 MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
+
+# Hosted Neo4j Aura Agent (OAuth 2.0 client-credentials) — see "Hosted Neo4j
+# Aura MCP" below for details
+MCP_SERVER_URL=<aura-agent-mcp-endpoint> \
+MCP_OAUTH_CLIENT_ID=<client-id> \
+MCP_OAUTH_CLIENT_SECRET=<client-secret> \
+  python run_local.py "What tools does my Aura Agent expose?"
 ```
 
 **Supported transports** (auto-detected):
@@ -208,14 +215,68 @@ MCP_SERVER_URL="uvx my-mcp-server serve" python run_local.py "..."
 - **SSE** — fallback for `http://` or `https://` servers that don't support streamable HTTP
 - **stdio** — any other string treated as a shell command
 
-**Authentication** (auto-detected from env vars):
+**Authentication** (auto-detected from env vars, checked in this priority order):
 | Priority | Condition | Header sent |
 |---|---|---|
-| 1 | `MCP_AUTH_TOKEN` is set | `Authorization: Bearer <token>` |
-| 2 | `NEO4J_USERNAME` + `NEO4J_PASSWORD` are set | `Authorization: Basic <b64(user:pass)>` |
-| 3 | Neither | No auth header (open servers) |
+| 1 | `MCP_OAUTH_CLIENT_ID` + `MCP_OAUTH_CLIENT_SECRET` are set | OAuth 2.0 client-credentials grant -> `Authorization: Bearer <fetched token>` |
+| 2 | `MCP_AUTH_TOKEN` is set | `Authorization: Bearer <token>` |
+| 3 | `NEO4J_USERNAME` + `NEO4J_PASSWORD` are set | `Authorization: Basic <b64(user:pass)>` |
+| 4 | None of the above | No auth header (open servers) |
 
 > The neo4j-mcp-official server uses Neo4j Basic auth — no extra config needed, it reuses the existing `NEO4J_USERNAME`/`NEO4J_PASSWORD`.
+
+### Hosted Neo4j Aura MCP (Aura Agents / Aura hosted database)
+
+Two hosted Aura paths are supported by pointing `MCP_SERVER_URL` at the right endpoint:
+
+1. **Aura Agents (OAuth 2.0 client-credentials)** — an Aura Agent you've made
+   public exposes its own MCP endpoint URL. Aura Agents and the Aura
+   Management API use the same machine-to-machine OAuth 2.0
+   client-credentials grant, so authenticate with an API client ID/secret
+   instead of a database username/password:
+
+   ```bash
+   MCP_SERVER_URL=<the Aura Agent's public MCP endpoint URL> \
+   MCP_OAUTH_CLIENT_ID=<your Aura API client id> \
+   MCP_OAUTH_CLIENT_SECRET=<your Aura API client secret> \
+     python run_local.py "What tools does my Aura Agent expose?"
+   ```
+
+   The client fetches a token from `MCP_OAUTH_TOKEN_URL` (default
+   `https://api.neo4j.io/oauth/token`, the Aura Management API's documented
+   OAuth endpoint), caches it in-process, and refreshes it automatically
+   shortly before it expires. If a specific Aura Agent's setup screen shows a
+   different token URL, scope, or audience, override with `MCP_OAUTH_TOKEN_URL`
+   / `MCP_OAUTH_SCOPE` / `MCP_OAUTH_AUDIENCE`. On any OAuth fetch failure the
+   client logs a warning and falls back to the next configured auth mode (or
+   no auth) rather than crashing — MCP always fails open.
+
+   > **Known open question**: this repo's `salesforce-agentforce` integration
+   > previously documented that Aura Agent hosted MCP endpoints required an
+   > *interactive* Aura Console login rather than client-credentials. This
+   > implementation assumes Aura Agents now support (or are being evaluated
+   > for) the same OAuth client-credentials flow as the Aura Management API.
+   > The OAuth code paths are covered by unit tests (`tests/test_mcp_oauth.py`,
+   > mocked HTTP — no live Aura access needed), but **live end-to-end
+   > validation against a real Aura Agent endpoint is still pending** real
+   > credentials. If `MCP_OAUTH_TOKEN_URL` above turns out to be wrong for
+   > Aura Agents, override it once the correct value is confirmed from the
+   > Aura Console.
+
+2. **Hosted database (URL from the Aura Console "Inspect" tab)** — an Aura
+   database instance's own MCP endpoint, shown on that instance's "Inspect"
+   tab in the Aura Console. This path re-uses the instance's own database
+   credentials, so no new auth mode is needed — set:
+
+   ```bash
+   MCP_SERVER_URL=<the MCP URL shown on the Aura Console "Inspect" tab> \
+   NEO4J_USERNAME=<that instance's username> \
+   NEO4J_PASSWORD=<that instance's password> \
+     python run_local.py "What schema does my Aura database have?"
+   ```
+
+   This falls under auth priority 3 (Basic auth) above, exactly like
+   `neo4j-mcp-official`.
 
 MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
 

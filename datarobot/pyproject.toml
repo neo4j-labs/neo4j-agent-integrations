@@ -26,3 +26,6 @@ neo4j_agent_memory = "agent.nat_memory"
 
 [tool.setuptools.packages.find]
 include = ["agent*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

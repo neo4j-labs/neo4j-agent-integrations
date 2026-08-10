@@ -8,10 +8,20 @@ Supported transports (auto-detected by URL prefix):
   - SSE legacy       (older MCP servers, tried as fallback for http/https)
   - stdio            (any other string treated as a shell command)
 
-Authentication:
-  - If MCP_AUTH_TOKEN is set, passed as "Authorization: Bearer <token>"
-  - Otherwise if NEO4J_USERNAME + NEO4J_PASSWORD are set, passed as Basic auth
-    (matches the neo4j-mcp-official server convention)
+Authentication (in priority order):
+  1. MCP_OAUTH_CLIENT_ID + MCP_OAUTH_CLIENT_SECRET → OAuth 2.0 client-credentials
+     grant against MCP_OAUTH_TOKEN_URL, sent as "Authorization: Bearer <token>".
+     This is the machine-to-machine auth model used by hosted Neo4j Aura
+     endpoints (Aura Agents, the Aura Management API) — see
+     https://neo4j.com/docs/aura/api/authentication/. The resulting access
+     token is cached in-process and refreshed automatically shortly before
+     it expires.
+  2. MCP_AUTH_TOKEN → static "Authorization: Bearer <token>"
+  3. NEO4J_USERNAME + NEO4J_PASSWORD → Basic auth (matches the
+     neo4j-mcp-official server convention, and a hosted Aura *database*
+     instance's own credentials when pointing MCP_SERVER_URL at the MCP
+     endpoint shown on the Aura Console "Inspect" tab for that instance)
+  4. No auth headers
 
 Error handling:
   - anyio TaskGroup wraps connection errors in an ExceptionGroup; we unwrap
@@ -27,6 +37,7 @@ import logging
 import os
 import shlex
 import sys
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -46,6 +57,28 @@ try:
 except ImportError:
     _HAS_MCP = False
     _HAS_STREAMABLE = False
+
+# httpx is also needed for the OAuth token fetch, independently of whether
+# the Streamable HTTP MCP transport is available (a direct dependency —
+# see requirements.txt — so this should normally succeed whenever mcp does).
+try:
+    import httpx as _oauth_httpx  # type: ignore[import]
+    _HAS_HTTPX = True
+except ImportError:
+    _HAS_HTTPX = False
+
+# Neo4j Aura's standard OAuth 2.0 client-credentials token endpoint (used by
+# the Aura Management API and Aura Terraform provider — see
+# https://neo4j.com/docs/aura/api/authentication/). Aura Agents hosted MCP
+# endpoints are expected to use the same identity platform, but if a
+# specific Aura Agent's setup screen shows a different token URL, override
+# it with MCP_OAUTH_TOKEN_URL.
+_DEFAULT_AURA_OAUTH_TOKEN_URL = "https://api.neo4j.io/oauth/token"
+
+# In-process cache for the OAuth access token: {"token": str, "expires_at": float}.
+# Refreshed automatically once within _TOKEN_REFRESH_MARGIN_S of expiry.
+_oauth_token_cache: dict[str, Any] | None = None
+_TOKEN_REFRESH_MARGIN_S = 30
 
 
 # httpx's default timeout (5s) is too short for MCP servers reached through
@@ -87,14 +120,93 @@ def _is_http(url: str) -> bool:
     return url.startswith("http://") or url.startswith("https://")
 
 
-def _auth_headers() -> dict[str, str]:
+def _oauth_client_credentials_configured() -> bool:
+    return bool(
+        os.environ.get("MCP_OAUTH_CLIENT_ID") and os.environ.get("MCP_OAUTH_CLIENT_SECRET")
+    )
+
+
+async def _fetch_oauth_token() -> str | None:
+    """Fetch (or return a cached) OAuth 2.0 client-credentials access token.
+
+    Sends client_id/client_secret as HTTP Basic auth to MCP_OAUTH_TOKEN_URL
+    (RFC 6749 s2.3.1 -- the convention used by Neo4j Aura's OAuth endpoint and
+    most identity providers), with grant_type=client_credentials and any
+    configured scope/audience. Returns None (non-fatal) on any failure so the
+    caller falls back to no auth header rather than crashing the agent.
+    """
+    global _oauth_token_cache
+
+    if not _HAS_HTTPX:
+        logger.warning(
+            "MCP_OAUTH_CLIENT_ID/SECRET are set but 'httpx' is not importable, "
+            "so the OAuth token cannot be fetched. Run 'pip install -r "
+            "requirements.txt' to install it."
+        )
+        return None
+
+    now = time.time()
+    if _oauth_token_cache and now < _oauth_token_cache["expires_at"] - _TOKEN_REFRESH_MARGIN_S:
+        return _oauth_token_cache["token"]
+
+    client_id = os.environ["MCP_OAUTH_CLIENT_ID"]
+    client_secret = os.environ["MCP_OAUTH_CLIENT_SECRET"]
+    token_url = os.environ.get("MCP_OAUTH_TOKEN_URL", _DEFAULT_AURA_OAUTH_TOKEN_URL)
+
+    data: dict[str, str] = {"grant_type": "client_credentials"}
+    scope = os.environ.get("MCP_OAUTH_SCOPE")
+    if scope:
+        data["scope"] = scope
+    audience = os.environ.get("MCP_OAUTH_AUDIENCE")
+    if audience:
+        data["audience"] = audience
+
+    try:
+        async with _oauth_httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            response = await client.post(token_url, data=data, auth=(client_id, client_secret))
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning(
+            "OAuth client-credentials token fetch failed against %s (%s). "
+            "Falling back to no auth header for this MCP request.",
+            token_url,
+            exc,
+        )
+        return None
+
+    access_token = payload.get("access_token")
+    if not access_token:
+        logger.warning(
+            "OAuth token endpoint %s returned no 'access_token' field (keys: %s).",
+            token_url,
+            list(payload.keys()),
+        )
+        return None
+
+    expires_in = payload.get("expires_in", 300)
+    _oauth_token_cache = {"token": access_token, "expires_at": now + float(expires_in)}
+    return access_token
+
+
+async def _auth_headers() -> dict[str, str]:
     """Build auth headers from env vars.
 
     Priority:
-    1. MCP_AUTH_TOKEN  → Bearer token
-    2. NEO4J_USERNAME + NEO4J_PASSWORD → Basic auth (neo4j-mcp-official convention)
-    3. No auth headers
+    1. MCP_OAUTH_CLIENT_ID + MCP_OAUTH_CLIENT_SECRET -> Bearer <oauth token>
+       (hosted Neo4j Aura Agents / Aura Management API auth model)
+    2. MCP_AUTH_TOKEN  -> Bearer <token>
+    3. NEO4J_USERNAME + NEO4J_PASSWORD -> Basic auth (neo4j-mcp-official
+       convention, and a hosted Aura database's own instance credentials)
+    4. No auth headers
     """
+    if _oauth_client_credentials_configured():
+        token = await _fetch_oauth_token()
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+        # Fall through: if OAuth is configured but the fetch failed, still
+        # try any other configured auth rather than sending zero headers.
+
     token = os.environ.get("MCP_AUTH_TOKEN")
     if token:
         return {"Authorization": f"Bearer {token}"}
@@ -132,7 +244,7 @@ def _parse_content(content: list[Any]) -> Any:
 
 async def _list_tools_http(url: str) -> list[dict[str, Any]]:
     """Try streamable HTTP first, fall back to SSE."""
-    headers = _auth_headers()
+    headers = await _auth_headers()
     if _HAS_STREAMABLE:
         try:
             http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
@@ -161,7 +273,7 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
 
 async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any:
     """Try streamable HTTP first, fall back to SSE."""
-    headers = _auth_headers()
+    headers = await _auth_headers()
     if _HAS_STREAMABLE:
         try:
             http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
