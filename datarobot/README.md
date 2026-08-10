@@ -91,6 +91,118 @@ calls agent.invoke()"| PLANNER
 | `workflow.yaml` implements a NAT-native agent but isn't using the `dragent` frontend | **Fixed** — `general.front_end._type: dragent_fastapi` in `workflow.yaml`. |
 | "Use the template ... apply Neo4j specifics onto it: tools and memory" | Template scaffolded via `copier` (`agent_template_framework: base`); Neo4j tools (`neo4j_tools.py`, `mcp_client.py`) and NAMS memory (`nat_memory.py`) applied on top, unchanged in their core logic. |
 
+### Request flow — memory (NAMS)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant FE as dragent_fastapi
+    participant FN as neo4j_agent()
+    participant MEM as neo4j_agent_memory<br/>(nat_memory.py)
+    participant NAMS as NAMS API<br/>(memory.neo4jlabs.com)
+    participant LG as MyAgent (LangGraph)
+
+    U->>FE: RunAgentInput (thread_id, message)
+    FE->>MEM: retrieve context for thread_id
+    alt MEMORY_API_KEY set
+        MEM->>NAMS: GET conversation context
+        NAMS-->>MEM: prior turns / summary
+    else not configured
+        MEM-->>MEM: no-op, return empty context
+    end
+    MEM->>FN: enriched prompt (context + new message)
+    FN->>LG: invoke(planner → writer)
+    LG-->>FN: final answer
+    FN->>MEM: save this turn
+    alt MEMORY_API_KEY set
+        MEM->>NAMS: POST turn (non-blocking, logs and continues on failure)
+    end
+    FN-->>FE: DRAgentEventResponse
+    FE-->>U: answer
+```
+
+Memory is wired as part of `workflow.yaml`'s `streaming_memory_agent` workflow type
+(retrieve-context → enrich-prompt → run-agent → save-results), the same shape as
+DataRobot's own `dr_mem0_memory` reference implementation — it is never on the critical
+path to a correct answer: any NAMS failure is caught, logged, and the request proceeds
+with an empty/unsaved context.
+
+### Request flow — MCP tool loading (incl. hosted Neo4j Aura MCP)
+
+```mermaid
+flowchart TD
+    START(["neo4j_agent() invoked"]) --> CHECK{"MCP_SERVER_URL set
+AND mcp package importable?"}
+    CHECK -- no --> NOOP["mcp_tools_context yields []"]
+    CHECK -- yes --> AUTHTYPE{"Which auth is configured?"}
+
+    AUTHTYPE -- "MCP_OAUTH_CLIENT_ID/SECRET" --> DISCOVER["_discover_oauth_metadata()
+RFC 9728: GET /.well-known/oauth-protected-resource
+→ authorization_servers[0]
+→ GET .well-known/openid-configuration"]
+    DISCOVER --> TOKEN["_fetch_oauth_token()
+POST token_url, grant_type=client_credentials
+Basic(client_id, client_secret)
+cached + auto-refreshed"]
+    AUTHTYPE -- "MCP_AUTH_TOKEN" --> STATIC["Authorization: Bearer token"]
+    AUTHTYPE -- "NEO4J_USERNAME/PASSWORD" --> BASIC["Authorization: Basic user:pass"]
+    AUTHTYPE -- "none configured" --> OPEN["no Authorization header"]
+
+    TOKEN --> CONNECT
+    STATIC --> CONNECT
+    BASIC --> CONNECT
+    OPEN --> CONNECT["Connect: Streamable HTTP → SSE → stdio"]
+
+    CONNECT --> LIST["alist_tools() via mcp_client.py"]
+    LIST --> WRAP["_build_mcp_langchain_tool()
+JSON Schema → Pydantic args_schema
+per tool_def"]
+    WRAP --> YIELD["yield [BaseTool, ...] to planner_node"]
+    NOOP --> YIELD2["planner_node runs with
+Neo4j tools only"]
+
+    YIELD --> PLANNER["planner_node: LLM binds
+Neo4j tools + MCP tools together"]
+    YIELD2 --> PLANNER
+```
+
+Any failure anywhere in this chain (`_discover_oauth_metadata`, `_fetch_oauth_token`,
+`alist_tools`) is caught and logged — `mcp_tools_context()` yields `[]` rather than
+raising, so the agent always runs with at least its 7 built-in Neo4j tools.
+
+### Packaging & deployment flow
+
+```mermaid
+flowchart LR
+    DEV["Local dev
+task install → task validate → task dev/run"]
+    DEV --> CTX["task create-docker-context
+downloads DataRobot's own
+python311_genai_agents Dockerfile
+from datarobot-user-models"]
+    CTX --> BUILD["task build-docker-context
+docker build --platform linux/amd64
++ pyproject.toml / requirements.txt copied in"]
+    BUILD --> IMG[("neo4j_agent:latest
+local image / docker_context.tar.gz")]
+    IMG --> REG["Register as a DataRobot
+Custom Model / Agentic Workflow
+(DataRobot Console or API)
+using agent/workflow.yaml + register.py"]
+    REG --> DEPLOY["Deploy → dragent runtime
+serves via dragent_fastapi,
+same code path as local task dev"]
+    DEPLOY --> LIVE(["Live agent endpoint
+(Playground / A2A / API)"])
+```
+
+This mirrors the official template's own `task create-docker-context` /
+`task build-docker-context` flow exactly — no custom Dockerfile is checked into this
+repo (the prior static `Dockerfile`, tied to the now-removed `agent/server.py`, was
+deleted); the same Docker context that runs locally via `task dev` is what DataRobot's
+platform runs after deployment, since both invoke `agent/workflow.yaml` through the
+`dragent` runtime.
+
 ## Files
 
 ```
