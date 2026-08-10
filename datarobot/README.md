@@ -82,14 +82,14 @@ calls agent.invoke()"| PLANNER
     NAMS --> User
 ```
 
-**How this maps to the reviewer's ask:**
+**Architecture at a glance:**
 
-| Reviewer's complaint | Resolution |
-|---|---|
-| `agent.py`/`custom.py` (DRUM, deprecated) still present | **Removed** — `agent/agent.py`, `agent/custom.py`, `agent/model-metadata.yaml`, `agent/server.py`, `run_local.py`, `infra/agent.py`, `infra/workload.py`, `Dockerfile` are all deleted. |
-| `myagent.py` "looks more modern, but isn't hooked up anywhere" — needs `register.py` + `workflow.yaml` wiring | **Fixed** — `agent/register.py` (new) wires `myagent.py`'s `MyAgent` into NAT via `register_per_user_function`, exactly matching the template's `register_base.py.j2` pattern. |
-| `workflow.yaml` implements a NAT-native agent but isn't using the `dragent` frontend | **Fixed** — `general.front_end._type: dragent_fastapi` in `workflow.yaml`. |
-| "Use the template ... apply Neo4j specifics onto it: tools and memory" | Template scaffolded via `copier` (`agent_template_framework: base`); Neo4j tools (`neo4j_tools.py`, `mcp_client.py`) and NAMS memory (`nat_memory.py`) applied on top, unchanged in their core logic. |
+This agent is built directly on top of DataRobot's official [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) template (scaffolded via `copier`, `agent_template_framework: base`), with Neo4j-specific pieces layered on top of the template's structure rather than reimplemented from scratch:
+
+- **`agent/register.py`** wires `myagent.py`'s `MyAgent` into NAT via `register_per_user_function`, matching the template's `register_base.py.j2` pattern — this is the single entry point NAT's registration system routes requests to.
+- **`workflow.yaml`** declares `general.front_end._type: dragent_fastapi`, so the agent is served through DataRobot's `dragent` runtime front end.
+- **`agent/neo4j_tools.py`** and **`agent/mcp_client.py`** provide the Neo4j-specific tool-calling and MCP integration, applied on top of the template's tool-binding conventions.
+- **`agent/nat_memory.py`** wraps NAMS-backed cross-session memory using NAT's own `MemoryEditor` interface.
 
 ### Request flow — memory (NAMS)
 
@@ -458,7 +458,7 @@ See `.env.example` for the full annotated list, including MCP OAuth discovery ov
   `infra/workload.py`, `agent/agent.py`, `agent/custom.py`, `agent/server.py`,
   `agent/model-metadata.yaml`, and the standalone `Dockerfile` were all built entirely around the
   now-removed DRUM/Workload API paths and have been deleted rather than kept as unmaintained dead
-  code, per the reviewer's explicit ask not to keep evolving that architecture.
+  code, to keep the codebase aligned with the single official-template architecture.
 - `neo4j-agent-memory` and `mcp` both require Python ≥3.10 (same as `datarobot-genai[dragent]`'s
   own `nvidia-nat` dependency, so this is not an additional constraint versus what the template
   already requires).
