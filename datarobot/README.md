@@ -218,22 +218,21 @@ MCP_OAUTH_CLIENT_SECRET=<client-secret> \
 **Authentication** (auto-detected from env vars, checked in this priority order):
 | Priority | Condition | Header sent |
 |---|---|---|
-| 1 | `MCP_OAUTH_CLIENT_ID` + `MCP_OAUTH_CLIENT_SECRET` are set | OAuth 2.0 client-credentials grant -> `Authorization: Bearer <fetched token>` |
+| 1 | `MCP_OAUTH_CLIENT_ID` + `MCP_OAUTH_CLIENT_SECRET` are set | OAuth 2.0 client-credentials grant -> `Authorization: Bearer <token>` |
 | 2 | `MCP_AUTH_TOKEN` is set | `Authorization: Bearer <token>` |
 | 3 | `NEO4J_USERNAME` + `NEO4J_PASSWORD` are set | `Authorization: Basic <b64(user:pass)>` |
 | 4 | None of the above | No auth header (open servers) |
 
-> The neo4j-mcp-official server uses Neo4j Basic auth — no extra config needed, it reuses the existing `NEO4J_USERNAME`/`NEO4J_PASSWORD`.
+> The neo4j-mcp-official server uses Neo4j Basic auth — no extra config needed, it reuses the existing `NEO4J_USERNAME`/`NEO4J_PASSWORD`. **This does NOT apply to hosted Neo4j Aura MCP endpoints — see below, both hosted Aura paths require OAuth.**
 
 ### Hosted Neo4j Aura MCP (Aura Agents / Aura hosted database)
 
-Two hosted Aura paths are supported by pointing `MCP_SERVER_URL` at the right endpoint:
+Two hosted Aura paths are supported by pointing `MCP_SERVER_URL` at the right endpoint. **Both require OAuth 2.0 client-credentials** (`MCP_OAUTH_CLIENT_ID` + `MCP_OAUTH_CLIENT_SECRET`) — confirmed via live testing against a real Aura hosted-database MCP instance that it rejects unauthenticated requests (`401` with a `WWW-Authenticate: Bearer resource_metadata=...` header). Neither path uses Basic auth / database username-password, even the "hosted database" one.
 
 1. **Aura Agents (OAuth 2.0 client-credentials)** — an Aura Agent you've made
-   public exposes its own MCP endpoint URL. Aura Agents and the Aura
-   Management API use the same machine-to-machine OAuth 2.0
-   client-credentials grant, so authenticate with an API client ID/secret
-   instead of a database username/password:
+   public exposes its own MCP endpoint URL (or a single-shot `/invoke` REST
+   API — see the open-question note below). Authenticate with an Aura API
+   client ID/secret:
 
    ```bash
    MCP_SERVER_URL=<the Aura Agent's public MCP endpoint URL> \
@@ -242,41 +241,50 @@ Two hosted Aura paths are supported by pointing `MCP_SERVER_URL` at the right en
      python run_local.py "What tools does my Aura Agent expose?"
    ```
 
-   The client fetches a token from `MCP_OAUTH_TOKEN_URL` (default
-   `https://api.neo4j.io/oauth/token`, the Aura Management API's documented
-   OAuth endpoint), caches it in-process, and refreshes it automatically
-   shortly before it expires. If a specific Aura Agent's setup screen shows a
-   different token URL, scope, or audience, override with `MCP_OAUTH_TOKEN_URL`
-   / `MCP_OAUTH_SCOPE` / `MCP_OAUTH_AUDIENCE`. On any OAuth fetch failure the
-   client logs a warning and falls back to the next configured auth mode (or
-   no auth) rather than crashing — MCP always fails open.
+   Since the Aura Agents `/invoke` API does not publish RFC 9728 discovery
+   metadata (confirmed live), the client falls back to
+   `MCP_OAUTH_TOKEN_URL` (default `https://api.neo4j.io/oauth/token`, the
+   Aura Management API's documented OAuth endpoint). If a specific Aura
+   Agent's setup screen shows a different token URL, scope, or audience,
+   override with `MCP_OAUTH_TOKEN_URL` / `MCP_OAUTH_SCOPE` /
+   `MCP_OAUTH_AUDIENCE`. On any OAuth fetch failure the client logs a
+   warning and falls back to the next configured auth mode (or no auth)
+   rather than crashing — MCP always fails open.
 
-   > **Known open question**: this repo's `salesforce-agentforce` integration
-   > previously documented that Aura Agent hosted MCP endpoints required an
-   > *interactive* Aura Console login rather than client-credentials. This
-   > implementation assumes Aura Agents now support (or are being evaluated
-   > for) the same OAuth client-credentials flow as the Aura Management API.
-   > The OAuth code paths are covered by unit tests (`tests/test_mcp_oauth.py`,
-   > mocked HTTP — no live Aura access needed), but **live end-to-end
-   > validation against a real Aura Agent endpoint is still pending** real
-   > credentials. If `MCP_OAUTH_TOKEN_URL` above turns out to be wrong for
-   > Aura Agents, override it once the correct value is confirmed from the
-   > Aura Console.
+   > **Known open question**: live probing of a real Aura Agents `/invoke`
+   > endpoint (`https://api.neo4j.io/v2beta1/organizations/.../agents/{id}/invoke`)
+   > confirmed it requires a Bearer JWT and returns HTTP 422 on malformed
+   > requests, but did **not** confirm the exact token endpoint (no real
+   > credentials were available to test end-to-end) or whether this
+   > single-shot "invoke" REST shape is fully compatible with this agent's
+   > standard MCP JSON-RPC client (`initialize` / `list_tools` / `call_tool`).
+   > The OAuth code paths themselves are covered by unit tests
+   > (`tests/test_mcp_oauth.py`, mocked HTTP — no live Aura access needed).
+   > If `MCP_OAUTH_TOKEN_URL` above turns out to be wrong for Aura Agents,
+   > override it once the correct value is confirmed from the Aura Console.
 
 2. **Hosted database (URL from the Aura Console "Inspect" tab)** — an Aura
    database instance's own MCP endpoint, shown on that instance's "Inspect"
-   tab in the Aura Console. This path re-uses the instance's own database
-   credentials, so no new auth mode is needed — set:
+   tab in the Aura Console (e.g. `https://<id>.mcp-instances.neo4j.io`).
+   **Confirmed live** that this endpoint requires OAuth, not the instance's
+   database username/password: an unauthenticated request returns `401`
+   with a `WWW-Authenticate: Bearer resource_metadata="<url>/.well-known/oauth-protected-resource"`
+   header. The client automatically discovers the correct token endpoint
+   and audience from that metadata (RFC 9728 Protected Resource Metadata +
+   OIDC discovery on the resulting authorization server, which is a
+   region-specific Auth0 tenant, e.g. `aura-mcp.eu.auth0.com`) — no
+   `MCP_OAUTH_TOKEN_URL` override is needed for this path:
 
    ```bash
    MCP_SERVER_URL=<the MCP URL shown on the Aura Console "Inspect" tab> \
-   NEO4J_USERNAME=<that instance's username> \
-   NEO4J_PASSWORD=<that instance's password> \
+   MCP_OAUTH_CLIENT_ID=<your Aura API client id> \
+   MCP_OAUTH_CLIENT_SECRET=<your Aura API client secret> \
      python run_local.py "What schema does my Aura database have?"
    ```
 
-   This falls under auth priority 3 (Basic auth) above, exactly like
-   `neo4j-mcp-official`.
+   This falls under auth priority 1 (OAuth) above — **not** priority 3
+   (Basic auth), which only applies to `neo4j-mcp-official` and other
+   non-Aura-hosted MCP servers that accept database credentials directly.
 
 MCP is **non-blocking** — if `MCP_SERVER_URL` is absent or the `mcp` package is not installed, the agent runs with its 10 built-in tools only.
 

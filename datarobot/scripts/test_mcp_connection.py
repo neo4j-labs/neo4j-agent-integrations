@@ -13,10 +13,12 @@ Usage:
     MCP_OAUTH_CLIENT_SECRET=<client-secret> \\
         python scripts/test_mcp_connection.py
 
-    # Aura hosted database (Inspect tab URL)
+    # Aura hosted database (Inspect tab URL) — also OAuth client-credentials;
+    # the token endpoint is auto-discovered from the server (RFC 9728), so no
+    # database username/password is needed here.
     MCP_SERVER_URL=<aura-inspect-tab-mcp-url> \\
-    NEO4J_USERNAME=<username> \\
-    NEO4J_PASSWORD=<password> \\
+    MCP_OAUTH_CLIENT_ID=<client-id> \\
+    MCP_OAUTH_CLIENT_SECRET=<client-secret> \\
         python scripts/test_mcp_connection.py
 
     # Optionally call a specific tool once tools are listed:
@@ -42,12 +44,38 @@ def main() -> int:
     parser.add_argument(
         "--args", default="{}", help="JSON object of arguments for --call (default: {})"
     )
+    parser.add_argument(
+        "--discover-only",
+        action="store_true",
+        help=(
+            "Only run RFC 9728 OAuth discovery against MCP_SERVER_URL and print the "
+            "resolved token endpoint/audience, without fetching a token or listing "
+            "tools. Useful to sanity-check a hosted Aura MCP URL with no OAuth "
+            "credentials at hand."
+        ),
+    )
     args = parser.parse_args()
 
     if not os.environ.get("MCP_SERVER_URL"):
         print("MCP_SERVER_URL is not set — nothing to test.", file=sys.stderr)
         print(__doc__, file=sys.stderr)
         return 2
+
+    if args.discover_only:
+        import anyio
+
+        server_url = os.environ["MCP_SERVER_URL"]
+        print(f"Discovering OAuth metadata for: {server_url}")
+        metadata = anyio.run(mcp_client._discover_oauth_metadata, server_url)  # noqa: SLF001
+        if metadata is None:
+            print(
+                "No RFC 9728 discovery metadata found (server may not require OAuth, "
+                "or doesn't publish '.well-known/oauth-protected-resource')."
+            )
+            return 1
+        print(f"  token_url: {metadata.get('token_url')}")
+        print(f"  audience:  {metadata.get('audience')}")
+        return 0
 
     if not mcp_client._HAS_MCP:  # noqa: SLF001 — internal check, script-only use
         print(

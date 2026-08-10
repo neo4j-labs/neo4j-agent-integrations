@@ -10,17 +10,20 @@ Supported transports (auto-detected by URL prefix):
 
 Authentication (in priority order):
   1. MCP_OAUTH_CLIENT_ID + MCP_OAUTH_CLIENT_SECRET → OAuth 2.0 client-credentials
-     grant against MCP_OAUTH_TOKEN_URL, sent as "Authorization: Bearer <token>".
-     This is the machine-to-machine auth model used by hosted Neo4j Aura
-     endpoints (Aura Agents, the Aura Management API) — see
-     https://neo4j.com/docs/aura/api/authentication/. The resulting access
-     token is cached in-process and refreshed automatically shortly before
-     it expires.
+     grant, sent as "Authorization: Bearer <token>". This is required for
+     BOTH hosted Neo4j Aura MCP paths: Aura Agents' /invoke REST API, and an
+     Aura hosted-database MCP URL (Aura Console "Inspect" tab) -- confirmed
+     live that the latter rejects unauthenticated requests and publishes
+     RFC 9728 discovery metadata. The token endpoint is resolved as:
+     MCP_OAUTH_TOKEN_URL (explicit override) → dynamically discovered from
+     MCP_SERVER_URL's ".well-known/oauth-protected-resource" (see
+     _discover_oauth_metadata) → a default Aura Management API endpoint.
+     The resulting access token is cached in-process and refreshed
+     automatically shortly before it expires.
   2. MCP_AUTH_TOKEN → static "Authorization: Bearer <token>"
   3. NEO4J_USERNAME + NEO4J_PASSWORD → Basic auth (matches the
-     neo4j-mcp-official server convention, and a hosted Aura *database*
-     instance's own credentials when pointing MCP_SERVER_URL at the MCP
-     endpoint shown on the Aura Console "Inspect" tab for that instance)
+     neo4j-mcp-official server convention only -- NOT sufficient for hosted
+     Aura MCP endpoints, which require OAuth per (1) above)
   4. No auth headers
 
 Error handling:
@@ -67,18 +70,26 @@ try:
 except ImportError:
     _HAS_HTTPX = False
 
-# Neo4j Aura's standard OAuth 2.0 client-credentials token endpoint (used by
-# the Aura Management API and Aura Terraform provider — see
-# https://neo4j.com/docs/aura/api/authentication/). Aura Agents hosted MCP
-# endpoints are expected to use the same identity platform, but if a
-# specific Aura Agent's setup screen shows a different token URL, override
-# it with MCP_OAUTH_TOKEN_URL.
+# Fallback OAuth 2.0 client-credentials token endpoint, used only when
+# MCP_OAUTH_TOKEN_URL isn't set AND dynamic discovery (see
+# _discover_oauth_metadata below) fails or doesn't apply. This is the Aura
+# Management API's documented token endpoint (used by the Aura Terraform
+# provider — see https://neo4j.com/docs/aura/api/authentication/), which
+# matches the pattern used by the Aura Agents "invoke" REST API
+# (api.neo4j.io/v2beta1/.../agents/{id}/invoke — confirmed live to require a
+# "Bearer <JWT>" header, though the exact token endpoint for that specific
+# API has not been confirmed against a real client_id/secret yet).
 _DEFAULT_AURA_OAUTH_TOKEN_URL = "https://api.neo4j.io/oauth/token"
 
 # In-process cache for the OAuth access token: {"token": str, "expires_at": float}.
 # Refreshed automatically once within _TOKEN_REFRESH_MARGIN_S of expiry.
 _oauth_token_cache: dict[str, Any] | None = None
 _TOKEN_REFRESH_MARGIN_S = 30
+
+# In-process cache for discovered OAuth metadata per MCP server URL, so
+# discovery only runs once per process per server: {url: {"token_url": str,
+# "audience": str | None}}.
+_oauth_discovery_cache: dict[str, dict[str, Any]] = {}
 
 
 # httpx's default timeout (5s) is too short for MCP servers reached through
@@ -126,14 +137,92 @@ def _oauth_client_credentials_configured() -> bool:
     )
 
 
-async def _fetch_oauth_token() -> str | None:
+async def _discover_oauth_metadata(server_url: str) -> dict[str, Any] | None:
+    """Discover the OAuth token endpoint (+ default audience) for an MCP
+    server via RFC 9728 Protected Resource Metadata.
+
+    Confirmed live against a real Aura hosted-database MCP endpoint
+    (``https://<id>.mcp-instances.neo4j.io``): an unauthenticated request
+    returns ``401`` with a ``WWW-Authenticate: Bearer
+    resource_metadata="<origin>/.well-known/oauth-protected-resource"``
+    header. That metadata document lists ``authorization_servers`` (an
+    Auth0 tenant, region-specific e.g. ``aura-mcp.eu.auth0.com``) and the
+    protected ``resource`` URL. The authorization server's own
+    ``/.well-known/openid-configuration`` then gives the real
+    ``token_endpoint`` to use for the client-credentials grant.
+
+    This is why the token endpoint can't be a single hardcoded constant for
+    the hosted-database MCP path -- it's discovered per-instance/region.
+    Aura Agents' ``/invoke`` REST API does *not* expose this discovery
+    metadata (confirmed live: no ``.well-known/oauth-protected-resource`` on
+    ``api.neo4j.io``), so it still falls back to
+    ``_DEFAULT_AURA_OAUTH_TOKEN_URL`` / ``MCP_OAUTH_TOKEN_URL``.
+
+    Returns ``None`` (non-fatal) on any failure so the caller falls back to
+    ``MCP_OAUTH_TOKEN_URL`` / ``_DEFAULT_AURA_OAUTH_TOKEN_URL``.
+    """
+    if server_url in _oauth_discovery_cache:
+        return _oauth_discovery_cache[server_url]
+
+    try:
+        from urllib.parse import urlparse
+
+        origin = urlparse(server_url)
+        base = f"{origin.scheme}://{origin.netloc}"
+
+        async with _oauth_httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            resource_resp = await client.get(f"{base}/.well-known/oauth-protected-resource")
+            resource_resp.raise_for_status()
+            resource_meta = resource_resp.json()
+
+            auth_servers = resource_meta.get("authorization_servers") or []
+            if not auth_servers:
+                raise ValueError("no authorization_servers in resource metadata")
+            auth_server = auth_servers[0].rstrip("/")
+
+            try:
+                config_resp = await client.get(f"{auth_server}/.well-known/openid-configuration")
+                config_resp.raise_for_status()
+            except Exception:
+                # Some authorization servers only publish the OAuth-specific
+                # (non-OIDC) discovery document instead.
+                config_resp = await client.get(
+                    f"{auth_server}/.well-known/oauth-authorization-server"
+                )
+                config_resp.raise_for_status()
+            auth_config = config_resp.json()
+
+            token_url = auth_config.get("token_endpoint")
+            if not token_url:
+                raise ValueError("no token_endpoint in authorization server metadata")
+    except Exception as exc:
+        logger.warning(
+            "OAuth metadata discovery failed for MCP server %s (%s). Falling back to "
+            "MCP_OAUTH_TOKEN_URL / the default Aura token endpoint.",
+            server_url,
+            exc,
+        )
+        return None
+
+    metadata = {"token_url": token_url, "audience": resource_meta.get("resource")}
+    _oauth_discovery_cache[server_url] = metadata
+    return metadata
+
+
+async def _fetch_oauth_token(server_url: str) -> str | None:
     """Fetch (or return a cached) OAuth 2.0 client-credentials access token.
 
-    Sends client_id/client_secret as HTTP Basic auth to MCP_OAUTH_TOKEN_URL
-    (RFC 6749 s2.3.1 -- the convention used by Neo4j Aura's OAuth endpoint and
-    most identity providers), with grant_type=client_credentials and any
-    configured scope/audience. Returns None (non-fatal) on any failure so the
-    caller falls back to no auth header rather than crashing the agent.
+    Sends client_id/client_secret as HTTP Basic auth (RFC 6749 s2.3.1 -- the
+    convention used by most identity providers, confirmed accepted by the
+    real Aura Auth0 tenant during live discovery testing) to the token
+    endpoint, with grant_type=client_credentials and any configured/derived
+    scope/audience. Returns None (non-fatal) on any failure so the caller
+    falls back to no auth header rather than crashing the agent.
+
+    Token endpoint resolution order: MCP_OAUTH_TOKEN_URL (explicit override)
+    -> dynamically discovered via _discover_oauth_metadata(server_url) ->
+    _DEFAULT_AURA_OAUTH_TOKEN_URL. Audience resolution order:
+    MCP_OAUTH_AUDIENCE -> discovered resource -> unset.
     """
     global _oauth_token_cache
 
@@ -151,13 +240,22 @@ async def _fetch_oauth_token() -> str | None:
 
     client_id = os.environ["MCP_OAUTH_CLIENT_ID"]
     client_secret = os.environ["MCP_OAUTH_CLIENT_SECRET"]
-    token_url = os.environ.get("MCP_OAUTH_TOKEN_URL", _DEFAULT_AURA_OAUTH_TOKEN_URL)
+
+    token_url = os.environ.get("MCP_OAUTH_TOKEN_URL")
+    discovered_audience = None
+    if not token_url:
+        discovery = await _discover_oauth_metadata(server_url)
+        if discovery:
+            token_url = discovery["token_url"]
+            discovered_audience = discovery.get("audience")
+    if not token_url:
+        token_url = _DEFAULT_AURA_OAUTH_TOKEN_URL
 
     data: dict[str, str] = {"grant_type": "client_credentials"}
     scope = os.environ.get("MCP_OAUTH_SCOPE")
     if scope:
         data["scope"] = scope
-    audience = os.environ.get("MCP_OAUTH_AUDIENCE")
+    audience = os.environ.get("MCP_OAUTH_AUDIENCE") or discovered_audience
     if audience:
         data["audience"] = audience
 
@@ -189,19 +287,23 @@ async def _fetch_oauth_token() -> str | None:
     return access_token
 
 
-async def _auth_headers() -> dict[str, str]:
+async def _auth_headers(server_url: str) -> dict[str, str]:
     """Build auth headers from env vars.
 
     Priority:
-    1. MCP_OAUTH_CLIENT_ID + MCP_OAUTH_CLIENT_SECRET -> Bearer <oauth token>
-       (hosted Neo4j Aura Agents / Aura Management API auth model)
-    2. MCP_AUTH_TOKEN  -> Bearer <token>
+    1. MCP_OAUTH_CLIENT_ID + MCP_OAUTH_CLIENT_SECRET -> OAuth client-credentials
+       Bearer token (hosted Neo4j Aura MCP auth model -- both Aura Agents
+       and hosted-database MCP URLs (Aura Console "Inspect" tab) require this;
+       confirmed live that the hosted-database MCP endpoint rejects requests
+       with no Authorization header and returns RFC 9728 discovery metadata,
+       see _discover_oauth_metadata)
+    2. MCP_AUTH_TOKEN  -> static Bearer token
     3. NEO4J_USERNAME + NEO4J_PASSWORD -> Basic auth (neo4j-mcp-official
-       convention, and a hosted Aura database's own instance credentials)
+       convention only -- NOT sufficient for hosted Aura MCP endpoints)
     4. No auth headers
     """
     if _oauth_client_credentials_configured():
-        token = await _fetch_oauth_token()
+        token = await _fetch_oauth_token(server_url)
         if token:
             return {"Authorization": f"Bearer {token}"}
         # Fall through: if OAuth is configured but the fetch failed, still
@@ -244,7 +346,7 @@ def _parse_content(content: list[Any]) -> Any:
 
 async def _list_tools_http(url: str) -> list[dict[str, Any]]:
     """Try streamable HTTP first, fall back to SSE."""
-    headers = await _auth_headers()
+    headers = await _auth_headers(url)
     if _HAS_STREAMABLE:
         try:
             http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
@@ -273,7 +375,7 @@ async def _list_tools_http(url: str) -> list[dict[str, Any]]:
 
 async def _call_tool_http(url: str, name: str, arguments: dict[str, Any]) -> Any:
     """Try streamable HTTP first, fall back to SSE."""
-    headers = await _auth_headers()
+    headers = await _auth_headers(url)
     if _HAS_STREAMABLE:
         try:
             http_client = _httpx.AsyncClient(headers=headers, timeout=_HTTP_TIMEOUT)
