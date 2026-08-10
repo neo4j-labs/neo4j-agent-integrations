@@ -66,7 +66,8 @@ class Neo4jAgentMemoryConfig(MemoryBaseConfig, name="neo4j_agent_memory"):  # ty
     (`MEMORY_API_KEY`, `MEMORY_WORKSPACE_ID`) — same as the rest of this
     repo — rather than being redeclared as config fields, so this plugin
     behaves identically whether it's driven from a `workflow.yaml` or from
-    `custom.py`'s DRUM-based runtime-parameter loading.
+    `custom.py`'s DRUM-based runtime-parameter loading (retired) or the
+    NAT/dragent `agent/register.py` path used today.
     """
 
 

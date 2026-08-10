@@ -1,19 +1,33 @@
-openai>=1.84.0
+# Neo4j + agent orchestration
 neo4j>=5.23.1
 python-dotenv>=1.0.1
 neo4j-agent-memory[nams]>=0.4.0
 mcp>=1.24.0
 anyio>=4.0.0
 httpx>=0.27.0
-# DataRobot agent-application template pattern (myagent.py + neo4j_tools.py)
 langchain-core>=0.3.0
 langchain-neo4j>=0.3.0
 langgraph>=0.3.0
 litellm>=1.40.0
-# HTTP server for the Workload API container (Path C, agent/server.py)
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
 
-# Path D: NeMo Agent Toolkit (dragent) workflow.yaml (agent/nat_tools.py,
-# agent/nat_memory.py, agent/workflow.yaml) has its own, larger dependency
-# set — see requirements-nat.txt. Not required for Path A/B/C.
+# Optional local-dev fallback LLM (myagent.py falls back to ChatOpenAI when
+# datarobot_genai isn't installed/available, e.g. running outside dragent).
+openai>=1.84.0
+
+# NeMo Agent Toolkit (NAT) / dragent runtime — required to run agent/workflow.yaml
+# (the only supported way to run this agent; see README.md).
+#
+# --prefer-binary is recommended when installing this file: litellm (a
+# datarobot-genai transitive dependency) ships a Rust extension that some
+# corporate proxies can't build from source (crates.io access blocked), even
+# though a prebuilt wheel is available on PyPI.
+#
+# nvidia-nat is pinned to exactly 1.7.0 because datarobot-genai[dragent]
+# (through at least 0.27.1, the latest as of this writing) hard-requires
+# nvidia-nat==1.7.0; a >= constraint here makes pip's resolver fail with
+# "ResolutionImpossible". Bump only after confirming the datarobot-genai[dragent]
+# version in use supports it.
+nvidia-nat==1.7.0
+nvidia-nat-langchain==1.7.0
+datarobot-genai[langgraph,dragent,auth]>=0.27.1
+ag-ui-protocol>=0.1.15

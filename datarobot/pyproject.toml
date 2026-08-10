@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "neo4j-datarobot-nat-plugin"
 version = "0.1.0"
-description = "NeMo Agent Toolkit (NAT) plugin: Neo4j company-graph tools + NAMS memory, for use in a dragent workflow.yaml"
+description = "NeMo Agent Toolkit (NAT) plugin: Neo4j research agent, company-graph tools + NAMS memory, for use in a dragent workflow.yaml"
 requires-python = ">=3.10"
 dependencies = [
     "nvidia-nat",
@@ -21,6 +21,7 @@ dragent = ["datarobot-genai[langgraph,dragent]"]
 # as a side effect, exactly like DataRobot's own datarobot-genai[dragent]
 # plugins (streaming_memory_agent, dr_mem0_memory, etc.) register themselves.
 [project.entry-points.'nat.plugins']
+neo4j_agent = "agent.register"
 neo4j_tools = "agent.nat_tools"
 neo4j_agent_memory = "agent.nat_memory"
 

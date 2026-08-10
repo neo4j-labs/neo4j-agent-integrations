@@ -448,3 +448,36 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         real_error = _unwrap_exception(exc)
         logger.warning("MCP call_tool '%s' failed: %s", name, real_error)
         return {"error": real_error}
+
+
+async def alist_tools() -> list[dict[str, Any]]:
+    """Async equivalent of ``list_tools()``.
+
+    Use this from code that already runs inside an event loop (e.g. NAT /
+    dragent's async agent runtime) instead of ``list_tools()``, which calls
+    ``anyio.run()`` internally and would raise if invoked from a running
+    loop. Returns [] on any error, same as the sync version.
+    """
+    if not is_enabled():
+        _warn_if_configured_but_unavailable()
+        return []
+    url = os.environ["MCP_SERVER_URL"]
+    try:
+        return await _list_tools_async(url)
+    except Exception as exc:
+        logger.warning("MCP alist_tools failed (non-fatal): %s", _unwrap_exception(exc))
+        return []
+
+
+async def acall_tool(name: str, arguments: dict[str, Any]) -> Any:
+    """Async equivalent of ``call_tool()``. See ``alist_tools()`` for why this exists."""
+    if not is_enabled():
+        _warn_if_configured_but_unavailable()
+        return {"error": "MCP not configured"}
+    url = os.environ["MCP_SERVER_URL"]
+    try:
+        return await _call_tool_async(url, name, arguments)
+    except Exception as exc:
+        real_error = _unwrap_exception(exc)
+        logger.warning("MCP acall_tool '%s' failed: %s", name, real_error)
+        return {"error": real_error}

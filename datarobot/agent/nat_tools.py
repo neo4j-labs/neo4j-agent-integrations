@@ -6,12 +6,18 @@ LangChain. These wrap the exact same parameterized-Cypher implementations in
 `neo4j_tools.py` (no query logic is duplicated) as native NAT `FunctionInfo`
 objects, so they can be:
 
-- referenced directly in a `workflow.yaml`'s `functions:` section and wired
-  into a `tool_calling_agent` (see `workflow.yaml` in this directory), and/or
+- referenced directly in a `workflow.yaml`'s `functions:` section, or
 - exposed as an MCP server for any MCP-capable agent framework via
-  `nat mcp serve --config_file workflow.yaml` (NAT's built-in MCP front end),
-  which is the concrete, testable version of "expose these as MCP tools"
-  raised in review.
+  `nat mcp serve --config_file agent/workflow.yaml` (NAT's built-in MCP
+  front end), which is the concrete, testable version of "expose these as
+  MCP tools" raised in review.
+
+Not currently wired into `agent/workflow.yaml`'s primary `neo4j_agent`
+function — that agent (see `agent/myagent.py`/`agent/register.py`) calls
+`neo4j_tools.py`'s LangChain tools directly instead. These NAT-native
+function registrations are kept as an optional, independently-servable
+surface (e.g. `nat mcp serve`) for callers that want the Neo4j tools without
+the full LangGraph agent.
 """
 from __future__ import annotations
 

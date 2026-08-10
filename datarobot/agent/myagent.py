@@ -1,53 +1,49 @@
 """
-Neo4j Research Agent for DataRobot Agent Application Template.
+Neo4j Research Agent — built on DataRobot's official `af-component-agent`
+template (`base` framework), registered into the NeMo Agent Toolkit (NAT)
+runtime and served through DataRobot's `dragent` front end (see
+`agent/register.py` and `workflow.yaml`).
 
-This file follows the `datarobot-agent-application` template pattern using:
-- datarobot_genai SDK for LLM and MCP integration
-- LangGraph for agent orchestration
-- Neo4j tools for knowledge graph access
+This is the single supported agent implementation for this repo. It uses:
+- datarobot_genai SDK (`BaseAgent`, AG-UI streaming events) for the agent shell
+- LangGraph for the planner -> writer orchestration
+- `neo4j_tools.py` for direct Neo4j Cypher tools (LangChain `@tool`s)
+- `mcp_client.py` (this repo's own RFC 9728 OAuth-aware client) for optional
+  external MCP tool loading, e.g. the hosted Neo4j Aura MCP server
 
-Deployment: use `dr run dev` with the datarobot-agent-application template,
-or copy this file + neo4j_tools.py into the template's agent/agent/ directory.
-
-For DRUM-based Workshop deployment, use custom.py / agent.py instead.
+Local dev: `task dev` (runs `nat dragent serve --config_file workflow.yaml`).
 """
 from __future__ import annotations
 
 import os
 import re
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Any
 
 import litellm
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.graph import END, START, MessagesState, StateGraph
-from openai.types.chat import CompletionCreateParams
 
 try:
-    from datarobot_genai.core.agents import InvokeReturn, make_system_prompt
-    from datarobot_genai.core.agents.base import UsageMetrics
-    from datarobot_genai.core.chat import agent_chat_completion_wrapper
-    from datarobot_genai.core.mcp import MCPConfig
+    from datarobot_genai.core.agents import make_system_prompt
     from datarobot_genai.langgraph.agent import datarobot_agent_class_from_langgraph
-    from datarobot_genai.langgraph.llm import get_llm
-    from datarobot_genai.langgraph.mcp import mcp_tools_context
     _DR_GENAI_AVAILABLE = True
 except ImportError:
     _DR_GENAI_AVAILABLE = False
 
 try:
+    from . import mcp_client
     from .neo4j_tools import get_all_tools as get_neo4j_tools
 except ImportError:
+    import mcp_client  # type: ignore[no-redef]
     from neo4j_tools import get_all_tools as get_neo4j_tools  # type: ignore[no-redef]
 
-if TYPE_CHECKING:
-    from ragas import MultiTurnSample
-
 litellm.modify_params = True
-_PLACEHOLDER_MODELS = frozenset({"unknown"})
 
 # System prompt — focused on the Neo4j companies knowledge graph
 _NEO4J_SYSTEM_PROMPT = make_system_prompt(
@@ -236,30 +232,78 @@ def graph_factory(
     return graph
 
 
-# DataRobot agent class — used when running inside the dr-agent / dr-genai runtime
+# DataRobot agent class — registered into NAT/dragent by agent/register.py.
+# `LangGraphAgent.invoke(run_agent_input)` already yields the AG-UI event
+# stream `register.py`'s `base_agent()` function expects, so no separate
+# chat-completion adaptor is needed (that indirection was the DRUM-era
+# `custom.py`/`agent.py` path, now retired).
 if _DR_GENAI_AVAILABLE:
     MyAgent = datarobot_agent_class_from_langgraph(graph_factory, prompt_template)
 
-    async def custompy_adaptor(
-        completion_create_params: CompletionCreateParams,
-    ) -> "InvokeReturn | tuple[str, Optional[MultiTurnSample], UsageMetrics]":
-        """Entry point for DataRobot agent-application template (replaces DRUM custom.py)."""
-        forwarded_headers = completion_create_params.get("forwarded_headers", {})
-        authorization_context = completion_create_params.get("authorization_context", {})
-        mcp_config = MCPConfig(
-            forwarded_headers=forwarded_headers,
-            authorization_context=authorization_context,
-        )
-        mcp_tools_factory = lambda: mcp_tools_context(mcp_config)  # noqa: E731
-        model_name = completion_create_params.get("model")
-        agent = MyAgent(
-            llm=get_llm(
-                model_name=model_name if model_name not in _PLACEHOLDER_MODELS else None
-            ),
-            verbose=completion_create_params.get("verbose", True),
-            timeout=completion_create_params.get("timeout", 90),
-            forwarded_headers=forwarded_headers,
-        )
-        return await agent_chat_completion_wrapper(
-            agent, completion_create_params, mcp_tools_factory
-        )
+
+_JSON_SCHEMA_TYPES: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def _mcp_tool_args_schema(input_schema: dict[str, Any]) -> type | None:
+    """Build a Pydantic args schema from an MCP tool's JSON Schema, if any."""
+    properties = (input_schema or {}).get("properties") or {}
+    if not properties:
+        return None
+    from pydantic import Field, create_model
+
+    required = set((input_schema or {}).get("required") or [])
+    fields: dict[str, Any] = {}
+    for prop_name, prop_schema in properties.items():
+        py_type = _JSON_SCHEMA_TYPES.get(prop_schema.get("type", "string"), str)
+        description = prop_schema.get("description", "")
+        if prop_name in required:
+            fields[prop_name] = (py_type, Field(description=description))
+        else:
+            fields[prop_name] = (py_type | None, Field(default=None, description=description))
+    return create_model("MCPToolArgs", **fields)  # type: ignore[call-overload]
+
+
+def _build_mcp_langchain_tool(tool_def: dict[str, Any]) -> BaseTool:
+    """Wrap one MCP tool definition (name/description/inputSchema) as a LangChain tool."""
+    name = tool_def["name"]
+    description = tool_def.get("description") or f"MCP tool: {name}"
+
+    async def _run(**kwargs: Any) -> str:
+        result = await mcp_client.acall_tool(name, kwargs)
+        return str(result)
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name=name,
+        description=description,
+        args_schema=_mcp_tool_args_schema(tool_def.get("inputSchema") or {}),
+    )
+
+
+@asynccontextmanager
+async def mcp_tools_context(mcp_config: Any = None) -> AsyncGenerator[list[BaseTool], None]:
+    """Load external MCP tools (e.g. the hosted Neo4j Aura MCP server) as LangChain tools.
+
+    Uses this repo's own RFC 9728 OAuth-discovery-aware client
+    (`agent/mcp_client.py`) rather than `datarobot_genai`'s built-in MCP
+    adapter, since the latter expects auth headers already resolved by
+    DataRobot's own MCP function-group machinery, while an external Neo4j
+    Aura MCP endpoint needs its own OAuth client-credentials/discovery flow.
+    Yields [] (never raises) if MCP isn't configured or fails to connect,
+    matching the graceful-fallback behavior `mcp_client.py` already has.
+    """
+    if not mcp_client.is_enabled():
+        yield []
+        return
+    try:
+        tool_defs = await mcp_client.alist_tools()
+        yield [_build_mcp_langchain_tool(t) for t in tool_defs]
+    except Exception:
+        yield []
