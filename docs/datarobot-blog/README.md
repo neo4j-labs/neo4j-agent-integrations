@@ -1,6 +1,8 @@
-# Teaching DataRobot to Think in Graphs: A Memory-Enabled Neo4j Agent, Four Ways to Deploy
+# Teaching DataRobot to Think in Graphs: A Memory-Enabled Neo4j Agent, and the Lessons That Rebuilt It
 
-*What we actually learned wiring a Neo4j knowledge-graph agent into a partner platform we don't fully control — memory, MCP, four deployment paths, and the mistakes that taught us the most.*
+*What we actually learned wiring a Neo4j knowledge-graph agent into a partner platform we don't fully control — memory, MCP, four competing deployment paths that we eventually tore down to one, and the mistakes that taught us the most.*
+
+> **Update:** this post originally documented four parallel deployment paths (Lesson 1 below). After a DataRobot engineer reviewed the PR a second time, we ripped that out and rebuilt on DataRobot's own official agent template instead — that story, plus a clear-text-logging security bug CodeQL caught along the way, is now [Lesson 8](#lesson-8-when-the-platform-hands-you-an-official-template-use-it-dont-evolve-your-own) and [Lesson 9](#lesson-9-a-log-statement-can-leak-a-secret-even-without-printing-it) at the end. The earlier lessons are left intact because the mistakes (and what they taught us) were real, even though the architecture they describe has since been replaced.
 
 ---
 
@@ -263,21 +265,85 @@ The deliberate choices here matter as much as the code itself: secrets came from
 
 ---
 
+## Lesson 8: When the platform hands you an official template, use it — don't evolve your own
+
+The "four deployment paths" story above was, in hindsight, the wrong instinct. We built each path to survive whatever DataRobot's shifting deployment story threw at us next — DRUM, then an agent-application template, then a raw Workload API container, then NeMo Agent Toolkit — and that adaptability felt like a strength right up until a DataRobot engineer reviewed the PR again and said, bluntly, that it wasn't:
+
+> "This still contains a lot of leftovers of deprecated architecture, and there are essentially 3 different agents implemented... Rather than evolving this, use the template we provide (`af-component-agent`), and apply Neo4j specifics onto it: tools and memory. Otherwise I can't guarantee it will work in DataRobot."
+
+That was the correct call, and it stung a little precisely because it was correct. `agent.py`/`custom.py` (DRUM), `myagent.py` (LangGraph, unregistered), and `workflow.yaml` (NAT-native) had each been built to *look* like the future at different points in the project, but only one of them was actually wired end-to-end into DataRobot's `dragent` runtime — the other two were live-but-disconnected code that a fresh reader had no way to tell apart from the real path. Flexibility we'd engineered as a hedge against platform churn had quietly become three unfinished agents instead of one finished one.
+
+The fix wasn't a patch — it was starting from DataRobot's own [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) template and grafting the Neo4j-specific pieces (tools, memory, MCP client) onto its scaffolding, rather than the other way around:
+
+```python
+# agent/register.py -- the one true entry point, wired into DataRobot's dragent runtime
+@register_per_user_function
+def neo4j_agent() -> Neo4jAgentConfig:
+    # Registers this agent with NAT so dragent can route requests to it.
+    return Neo4jAgentConfig(
+        name="neo4j_agent",
+        description="Neo4j knowledge-graph research agent with memory and MCP tools",
+    )
+```
+
+Everything downstream — the LangGraph `planner_node`/`writer_node` loop in `myagent.py`, the seven Neo4j tools, the NAMS-backed memory editor, the OAuth-aware MCP client — now hangs off this single registration point instead of being spread across three parallel, only-one-of-which-is-real implementations:
+
+![Consolidated architecture: a request enters via DataRobot's dragent runtime, is registered through NAT's register.py, and flows into a single LangGraph agent (myagent.py) that binds Neo4j tools and optional MCP tools before returning a DRAgentEventResponse](diagrams/template-architecture.png)
+
+**What's in this picture:** one path, not four. A request authenticated by `datarobot_api_key` hits the `dragent_fastapi` front end, passes through DataRobot's own moderation and OpenTelemetry middleware, and lands on `neo4j_agent()` — the single function NAT's registration system knows about. From there it instantiates `MyAgent`, whose `planner_node` binds the seven Neo4j tools *and* any configured MCP tools (including a hosted Neo4j Aura MCP server) to the LLM in one native tool-calling loop, before a `writer_node` formats the final Markdown report and NAT wraps it back into a `DRAgentEventResponse`. Memory is still there, still optional, still symmetric with the MCP path — but it's now a single `nat_memory.py` module wrapped by NAT's own `MemoryEditor` interface rather than a bespoke wrapper reimplemented per deployment path.
+
+The lesson generalizes past this one PR: **when the platform owner publishes an official scaffold, that scaffold is a stronger signal about "how this platform actually wants to be integrated with" than anything you can infer from documentation or your own working code.** Three plausible-looking implementations that a reviewer can't tell apart is a worse deliverable than one implementation that's obviously the only one — even if the three represent more total engineering effort. We kept the multi-path *thinking* (design the core logic so it doesn't care about its transport), we just stopped building the transports ourselves once an official one existed.
+
+---
+
+## Lesson 9: A log statement can leak a secret even without printing it
+
+The last finding came from GitHub's own CodeQL scanner, not a human reviewer — two "clear-text logging of sensitive information" alerts on the OAuth token-fetch path our MCP client uses to authenticate against a hosted Neo4j Aura MCP server. The flagged code didn't look dangerous at a glance:
+
+```python
+# Before -- CodeQL flags both of these as clear-text logging, even though
+# neither line prints a token, a password, or the client secret directly
+except httpx.HTTPError as exc:
+    logger.warning("OAuth token request failed: %s", exc)   # (1) logs the exception object
+    ...
+if "access_token" not in payload:
+    logger.error("Token response missing access_token: keys=%s", list(payload.keys()))  # (2) logs only key names
+```
+
+Neither line logs a secret value. Line (1) logs an exception object; line (2) logs a list of JSON key names, not the values behind them. Our first reaction was that this looked like a false positive — until we understood what CodeQL is actually tracking. It doesn't scan for secret-shaped strings in your log calls; it does taint tracking on the data flowing into them. Both `exc` and `payload` were produced by a call that carried a client secret (`client.post(token_url, data=data, auth=(client_id, client_secret))`), so anything derived from that call — including an exception's string representation, or a dictionary's key list, both of which could under some code path leak fragments of the request or response — is tainted for the rest of its life, regardless of what it superficially "contains."
+
+The fix wasn't to escape or truncate anything; it was to stop passing tainted objects to the logger at all, and use only values that are structurally guaranteed to carry no data from the secret-bearing call:
+
+```python
+# After -- logs carry zero data derived from the tainted OAuth response
+except httpx.HTTPError as exc:
+    logger.warning("OAuth token request failed: %s", type(exc).__name__)  # class name only, e.g. "ConnectError"
+    ...
+if "access_token" not in payload:
+    logger.error("Token response missing access_token field")  # static string, no payload data at all
+```
+
+`type(exc).__name__` is a hardcoded string that ships with the `httpx` library itself — it can never contain anything an attacker (or an accidental secret) put into the request or response. A fixed log message needs no data from `payload` at all, because the only thing worth logging here is *that* the field was missing, not what else was present instead.
+
+**The lesson**: "does this log statement print a secret" is the wrong question to ask when reviewing your own logging code — the right question is "did any value in this log statement originate, however many steps removed, from a call that also carried a secret." If the answer is yes, the only reliably safe fix is to stop passing that value (or anything derived from it) to the logger, full stop — not to redact it, hash it, or log "part of" it. Tools like CodeQL are worth taking at face value here even when the flagged line looks harmless on a human read, because the taint-tracking model catches a category of leak (secrets reachable through a logged object, not contained in it) that manual review consistently misses.
+
+---
+
 ## What we'd tell the DataRobot team
 
-If there's one honest takeaway from this whole project, it's this: **we built and tested as much as we possibly could with the information and access we had, then used the DataRobot team's own review feedback as the mechanism to close the remaining gaps** — rather than guessing at internals of a platform we don't fully control. The Cypher injection fix, the broken runtime parameter, and the dependency pin bug were all found because we kept re-testing from a stranger's-eye view, not because we assumed our own familiarity with the code was enough. The four deployment paths exist precisely so the integration adapts to wherever DataRobot's own recommended deployment mechanism lands, rather than betting on just one.
+If there's one honest takeaway from this whole project, it's this: **we built and tested as much as we possibly could with the information and access we had, then used the DataRobot team's own review feedback as the mechanism to close the remaining gaps** — rather than guessing at internals of a platform we don't fully control. The Cypher injection fix, the broken runtime parameter, the dependency pin bug, the clear-text-logging alert, and ultimately the decision to rebuild on DataRobot's own `af-component-agent` template instead of our own scaffolding were all found (or made) because we kept re-testing and re-listening from a stranger's-eye view, not because we assumed our own familiarity with the code was enough. The final architecture isn't the one we designed on day one — it's the one that survived three rounds of "here's what's actually wrong with this," which is exactly how an integration into a platform you don't own is supposed to go.
 
 ---
 
 ## Try it yourself
 
-The whole integration — all four paths, memory, MCP, and the hosted Cloud Run demo — is documented and open source.
+The whole integration — one consolidated agent built on DataRobot's official template, live tool-calling over Neo4j, cross-session memory via NAMS, hosted Neo4j Aura MCP support, and the security hardening above — is documented and open source.
 
 - **Main repository**: [neo4j-labs/neo4j-agent-integrations](https://github.com/neo4j-labs/neo4j-agent-integrations)
-- **DataRobot integration source**: [`datarobot/` directory](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/agents/datarobot-neo4j-integration/datarobot) — all four paths, setup instructions, and the live Cloud Run demo's `curl` examples
-- **Pull request with full history**: [PR #67](https://github.com/neo4j-labs/neo4j-agent-integrations/pull/67)
+- **DataRobot integration source**: [`datarobot/` directory](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/agents/datarobot-neo4j-integration/datarobot) — the consolidated agent, setup instructions, and architecture diagrams for every request flow
+- **Pull request with full history**: [PR #67](https://github.com/neo4j-labs/neo4j-agent-integrations/pull/67) — including the reviewer feedback that triggered the template migration and the CodeQL findings that triggered the logging fix
+- **DataRobot's official agent template**: [datarobot-community/af-component-agent](https://github.com/datarobot-community/af-component-agent)
 - **Neo4j Agent Memory (NAMS)**: [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory)
 - **Model Context Protocol**: [modelcontextprotocol.io](https://modelcontextprotocol.io/)
-- **NVIDIA NeMo Agent Toolkit**: [NVIDIA/NeMo-Agent-Toolkit](https://github.com/NVIDIA/NeMo-Agent-Toolkit)
 
-If you're evaluating Neo4j + DataRobot for your own agentic workflows, or building something similar on top of MCP or NeMo Agent Toolkit, we'd love to hear what you build.
+If you're evaluating Neo4j + DataRobot for your own agentic workflows, or building something similar on top of MCP, we'd love to hear what you build.
