@@ -265,20 +265,27 @@ async def _fetch_oauth_token(server_url: str) -> str | None:
             response.raise_for_status()
             payload = response.json()
     except Exception as exc:
+        # Log only the exception's type name, never the exception object
+        # itself or anything derived from the token response: `exc` can
+        # embed the underlying httpx request/response (which carried the
+        # client secret via Basic auth and may echo request data back in an
+        # error body), so treat it as sensitive and never pass it to a log
+        # sink. Also don't log token_url in case it (rarely) contains creds.
         logger.warning(
-            "OAuth client-credentials token fetch failed against %s (%s). "
+            "OAuth client-credentials token fetch failed (%s). "
             "Falling back to no auth header for this MCP request.",
-            token_url,
-            exc,
+            type(exc).__name__,
         )
         return None
 
     access_token = payload.get("access_token")
     if not access_token:
+        # Don't log `payload` or anything derived from it (e.g. its key
+        # names): it's the parsed response body of a request sent with the
+        # client secret, so treat the whole object as sensitive rather than
+        # logging any part of it.
         logger.warning(
-            "OAuth token endpoint %s returned no 'access_token' field (keys: %s).",
-            token_url,
-            list(payload.keys()),
+            "OAuth token endpoint returned no 'access_token' field in its response."
         )
         return None
 
