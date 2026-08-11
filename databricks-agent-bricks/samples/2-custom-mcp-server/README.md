@@ -15,7 +15,7 @@ The example shows a simple MCP Server implementation that returns the competitor
 ## Preliminary Notes
 
 This integration pattern fits really well when you need to create MCP Servers that exploits Neo4j queries alongside Rest APIs and/or Databricks SQL Warehouse queries.
-If you need Neo4j MCP Server with full capabilities (chat memory, etc...) we advice you to see to the OFFICIAL_MCP_SERVER example.
+If you need Neo4j MCP Server with full capabilities (chat memory, etc...) we advice you to see to the [official server example](../3-official-mcp-server/README.md).
 
 ---
 
