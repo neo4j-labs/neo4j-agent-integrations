@@ -160,5 +160,5 @@ You can also publish your App to the Databricks Marketplace.
 
 ## Other Guides
 
-- [Custom MCP Server](CUSTOM_MCP_SERVER.md) -- Build a custom MCP server with your own Neo4j query logic
-- [UC Function Tools](UC_FUNCTION_TOOL.md) -- Expose Neo4j queries as Unity Catalog functions
+- [Custom MCP Server](../2-custom-mcp-server/README.md) -- Build a custom MCP server with your own Neo4j query logic
+- [UC Function Tools](../1-uc-functions/README.md) -- Expose Neo4j queries as Unity Catalog functions
