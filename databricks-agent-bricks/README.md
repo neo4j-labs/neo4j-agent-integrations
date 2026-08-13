@@ -48,10 +48,8 @@ Neo4j Basic Auth credentials retrieved from Databricks Secrets.
 Uses Databricks App to deploy the Neo4j Official MCP Server.
 Neo4j Basic Auth credentials retrieved from Databricks Secrets.
 
-→ **[Step-by-step documentation](samples/3-official-mcp-server/STEP_BY_STEP.md)**
-
-→ **[Straightforward documentation](samples/3-official-mcp-server/STRAIGHTFORWARD.md)**
-
+→ **[A quick guide](samples/3-official-mcp-server/README.md)** walks through the deployment the MCP server in minutes using automated scripts.
+→ **[Step-by-step documentation](samples/3-official-mcp-server/STEP_BY_STEP.md)** covers in details all the aspects of the Databricks App implementation.
 
 ## Extension Points
 
