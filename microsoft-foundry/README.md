@@ -20,6 +20,8 @@ flowchart LR
 
 The MCP path is shared infrastructure: deploy once, attach from Foundry, Copilot Studio, Microsoft Agent Framework, or any MCP client. The function-tool path keeps Neo4j access inside your application boundary when you need tighter control over Cypher, secrets, and audit.
 
+> **Neo4j Aura-hosted MCP.** [Aura](https://neo4j.com/docs/mcp/current/mcp-for-aura/) now ships a built-in MCP endpoint per instance — no self-hosting needed. It authenticates with OAuth 2.0 Dynamic Client Registration (DCR), which the Foundry **portal** doesn't support for MCP tools yet. Attach it from [Microsoft Agent Framework](../microsoft-agent-framework/examples/aura-mcp-oauth/) (a runnable DCR example); in the Foundry portal, use the self-hosted MCP here.
+
 ## Quick Start
 
 ```bash

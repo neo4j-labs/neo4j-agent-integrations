@@ -67,5 +67,5 @@ Sample 2 additionally requires a Route53 hosted zone and an ACM certificate for 
 ## Resources
 
 - [Neo4j MCP Server](https://github.com/neo4j/mcp)
-- [Neo4j Demo Database](neo4j+s://demo.neo4jlabs.com:7687) - `companies` / `companies`
+- Neo4j Demo Database URL: `neo4j+s://demo.neo4jlabs.com:7687` - `companies` / `companies`
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)

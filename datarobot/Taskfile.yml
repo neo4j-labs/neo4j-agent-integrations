@@ -1,0 +1,79 @@
+---
+# https://taskfile.dev
+#
+# Adapted from DataRobot's official `af-component-agent` template Taskfile
+# (base framework) to this repo's pip/venv convention (the template itself
+# assumes `uv`, which this repo doesn't use).
+version: '3'
+
+env:
+  # Opt out of NeMo Agent Toolkit anonymous CLI telemetry and skip its
+  # interactive [Y/n] consent prompt, which otherwise blocks non-interactive
+  # `nat`/`nat dragent` runs.
+  NAT_TELEMETRY_ENABLED: "false"
+
+vars:
+  AGENT_PORT:
+    sh: |
+      if [ -n "$NEO4J_AGENT_PORT" ]; then
+        echo "${NEO4J_AGENT_PORT}"
+      else
+        echo "8842"
+      fi
+
+tasks:
+  install:
+    desc: 🛠️ Install agent dependencies (venv + pip) and register the NAT plugin
+    cmds:
+      - echo "Creating .venv (if missing) and installing dependencies"
+      - test -d .venv || python3 -m venv .venv
+      - .venv/bin/pip install --prefer-binary -r requirements.txt
+      - .venv/bin/pip install -e .
+    aliases:
+      - req
+
+  lint:
+    desc: "🧹 Run linters (ruff, if installed)"
+    cmds:
+      - .venv/bin/python -m ruff check . --fix || echo "ruff not installed; run 'pip install ruff' to enable linting"
+      - .venv/bin/python -m ruff format . || true
+    silent: true
+
+  test:
+    desc: "🧪 Run tests"
+    cmds:
+      - echo "Running pytest on tests"
+      - .venv/bin/python -m pytest -vv ./tests/
+
+  validate:
+    desc: "✅ Validate agent/workflow.yaml (schema + component wiring, no live calls)"
+    cmds:
+      - .venv/bin/nat validate --config_file agent/workflow.yaml
+
+  run:
+    desc: "▶️  Run the agent once against a single input (pass with -- \"your question\")"
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        if [ $# -eq 0 ]; then
+          echo 'Usage: task run -- "Tell me about Neo4j the company"'; exit 1
+        fi
+        .venv/bin/nat run --config_file agent/workflow.yaml --input "$1"
+
+  dev:
+    desc: 🔨 Run the development server (nat dragent serve, with reload)
+    cmds:
+      - .venv/bin/nat dragent serve --config_file agent/workflow.yaml --reload true --port {{.AGENT_PORT}}
+    silent: true
+
+  dev-stop:
+    desc: 🛑 Stop the development server
+    cmds:
+      - |
+        echo "Stopping development server"
+        pkill -f 'nat dragent serve' 2>/dev/null || echo "No development server process found"
+
+  mcp-serve:
+    desc: "🔌 Serve agent/workflow.yaml over MCP (for external MCP clients to call this agent)"
+    cmds:
+      - .venv/bin/nat mcp serve --config_file agent/workflow.yaml --port 9901
