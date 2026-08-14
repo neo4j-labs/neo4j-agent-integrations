@@ -5,6 +5,7 @@
 .databricks/
 __pycache__/
 .idea/
+.vscode/
 .mcp.json
 plan.md
 mcp-auth-support.md
@@ -26,3 +27,4 @@ _generated/
 microsoft-foundry/infra/infra/main.json
 datarobot/dist/
 datarobot/.nams_conversation_cache.json
+.worktrees

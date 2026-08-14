@@ -55,6 +55,7 @@ Defaults connect to the public `companies` Neo4j demo graph and use the Foundry 
 | --- | --- | --- |
 | **Multi-agent (local)** | Coordinator with `database_agent.as_tool()` and `analyst.as_tool()` | [`examples/multi-agent`](./examples/multi-agent/) |
 | **Foundry-hosted multi-agent** | Same agent graph packaged as a Foundry hosted agent | [`examples/foundry-hosted`](./examples/foundry-hosted/) |
+| **Aura-hosted MCP over OAuth** | Connect to Aura's built-in MCP via OAuth 2.0 DCR (no static credentials) | [`examples/aura-mcp-oauth`](./examples/aura-mcp-oauth/) |
 
 ## Why host on Foundry?
 
