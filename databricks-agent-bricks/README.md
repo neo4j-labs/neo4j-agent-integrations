@@ -25,25 +25,32 @@ Samples can be deployed using Databricks SDK/CLI or via Databricks UI and use th
 
 | # | Sample | Pattern | Auth Model | Deployment |
 |---|--------|---------|------------|------------|
-| 1 | [UC Functions MCP Tools](samples/1-uc-functions/) | UC Functions as Tools | In code, protected by UC Governance | Databricks Notebook |
-| 2 | [Custom MCP Server — Using Databricks App](samples/2-custom-mcp-server/) | Python Custom MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
-| 3 | [Official MCP Server — Using Databricks App](samples/3-official-mcp-server/) | Official MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+| 1 | [MCP over Unity AI Gateway](samples/2-aura-mcp/) | MCP managed connection as Tools | In code, protected by UC Governance | Databricks Notebook |
+| 2 | [UC Functions MCP Tools](samples/1-uc-functions/) | UC Functions as Tools | In code, protected by UC Governance | Databricks Notebook |
+| 3 | [Custom MCP Server — Using Databricks App](samples/2-custom-mcp-server/) | Python Custom MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
+| 4 | [Official MCP Server — Using Databricks App](samples/3-official-mcp-server/) | Official MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
 
-### Sample 1: UC Functions MCP Tools
+### Sample 1: MCP over Unity AI Gateway
+
+Uses Unity AI Gateway to manage the MCP connection (including credentials and/or authentication). The MCP server can be self managed (like in samples 3 and 4) but here we are using Neo4j Aura MCP server instances, with OAuth authentication.
+
+→ **[Full documentation](samples/4-aura-mcp/README.md)**
+
+### Sample 2: UC Functions MCP Tools
 
 Uses custom UC Functions Tools that perform requests on Neo4j.
 Neo4j credentials are kept in the function, not intended for production but for fast-prototyping.
 
 → **[Full documentation](samples/1-uc-functions/README.md)**
 
-### Sample 2: Custom MCP Server — Using Databricks App
+### Sample 3: Custom MCP Server — Using Databricks App
 
 Uses Databricks App to deploy a Custom MCP Server written in Python who defines Neo4j driver queries as Tools.
 Neo4j Basic Auth credentials retrieved from Databricks Secrets.
 
 → **[Full documentation](samples/2-custom-mcp-server/README.md)**
 
-### Sample 3: Official MCP Server — Using Databricks App
+### Sample 4: Official MCP Server — Using Databricks App
 
 Uses Databricks App to deploy the Neo4j Official MCP Server.
 Neo4j Basic Auth credentials retrieved from Databricks Secrets.
@@ -172,4 +179,4 @@ deployment = mlflow.deployments.create_deployment(
 ## Additional Resources
 
 - **Databricks MCP**: https://docs.databricks.com/en/generative-ai/mcp/
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
+- **Demo Database**: `neo4j+s://demo.neo4jlabs.com:7687` (companies/companies)
