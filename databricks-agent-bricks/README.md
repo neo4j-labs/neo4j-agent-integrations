@@ -19,13 +19,12 @@
 
 ## Samples
 
-This directory contains three end-to-end samples, each demonstrating a different integration pattern between Databricks
-and Neo4j via custom and official [Neo4j MCP server](https://github.com/neo4j/mcp).
+This directory contains four end-to-end samples, each demonstrating a different integration pattern between Databricks and Neo4j via custom and official [Neo4j MCP server](https://github.com/neo4j/mcp).
 Samples can be deployed using Databricks SDK/CLI or via Databricks UI and use the public Neo4j companies demo database: `neo4j+s://demo.neo4jlabs.com:7687` by default.
 
 | # | Sample | Pattern | Auth Model | Deployment |
 |---|--------|---------|------------|------------|
-| 1 | [MCP over Unity AI Gateway](samples/2-aura-mcp/) | MCP managed connection as Tools | In code, protected by UC Governance | Databricks Notebook |
+| 1 | [MCP over Unity AI Gateway](samples/4-aura-mcp/) | MCP managed connection as Tools | Unity AI Gateway-managed, per-user OAuth flow | Databricks Notebook |
 | 2 | [UC Functions MCP Tools](samples/1-uc-functions/) | UC Functions as Tools | In code, protected by UC Governance | Databricks Notebook |
 | 3 | [Custom MCP Server — Using Databricks App](samples/2-custom-mcp-server/) | Python Custom MCP Server as Databricks App | Databricks Secrets | Databricks CLI |
 | 4 | [Official MCP Server — Using Databricks App](samples/3-official-mcp-server/) | Official MCP Server as Databricks App | Databricks Secrets | Databricks CLI |

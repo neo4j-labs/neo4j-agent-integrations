@@ -101,11 +101,11 @@ import nest_asyncio
 # Enable nested event loops for notebook environment
 nest_asyncio.apply()
 
-workspace_client = WorkspaceClient(profile="DEFAULT")
+workspace_client = WorkspaceClient()
 host = workspace_client.config.host
 
 # Use a managed, MCP Service, or custom server URL:
-mcp_server_url = f"{host}/ai-gateway/mcp-services/workspace.default.neo4j-aura"
+mcp_server_url = f"{host}/ai-gateway/mcp-services/workspace.company_data.neo4j-aura"
 
 mcp_client = DatabricksMCPClient(server_url=mcp_server_url, workspace_client=workspace_client)
 tools = mcp_client.list_tools()
@@ -116,7 +116,7 @@ The result should include Neo4j tools such as `get-schema` and `read-cypher`. Te
 
 ```python
 query = """
-MATCH (c:Organization {{name: 'Neo4j'}})-[:HAS_COMPETITOR]->(competitor:Organization)
+MATCH (c:Organization {name: 'Neo4j'})-[:HAS_COMPETITOR]->(competitor:Organization)
 RETURN competitor.name as name, competitor.revenue as revenue
 LIMIT 5
 """
@@ -136,7 +136,35 @@ Once the notebook test succeeds:
 4. Select **External MCP servers**, then choose `workspace.company_data.neo4j-aura`.
 5. Ask the model a question about the data in the Aura instance.
 
-For example, start with:
+Add a System Prompt like the following and start asking your first question: `What are the competitors of BigFix?`
+
+```
+Purpose: Assist users in getting companies/organizations info.
+
+Limitations:
+- Focus on companies.
+- Be conversational but do not answer any unrelated queries that are not related to companies.
+- Handle queries for multiple companies.
+- If there is no company information, do not attempt to retrieve otherwise – inform the user with an appropriate error message.
+
+Parameters:
+- Company name
+
+Data Sources:
+- Use the find_competitors API tool when requested with questions about company's competitors.
+
+Actions:
+1. Retrieve company info
+2. Retrieve competitors
+
+Error Handling:
+- Provide clear error messages if Neo4j Connection calls fail.
+
+Sample Questions:
+- "What are the competitors of 'BigFix'?"
+```
+
+Start with the sample question:
 
 ```text
 What are the competitors of BigFix?
@@ -146,8 +174,7 @@ The model should first use `get-schema` to understand the graph and then use `re
 
 The LLM will use the MCP connection to retrieve the information from Neo4J and it will prompt the natural language response.
 
-![Playground Results](screenshots/playground1.png)
-
+![Playground Results](screenshots/playground.png)
 
 ## Additional Resources
 
