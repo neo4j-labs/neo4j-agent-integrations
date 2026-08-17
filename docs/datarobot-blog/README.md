@@ -1,4 +1,4 @@
-# Teaching DataRobot to Think in Graphs: Building a Memory-Enabled Neo4j Agent on DataRobot's Official Agent Template
+# The Agent That Remembers: Wiring Neo4j's Knowledge Graphs Into DataRobot, One Hard Lesson at a Time
 
 *What it actually took to wire a Neo4j knowledge-graph agent into a partner platform we don't fully control — memory, MCP, a security bug hiding in working code, and the lessons that shaped the final design.*
 
