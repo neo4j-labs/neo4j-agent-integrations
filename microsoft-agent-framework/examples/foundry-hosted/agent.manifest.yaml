@@ -1,7 +1,7 @@
 name: neo4j-research-agent-framework
 description: >
   Microsoft Agent Framework + Neo4j multi-agent investment research agent
-  (coordinator → database + analyst), hosted on Foundry Agent Service.
+  (coordinator, database agent, analyst), hosted on Foundry Agent Service.
 metadata:
   tags:
     - Agent Framework
@@ -18,8 +18,8 @@ template:
   environment_variables:
     - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
       value: "{{AZURE_AI_MODEL_DEPLOYMENT_NAME}}"
-    - name: FOUNDRY_EMBEDDING_DEPLOYMENT_NAME
-      value: ${FOUNDRY_EMBEDDING_DEPLOYMENT_NAME}
+    - name: EMBEDDING_DEPLOYMENT_NAME
+      value: ${EMBEDDING_DEPLOYMENT_NAME}
     - name: NEO4J_URI
       value: ${NEO4J_URI}
     - name: NEO4J_DATABASE
@@ -29,8 +29,6 @@ template:
     - name: NEO4J_PASSWORD
       value: ${NEO4J_PASSWORD}
 resources:
-  # gpt-4o-mini matches what microsoft-foundry/infra/deploy.sh provisions, so
-  # the hosted agent reuses the chat model from a shared Foundry project.
   - kind: model
-    id: gpt-4o-mini
+    id: gpt-5-mini
     name: AZURE_AI_MODEL_DEPLOYMENT_NAME

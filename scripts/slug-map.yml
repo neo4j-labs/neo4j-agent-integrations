@@ -193,6 +193,10 @@ integrations:
     nav_label: "Salesforce Agentforce"
     thin: false
     sub_pages:
+      - src: agentforce-mcp.md
+        slug: salesforce-agentforce-mcp
+        title: "Salesforce Agentforce — Neo4j MCP Integration"
+        nav_label: "Direct MCP Integration"
       - src: agentforce-memory.md
         slug: salesforce-agentforce-memory
         title: "Salesforce Agentforce — Neo4j Agent Memory"

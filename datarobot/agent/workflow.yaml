@@ -1,0 +1,102 @@
+# NAT/dragent workflow config for the Neo4j research agent.
+#
+# This follows the structure DataRobot's official `af-component-agent`
+# template generates for the `base` framework (copier: `agent_template_framework:
+# base`), with Neo4j-specific tools (agent/neo4j_tools.py, agent/mcp_client.py)
+# and memory (agent/nat_memory.py, NAMS-backed) applied on top, per DataRobot
+# reviewer feedback on PR #67: "use the template ... apply Neo4j specifics
+# onto it: tools and memory."
+#
+# `general.front_end._type: dragent_fastapi` is the "dragent frontend" that
+# was previously missing — this is what makes `agent/register.py`'s
+# `neo4j_agent` NAT function reachable as a DataRobot-native streaming agent
+# (AG-UI events over dragent), instead of a bare NAT `fastapi` front end.
+general:
+  telemetry:
+    tracing:
+      otelcollector:
+        _type: datarobot_otelcollector
+        project: "agent"
+  front_end:
+    _type: dragent_fastapi
+    # If you don't want your agent to expose A2A endpoints, remove the following block.
+    a2a:
+      server:
+        name: "Neo4j Research Agent"
+        description: >
+          A research agent with access to a Neo4j company knowledge graph
+          (companies, industries, people, relationships) plus an optional
+          hosted Neo4j Aura MCP server. Ask about a company, industry, or
+          relationships between organizations and it will query the graph
+          and produce a concise report.
+      skills:
+        - id: neo4j_research
+          name: "Neo4j Company Research"
+          description: "Researches companies/industries/people in the Neo4j knowledge graph and writes a report."
+          tags: ["neo4j", "research"]
+          examples:
+            - "Tell me about Neo4j the company and its board members"
+            - "What companies are in the software industry?"
+
+functions:
+  # The single registered agent (agent/register.py), wired into NAT via
+  # `register_per_user_function`. Replaces the three previously-conflicting
+  # implementations flagged in review: DRUM's agent.py/custom.py (deprecated),
+  # the unwired myagent.py, and this file's old standalone NAT tool-calling
+  # agent — there is now exactly one agent.
+  neo4j_agent:
+    _type: neo4j_agent
+    llm_name: datarobot_llm
+    description: >
+      Neo4j company-research agent: plans research using the knowledge graph
+      (and any hosted MCP tools), then writes a concise Markdown report.
+
+llms:
+  datarobot_llm:
+    _type: datarobot-llm-component
+    # To enable LLM provider fallback/failover, remove the datarobot_llm block above and uncomment the following:
+    # datarobot_llm:
+    #   _type: datarobot-llm-router
+    #   primary:
+    #     use_datarobot_llm_gateway: true
+    #     llm_default_model: azure/gpt-5-mini-2025-08-07
+    #   fallbacks:
+    #     - use_datarobot_llm_gateway: true
+    #       llm_default_model: anthropic/claude-opus-4-20250514
+    #   num_retries: 1
+
+# NAMS-backed memory (agent/nat_memory.py) — the "Neo4j specifics: memory"
+# half of the reviewer's request. Declared unconditionally, same as
+# DataRobot's own dr_mem0_memory pattern: if MEMORY_API_KEY / MEMORY_WORKSPACE_ID
+# aren't set, this yields a no-op editor and the agent runs normally without
+# memory.
+memory:
+  neo4j_memory:
+    _type: neo4j_agent_memory
+
+workflow:
+  # When memory is not configured streaming_memory_agent is a passthrough,
+  # so it's safe to reference neo4j_memory unconditionally. Configure NAMS
+  # via MEMORY_API_KEY / MEMORY_WORKSPACE_ID in .env to enable it.
+  _type: streaming_memory_agent
+  inner_agent_name: neo4j_agent
+  memory_name: neo4j_memory
+  llm_name: datarobot_llm
+  description: "Neo4j company-research agent with automatic memory capture and retrieval."
+  middleware:
+    - datarobot_moderation
+    - datarobot_otel_conventions
+
+middleware:
+  datarobot_moderation:
+    # Guards can be configured inline by adding the moderation field here.
+    # See the Guardrails Configuration Guide at https://pypi.org/project/datarobot-moderations/
+    # If there is no inline configuration then moderation_config.yaml will be loaded, if present.
+    # If no guards are configured then the middleware is a no-op.
+    _type: datarobot_moderation
+  datarobot_otel_conventions:
+    _type: datarobot_otel_conventions
+
+authentication:
+  datarobot_auth:
+    _type: datarobot_api_key
