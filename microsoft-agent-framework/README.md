@@ -9,20 +9,32 @@ Better together: Agent Framework gives you agents that **collaborate**. Neo4j gi
 
 ## Why multi-agent + graph
 
-Investment research is multi-step: discover, profile, traverse the network, read the news, synthesize. A single fat agent with twenty tools loses focus — splitting it into a Database agent and an Analyst produces sharper results, and Agent Framework makes that composition trivial: `coordinator.tools = [db.as_tool(), analyst.as_tool()]`.
+Investment research is multi-step: discover, profile, traverse the network, read the news, synthesize. This example follows the repo-wide [`EXAMPLE_AGENT.md`](../EXAMPLE_AGENT.md) pattern: a coordinator delegates graph retrieval to a Neo4j database agent, then passes the grounded results to an analyst.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    user["User"] --> coord["Coordinator agent<br/>(FoundryChatClient)"]
-    coord -->|as_tool| db["Database agent<br/>(10 Neo4j function tools)"]
-    coord -->|as_tool| analyst["Analyst agent<br/>(synthesis only)"]
-    db -->|neo4j Bolt driver| neo4j[("Neo4j Aura<br/>or self-managed")]
-    coord -.model.-> foundry["Foundry project<br/>(../microsoft-foundry/)"]
+    user["User"] --> coordinator["Coordinator agent<br/>(Agent Framework)"]
+    coordinator -->|as_tool| database["Database agent<br/>(Neo4j function tools)"]
+    coordinator -->|as_tool| analyst["Analyst agent<br/>(synthesis only)"]
+    database -->|Bolt driver| neo4j[("Neo4j Aura<br/>or self-managed")]
+    database -->|embeddings| foundry["Foundry project<br/>(../microsoft-foundry/)"]
+    coordinator -->|model inference| foundry
+    analyst -->|model inference| foundry
 ```
 
-Both examples implement the same multi-agent graph. The local example runs your code; the hosted example runs that code inside Foundry's managed runtime.
+Both examples implement the same coordinator/database-agent/analyst graph. The local example runs it from your shell; the hosted example packages it as a Foundry hosted agent and runs it in Foundry's managed runtime.
+
+## Prerequisites
+
+- [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/install-azure-cli)
+- [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
+- [Python 3.11+](https://www.python.org/downloads/)
+- [`uv`](https://docs.astral.sh/uv/)
+- An Azure subscription you can deploy to
+
+For Azure provisioning of the shared Neo4j MCP server and Foundry project, use the streamlined setup in [`../microsoft-foundry/infra/README.md`](../microsoft-foundry/infra/README.md).
 
 ## Quick start
 
@@ -41,8 +53,9 @@ Defaults connect to the public `companies` Neo4j demo graph and use the Foundry 
 
 | Example | What it shows | Folder |
 | --- | --- | --- |
-| **Multi-agent (local)** | Coordinator + Database + Analyst via `as_tool()`, function tools to Neo4j | [`examples/multi-agent`](./examples/multi-agent/) |
-| **Foundry-hosted multi-agent** | Same multi-agent graph packaged as a Foundry hosted agent | [`examples/foundry-hosted`](./examples/foundry-hosted/) |
+| **Multi-agent (local)** | Coordinator with `database_agent.as_tool()` and `analyst.as_tool()` | [`examples/multi-agent`](./examples/multi-agent/) |
+| **Foundry-hosted multi-agent** | Same agent graph packaged as a Foundry hosted agent | [`examples/foundry-hosted`](./examples/foundry-hosted/) |
+| **Aura-hosted MCP over OAuth** | Connect to Aura's built-in MCP via OAuth 2.0 DCR (no static credentials) | [`examples/aura-mcp-oauth`](./examples/aura-mcp-oauth/) |
 
 ## Why host on Foundry?
 

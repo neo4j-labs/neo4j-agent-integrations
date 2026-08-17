@@ -1,0 +1,45 @@
+# Captured subagent configuration example. Salesforce generates the action key,
+# source, and target for each org when the action is added from the Asset Library.
+# Do not copy these generated identifiers into another org.
+subagent Company_Intelligence:
+    label: "Company Intelligence"
+    description: |
+
+        Answers questions about companies and their connected business context using a Neo4j knowledge graph. Use this subagent for company profiles, competitors, suppliers, subsidiaries, executives, industries, locations, and related news
+    reasoning:
+        instructions: ->
+            |Use the Read Cypher action to retrieve facts from the Neo4j company knowledge graph.
+             The graph contains Organization nodes representing companies. Organization relationships include HAS_COMPETITOR, HAS_SUPPLIER, HAS_SUBSIDIARY, HAS_CEO, HAS_BOARD_MEMBER, HAS_INVESTOR, HAS_CATEGORY, and incoming MENTIONS relationships from Article nodes.
+             Match company names case-insensitively. Generate only read-only Cypher queries. Never generate CREATE, MERGE, DELETE, SET, REMOVE, DROP, or other modifying operations.
+             Limit returned collections to at most 10 results unless the user explicitly requests otherwise. Prefer parameterized queries where practical.
+             Use the graph results as factual grounding. Never invent companies, relationships, people, or articles that aren’t present in the action result. If no matching organization is found, explain this and ask the user for a more precise company name.
+             Summarize the graph results for a business user. Clearly distinguish facts returned from Neo4j from your interpretation of why those facts might matter.
+        actions:
+            ad565daa4adfd3203ba2f257f0ed2cae3: @actions.ad565daa4adfd3203ba2f257f0ed2cae3
+                with query = ...
+                with params = ...
+
+    actions:
+        ad565daa4adfd3203ba2f257f0ed2cae3:
+            description: |
+                read-cypher can run only read-only Cypher statements. For write operations (CREATE, MERGE, DELETE, SET, etc...), schema/admin commands, or PROFILE queries, use write-cypher instead.
+            label: "read-cypher - Neo4jMCPDemo"
+            require_user_confirmation: False
+            include_in_progress_indicator: False
+            source: "ad565daa4adfd3203ba2f257f0ed2cae3"
+            target: "mcpTool://mcptoolx5fx5freadx2dcypher"
+
+            inputs:
+                "query": string
+                    description: |
+                      The Cypher query to execute
+                    label: "string"
+                    is_required: True
+                    is_user_input: False
+                "params": object
+                    description: |
+                      Parameters to pass to the Cypher query
+                    label: "string"
+                    is_required: False
+                    is_user_input: False
+                    complex_data_type_name: "lightning__genericObjectType"

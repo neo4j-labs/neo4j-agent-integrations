@@ -9,7 +9,7 @@ param baseName string
 @description('Common tags applied to all resources.')
 param commonTags object
 
-@description('Foundry model name (e.g. gpt-4o-mini).')
+@description('Foundry model name (e.g. gpt-5-mini).')
 param modelName string
 
 @description('Foundry model version. Required for Azure OpenAI model deployments.')
@@ -33,10 +33,10 @@ param embeddingModelSkuName string
 @description('Foundry embedding model deployment capacity, in thousands of tokens per minute.')
 param embeddingModelCapacity int
 
-@description('Principal ID (Entra object ID) granted Azure AI Developer on the Foundry account so the signed-in user can call the Foundry data plane after az login. Empty disables the role assignment.')
+@description('Principal ID (Entra object ID) granted the Foundry User role on the Foundry project so the signed-in user can create/run agents and call models via the project endpoint after az login. Empty disables the role assignment.')
 param principalId string
 
-@description('Type of the principal granted Azure AI Developer. Use "User" for an interactive azd auth login, "ServicePrincipal" in CI.')
+@description('Type of the principal granted the Foundry User role. Use "User" for an interactive azd auth login, "ServicePrincipal" in CI.')
 @allowed([
   'User'
   'ServicePrincipal'
@@ -51,10 +51,15 @@ var uniqueSuffix = take(uniqueString(resourceGroup().id, baseName), 4)
 var accountName = 'aif-${baseName}-${uniqueSuffix}'
 var projectName = 'proj-${baseName}'
 
-// Azure AI Developer — broad data-plane access on the Foundry account, including
-// model deployments and agent operations.
-// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning
-var azureAiDeveloperRoleId = '64702f94-c441-49e6-a78b-ef80e0188fee'
+// Foundry User (formerly "Azure AI User") — the least-privilege built-in role
+// that lets a principal create/run agents and call models via the Foundry
+// project endpoint. Assigned at PROJECT scope (not account), matching the
+// official Azure-Samples/azd-ai-starter-basic template and the Foundry RBAC
+// guidance ("This role must be assigned at the project scope").
+// Role IDs are unaffected by the Azure AI User -> Foundry User rename.
+// https://learn.microsoft.com/azure/foundry/concepts/rbac-foundry
+// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#foundry-user
+var foundryUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
@@ -152,16 +157,17 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-0
 // capabilityHost is only needed for BYO-VNet / custom-subnet scenarios.
 
 resource deployerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  scope: foundryAccount
-  name: guid(foundryAccount.id, principalId, azureAiDeveloperRoleId)
+  scope: foundryProject
+  name: guid(foundryProject.id, principalId, foundryUserRoleId)
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAiDeveloperRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', foundryUserRoleId)
     principalId: principalId
     principalType: principalType
   }
 }
 
 output accountName string = foundryAccount.name
+output projectId string = foundryProject.id
 output projectName string = foundryProject.name
 output projectEndpoint string = foundryProject.properties.endpoints['AI Foundry API']
 output modelDeploymentName string = modelDeployment.name

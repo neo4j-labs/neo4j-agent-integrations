@@ -57,6 +57,7 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[google-gemini-enterprise](./google-gemini-enterprise/)** - Google Gemini Enterprise (MCP + Vertex AI Extensions)
 
 ### Vertical Platforms
+- **[datarobot](./datarobot/)** - DataRobot Agentic AI
 - **[databricks-agent-bricks](./databricks-agent-bricks/)** - Databricks (MCP Catalog + Unity Catalog)
 - **[snowflake-cortex](./snowflake-cortex/)** - Snowflake Cortex
 - **[servicenow-ai-agents](./servicenow-ai-agents/)** - ServiceNow (MCP + A2A)
