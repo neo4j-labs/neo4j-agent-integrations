@@ -57,16 +57,28 @@
       "value": "${CREATE_FOUNDRY_PROJECT=true}"
     },
     "foundryModelName": {
-      "value": "${FOUNDRY_MODEL_NAME=gpt-4o-mini}"
+      "value": "${FOUNDRY_MODEL_NAME=gpt-5-mini}"
     },
     "foundryModelVersion": {
-      "value": "${FOUNDRY_MODEL_VERSION=2024-07-18}"
+      "value": "${FOUNDRY_MODEL_VERSION=2025-08-07}"
     },
     "foundryModelSkuName": {
       "value": "${FOUNDRY_MODEL_SKU=GlobalStandard}"
     },
     "foundryModelCapacity": {
-      "value": "${FOUNDRY_MODEL_CAPACITY=30}"
+      "value": "${FOUNDRY_MODEL_CAPACITY=120}"
+    },
+    "foundryEmbeddingModelName": {
+      "value": "${FOUNDRY_EMBEDDING_MODEL_NAME=text-embedding-3-small}"
+    },
+    "foundryEmbeddingModelVersion": {
+      "value": "${FOUNDRY_EMBEDDING_MODEL_VERSION=1}"
+    },
+    "foundryEmbeddingModelSkuName": {
+      "value": "${FOUNDRY_EMBEDDING_MODEL_SKU=GlobalStandard}"
+    },
+    "foundryEmbeddingModelCapacity": {
+      "value": "${FOUNDRY_EMBEDDING_MODEL_CAPACITY=30}"
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID=}"

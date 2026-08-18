@@ -4,9 +4,9 @@
 # dependencies = [
 #     # The meta-package "agent-framework" ships an empty __init__.py that
 #     # shadows -core's exports — so we depend on the split packages directly.
-#     "agent-framework-core>=1.2.1",
-#     "agent-framework-foundry>=1.2.1",
-#     "agent-framework-openai>=1.2.1",  # OpenAIEmbeddingClient (Entra-ID)
+#     "agent-framework-core>=1.7.0",
+#     "agent-framework-foundry>=1.7.0",
+#     "agent-framework-openai>=1.7.0",  # OpenAIEmbeddingClient (Entra-ID)
 #     "aiohttp",  # azure-ai-projects async transport
 #     "azure-identity",
 #     "python-dotenv",
@@ -15,10 +15,10 @@
 # ///
 """Microsoft Agent Framework + Neo4j: multi-agent investment research, run locally.
 
-Implements the multi-agent spec from EXAMPLE_AGENT.md — Coordinator delegates
-to a Database Agent (10 typed Neo4j function tools) and an Analyst Agent
-(synthesis only). Self-contained on purpose; foundry-hosted/main.py is a
-parallel, near-identical file packaged for the Foundry hosted-agent runtime.
+Implements the multi-agent pattern from EXAMPLE_AGENT.md as a coordinator that
+delegates to a Neo4j database agent and an analyst agent. Self-contained on
+purpose; foundry-hosted/main.py is a parallel, near-identical file packaged for
+the Foundry hosted-agent runtime.
 """
 
 import asyncio
@@ -26,6 +26,7 @@ import os
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from agent_framework import Agent, AgentContext, FunctionInvocationContext
 from agent_framework.foundry import FoundryChatClient
@@ -38,8 +39,8 @@ from neo4j import GraphDatabase
 load_dotenv(Path(__file__).resolve().parents[3] / "microsoft-foundry" / ".env", override=True)
 
 DB = os.environ.get("NEO4J_DATABASE", "companies")
-driver = None  # initialised in main(); tools reference it via module lookup
-embeddings = None  # OpenAIEmbeddingClient — initialised in main()
+driver: Any = None  # initialised in main(); tools reference it via module lookup
+embeddings: Any = None  # OpenAIEmbeddingClient — initialised in main()
 
 
 # Discovery ---------------------------------------------------------------
@@ -189,10 +190,16 @@ def companies_in_article(article_id: str) -> list[dict]:
 
 
 DATABASE_TOOLS = [
-    search_companies, list_industries, companies_in_industry,
+    search_companies,
+    list_industries,
+    companies_in_industry,
     query_company,
-    analyze_relationships, people_at_company,
-    search_news, articles_in_month, get_article, companies_in_article,
+    analyze_relationships,
+    people_at_company,
+    search_news,
+    articles_in_month,
+    get_article,
+    companies_in_article,
 ]
 
 
@@ -217,91 +224,73 @@ async def log_tool(context: FunctionInvocationContext, call_next: Callable[[], A
 # Agent instructions ------------------------------------------------------
 
 DATABASE_INSTRUCTIONS = """\
-You are a data-access agent over a Neo4j knowledge graph of companies (Organization),
-people (Person), industries (IndustryCategory), locations (City, Country), and
-articles (Article). Other agents call you to fetch facts.
+You are the database_agent from EXAMPLE_AGENT.md. You answer research requests
+by querying the Neo4j companies knowledge graph with the available tools.
 
-Tools (read-only):
-  Discovery: search_companies, list_industries, companies_in_industry
-  Profile:   query_company
-  Network:   analyze_relationships, people_at_company
-  News:      search_news (vector — needs a query string), articles_in_month, get_article, companies_in_article
+Responsibilities
+  1. Resolve the target company. Use search_companies if the name is ambiguous.
+  2. Gather the profile with query_company, preserving company_id.
+  3. Gather industry context. Use the industries returned by query_company with
+     one companies_in_industry call for the industry most relevant to the user
+     request; use list_industries only if needed.
+  4. Gather recent news with one search_news call.
+  5. Gather relationships with one analyze_relationships call.
+  6. Gather people with one people_at_company call using the company_id from
+     query_company.
 
-Output protocol — STRICT, machine-readable
-  Your reply is consumed by another agent, not a human. Output ONE fenced
-  ```json``` block per tool call you made, with this exact shape:
+Output requirements
+  Return only grounded data from tool results. Use one fenced ```json``` block
+  per tool call, with this shape:
 
-    ```json
-    {
-      "tool": "<tool name>",
-      "args": { ... what you passed in ... },
-      "rows": [ ... the tool result, verbatim, every field ... ]
-    }
-    ```
+  {
+    "tool": "<tool name>",
+    "args": { ... },
+    "rows": [ ... every returned field verbatim ... ]
+  }
 
-  Rules
-  • Include EVERY field the tool returned — `company_id`, `article_id`, `title`,
-    `date`, `sentiment`, `relationships`, `distance`, `industries`, `locations`,
-    `leadership`, etc. Real IDs look like `EIsFKrN_ZNLSWsvxdQfWutQ` and
-    `ART11195006745`; never shorten or substitute.
-  • If a tool returns no rows, set `"rows": []`.
-  • No prose. No summary. No headings. Only the JSON blocks, one per call.
-  • Never reason from prior knowledge — the only valid content is what the
-    tools returned this turn.
+Always preserve IDs such as company_id and article_id. Do not invent facts,
+short IDs, partner names, or relationship types.
+Keep the demo concise: prefer 5-6 total tool calls unless the user explicitly
+asks for broader exploration.
 """
 
 ANALYST_INSTRUCTIONS = """\
-You are an investment-research analyst. Your input is one or more ```json```
-blocks the database agent gathered. Each block has `tool`, `args`, and `rows`.
-Synthesize a concise investment-research report from those rows — and only
-those rows.
+You are the analyst from EXAMPLE_AGENT.md. You receive structured data from the
+database_agent and synthesize it into an investment-research report.
 
 Report structure
-  Executive Summary   — 2-3 sentences with the headline finding.
-  Company Profile     — industries, locations, leadership; one short paragraph.
-                        Cite the `company_id` once.
-  Recent Developments — bullet list. Each bullet MUST start with the real
-                        `article_id` from the rows, then the `title`, `date`,
-                        and `sentiment`.
-  Network             — Markdown table with columns: `company_id`,
-                        `organization`, `relationships`, `distance` — copied
-                        from the rows verbatim.
-  Risks & Outlook     — what the data suggests, and what's missing.
+  Executive Summary   - 2-3 sentences with the headline finding.
+  Company Profile     - industries, locations, leadership; cite company_id.
+  Recent Developments - bullets with article_id, title, date, and sentiment.
+  Network             - table with company_id, organization, relationships,
+                        and distance when available.
+  Risks & Outlook     - data-backed interpretation and what is missing.
 
-Rules — STRICT, no exceptions
-  • Every `company_id`, `article_id`, `title`, and relationship type in your
-    report must appear verbatim in the input rows. Real IDs look like
-    `EIsFKrN_ZNLSWsvxdQfWutQ` and `ART11195006745`.
-  • If you find yourself writing a short numeric ID like "101" or "201", or a
-    generic name ("Strategic Partner", "AWS partnership") that isn't in the
-    rows, STOP — that is hallucination. Re-read the JSON blocks.
-  • If a section has no supporting rows, write "(no data)" — never pad.
-  • Insight is welcome in Risks & Outlook only, and only insight that follows
-    directly from the rows.
+Rules
+  Use only data supplied by the database_agent. Every company_id, article_id,
+  title, and relationship type must appear verbatim in the input data. If a
+  section lacks supporting rows, write "(no data)" rather than filling gaps.
+  Return only the report. Do not ask follow-up questions or propose extra data
+  pulls unless the user requested them.
 """
 
 COORDINATOR_INSTRUCTIONS = """\
-You orchestrate investment research. You delegate to two specialists:
+You are the coordinator from EXAMPLE_AGENT.md. Manage two delegated agents:
 
-  database_agent — fetches rows from the graph. Returns one or more
-                   ```json``` blocks per call, each with `tool`, `args`,
-                   and `rows`.
-  analyst        — turns those JSON blocks into an investment-research report.
+  database_agent - queries the Neo4j knowledge graph for company profiles,
+  industry context, news, relationships, and people. It preserves IDs.
 
-Workflow
-  1. Call `database_agent` once per facet: company profile, peers, recent
-     news, relationships, key people. Each call should be a focused request
-     like "query_company('Microsoft')" or
-     "companies_in_industry('Software Companies')".
-  2. CONCATENATE every `database_agent` response verbatim into one string
-     and pass that string as the `task` to `analyst`. The analyst MUST see
-     the raw JSON blocks — never strip them down to bare IDs or summaries.
-  3. Return the analyst's report verbatim — don't paraphrase or re-summarize.
+  analyst - turns the database_agent output into an investment-research report.
 
-Never query the graph yourself. Never write the report yourself. Faithful
-relaying is your job.
+For each user research request:
+  1. Ask database_agent to gather all relevant graph data for the request.
+  2. Pass the complete database_agent output to analyst.
+  3. Return the analyst report to the user without extra preamble, commentary,
+     follow-up questions, or suggested next steps.
+
+Keep the flow simple. Do not answer from prior knowledge, and do not skip the
+analyst step for investment-research prompts.
 """
-
 
 # Entry -------------------------------------------------------------------
 
@@ -309,7 +298,7 @@ async def main() -> None:
     project_endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
     tenant_id = os.environ.get("AZURE_TENANT_ID")
     neo4j_uri = os.environ.get("NEO4J_URI")
-    embedding_deployment = os.environ.get("FOUNDRY_EMBEDDING_DEPLOYMENT_NAME", "text-embedding-3-small")
+    embedding_deployment = os.environ.get("EMBEDDING_DEPLOYMENT_NAME", "text-embedding-3-small")
     if not (project_endpoint and tenant_id and neo4j_uri):
         sys.exit(
             "Missing FOUNDRY_PROJECT_ENDPOINT, AZURE_TENANT_ID, or NEO4J_URI. "
@@ -340,45 +329,49 @@ async def main() -> None:
 
         client = FoundryChatClient(
             project_endpoint=project_endpoint,
-            model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"),
+            model=os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME", "gpt-5-mini"),
             credential=AzureCliCredential(tenant_id=tenant_id),
         )
 
-        # Names match EXAMPLE_AGENT.md — `database_agent`, `analyst`,
-        # `coordinator` — so the trace and instructions read consistently
-        # across the spec, the code, and the model's tool-call surface.
+        agent_options = {"store": False}
+
         database_agent = Agent(
             client=client,
             middleware=[log_agent, log_tool],
             name="database_agent",
+            description="Queries Neo4j for company profiles, news, relationships, people, and industry context.",
             instructions=DATABASE_INSTRUCTIONS,
             tools=DATABASE_TOOLS,
+            default_options=agent_options,
         )
         analyst_agent = Agent(
             client=client,
             middleware=[log_agent, log_tool],
             name="analyst",
+            description="Synthesizes Neo4j query results into an investment-research report.",
             instructions=ANALYST_INSTRUCTIONS,
+            default_options=agent_options,
         )
         coordinator = Agent(
             client=client,
-            middleware=[log_agent, log_tool],
+            middleware=[log_agent],
             name="coordinator",
             instructions=COORDINATOR_INSTRUCTIONS,
             tools=[
                 database_agent.as_tool(
                     name="database_agent",
-                    description="Fetch company / news / relationship / people rows from the Neo4j graph. Always returns IDs for follow-up calls.",
+                    description="Gather grounded company, news, relationship, people, and industry data from Neo4j.",
                     arg_name="task",
-                    arg_description="What to fetch — be specific (which company, what aspect).",
+                    arg_description="Specific graph data to gather for the research request.",
                 ),
                 analyst_agent.as_tool(
                     name="analyst",
-                    description="Synthesize gathered rows into an investment-research report.",
-                    arg_name="task",
-                    arg_description="Pass the rows the database agent returned, plus the analysis goal.",
+                    description="Synthesize database_agent output into the final investment-research report.",
+                    arg_name="data",
+                    arg_description="Complete structured output returned by database_agent.",
                 ),
             ],
+            default_options=agent_options,
         )
 
         question = os.environ.get(

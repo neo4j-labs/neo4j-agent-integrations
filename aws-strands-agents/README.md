@@ -6,6 +6,8 @@ This sample deploys an **AWS Strands Agent** as an AgentCore Runtime that connec
 
 > **Prerequisite:** This stack requires [Sample 2: Gateway with External Neo4j MCP](../aws-agentcore/samples/2-gateway-external-mcp) to be deployed first. The Gateway stack provides the Cognito OAuth setup and MCP Gateway endpoint that this agent connects to.
 
+> **Looking for a different memory approach?** This example uses AgentCore Memory. If you want graph-based long-term memory stored directly in Neo4j, check out the [Neo4j Agent Memory integration for AWS Strands](https://neo4j.com/labs/agent-memory/how-to/integrations/aws-strands/) (see also the [Memory](#memory) section below).
+
 **Key Features:**
 
 - **Strands Agent Framework**: Model-agnostic agent with streaming responses
@@ -103,6 +105,8 @@ AgentCore Memory with a **UserPreferenceMemoryStrategy**:
 - **Custom tool:** `clear_preferences` lets users reset stored preferences
 
 The `AgentCoreMemorySessionManager` saves conversations and retrieves preferences before each turn.
+
+> **Tip:** As an alternative to AgentCore Memory, [Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/how-to/integrations/aws-strands/) integrates directly with Strands agents and stores memory as a context graph in Neo4j - with semantic search, entity extraction, and relationship exploration as agent tools.
 
 ### Model
 
@@ -212,12 +216,12 @@ cdk deploy Neo4jStrandsAgentStack \
 
 **Stack Outputs:**
 
-| Output                | Description                                      |
-| --------------------- | ------------------------------------------------ |
-| `AgentRuntimeArn`     | ARN of the deployed AgentCore Runtime             |
-| `AgentRuntimeRoleArn` | ARN of the IAM Role for the runtime               |
-| `CognitoSecretArn`    | ARN of the Cognito credentials secret             |
-| `AgentCoreMemoryId`   | ID of the AgentCore Memory resource               |
+| Output                | Description                           |
+|-----------------------|---------------------------------------|
+| `AgentRuntimeArn`     | ARN of the deployed AgentCore Runtime |
+| `AgentRuntimeRoleArn` | ARN of the IAM Role for the runtime   |
+| `CognitoSecretArn`    | ARN of the Cognito credentials secret |
+| `AgentCoreMemoryId`   | ID of the AgentCore Memory resource   |
 
 ### Step 5: Test the Agent
 
@@ -240,3 +244,4 @@ cdk destroy Neo4jStrandsAgentStack
 ### Neo4j Resources
 
 - [Neo4j MCP Server](https://github.com/neo4j/mcp)
+- [Neo4j Agent Memory - AWS Strands Integration](https://neo4j.com/labs/agent-memory/how-to/integrations/aws-strands/) - graph-based long-term memory for Strands agents

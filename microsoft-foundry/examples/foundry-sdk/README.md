@@ -94,12 +94,12 @@ Set these in `microsoft-foundry/.env`:
 | --- | --- | --- |
 | `FOUNDRY_QUESTION` | "Tell me about Microsoft…" | The single user question. |
 | `FOUNDRY_TEST_AGENT_NAME` | `neo4j-research-agent-sdk` | Agent version name (created and deleted each run). |
-| `FOUNDRY_MODEL_DEPLOYMENT_NAME` | `gpt-4o-mini` | Model to run the agent on. |
+| `FOUNDRY_MODEL_DEPLOYMENT_NAME` | `gpt-5-mini` | Model to run the agent on. |
 | `NEO4J_URI` / `NEO4J_DATABASE` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` | demo graph | Point at your own Aura or self-managed Neo4j. |
 
 ## Coming later
 
 The spec also defines a vector-search variant of `search_news` and `find_influential_companies` (PageRank). Both are intentionally out of scope here:
 
-- **Vector `search_news`** needs an embedding-model deployment in the Foundry account; the default `azd up` provisions only `gpt-4o-mini`. The MENTIONS-based version above already covers the news-discovery use case for the demo data.
+- **Vector `search_news`** — `deploy.sh` now provisions a `text-embedding-3-small` deployment too, so the building block is there. This example deliberately keeps the simpler MENTIONS-based version; see [`microsoft-agent-framework/examples/multi-agent`](../../../microsoft-agent-framework/examples/multi-agent/) for the vector-search variant.
 - **`find_influential_companies`** uses Neo4j Graph Data Science with write access to project an in-memory graph; the public demo database is read-only.

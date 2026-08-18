@@ -115,9 +115,9 @@ def _make_inline(folder: str, path_xref: dict):
         if url_no_frag.endswith('.ipynb') or url_no_frag.endswith('.py'):
             gh_path = repo_rel if not url_no_frag.startswith('./') else f'{folder}/{url_no_frag.lstrip("./")}'
             return f'{GITHUB_BASE}/{gh_path}[{text}^]'
-
-        # Generic relative link — keep as-is (Antora may resolve it)
-        return f'link:{url}[{text}]'
+        
+        # Unmapped relative link → source file on GitHub
+        return f'{GITHUB_BASE}/{repo_rel}[{text}^]'
 
     def _inline(line: str) -> str:
         # Emoji shortcodes → Unicode (common GitHub/Slack codes; unknown codes are stripped)

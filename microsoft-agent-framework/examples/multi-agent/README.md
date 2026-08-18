@@ -3,14 +3,14 @@
 [Microsoft Agent Framework](https://learn.microsoft.com/agent-framework/overview/) is Microsoft's open-source SDK for building production AI agents in Python and .NET — single agents, multi-agent workflows, and hosted-agent deployment.
 Neo4j is the graph database and knowledge layer that grounds those agents in connected enterprise data.
 
-This example wires them together as a multi-agent investment-research assistant: a **Coordinator** delegates to a **Database** agent (queries Neo4j) and an **Analyst** (synthesizes a report). One uv-runnable file. Reads `microsoft-foundry/.env` for the Foundry endpoint and Neo4j credentials.
+This example wires them together as a multi-agent investment-research assistant: a **Coordinator** delegates graph retrieval to a Neo4j **Database Agent**, then passes the grounded results to an **Analyst**. One uv-runnable file. Reads `microsoft-foundry/.env` for the Foundry endpoint and Neo4j credentials.
 
 Tool names and return shapes follow the [`EXAMPLE_AGENT.md`](../../../EXAMPLE_AGENT.md) spec ("Industry Research Agent").
 
 ## When to pick this path
 
 - You want to see how Agent Framework composes multiple agents.
-- A single fat agent with twenty tools loses focus — splitting work into a Database agent and an Analyst produces sharper, more grounded output.
+- You want the repo-wide [`EXAMPLE_AGENT.md`](../../../EXAMPLE_AGENT.md) architecture: coordinator, database agent, analyst.
 - Function tools talk to Neo4j directly via the Bolt driver — no MCP server, no extra hop.
 
 ## Quick start
@@ -23,28 +23,26 @@ cd ../../microsoft-agent-framework/examples/multi-agent && uv run multi_agent_ne
 
 `uv` reads the inline `# /// script` deps at the top of `multi_agent_neo4j.py` and runs. The script reads `microsoft-foundry/.env` for the Foundry endpoint, Azure tenant, and Neo4j credentials.
 
-## The three agents
+## Architecture
 
 ```mermaid
 flowchart LR
-    user["User"] --> coord
-    subgraph agents["Multi-agent system"]
-        coord["Coordinator Agent<br/>(delegates)"]
-        db["Database Agent<br/>(10 Neo4j functions)"]
-        analyst["Analyst Agent<br/>(no tools — synthesis)"]
-    end
-    coord -->|as_tool| db
-    coord -->|as_tool| analyst
-    db -->|neo4j Bolt driver| neo4j[("Neo4j Aura<br/>(companies demo graph)")]
+    user["User"] --> coordinator["Coordinator agent"]
+    coordinator -->|as_tool| database["Database agent<br/>(Neo4j tools)"]
+    coordinator -->|as_tool| analyst["Analyst agent<br/>(synthesis only)"]
+    database -->|Bolt driver| neo4j[("Neo4j Aura<br/>(companies demo graph)")]
+    database -->|embeddings| foundry["Foundry project"]
+    coordinator -->|model inference| foundry
+    analyst -->|model inference| foundry
 ```
 
 | Agent | Tools | Job |
 | --- | --- | --- |
-| **Coordinator Agent** | `database_agent.as_tool()`, `analyst_agent.as_tool()` | Orchestrates: delegates one focused question per facet to the Database Agent, concatenates responses, passes to the Analyst Agent. Never queries the graph or writes the report itself. |
-| **Database Agent** | 10 typed Neo4j functions | Calls the right tool for the request, returns one ```json``` block per call (raw rows verbatim — every `company_id`, `article_id`, title, date, sentiment, relationship type). No prose. |
-| **Analyst Agent** | none | Reads the JSON blocks, produces a structured report: Executive Summary, Profile, Recent Developments, Network table, Risks & Outlook. Cites IDs verbatim from the rows. |
+| **Coordinator** | `database_agent.as_tool()`, `analyst.as_tool()` | Orchestrates the request: gather graph data first, then ask the analyst to synthesize. |
+| **Database Agent** | Neo4j function tools | Queries company profile, industry context, news, relationships, and people. Returns grounded JSON blocks with IDs preserved. |
+| **Analyst** | none | Reads the Database Agent output and produces the final structured report. |
 
-Composition is two `Agent.as_tool()` calls handed to the Coordinator's `tools=` — that's the whole multi-agent surface. The script is intentionally self-contained; [`../foundry-hosted/main.py`](../foundry-hosted/main.py) is a parallel near-identical file packaged for the Foundry hosted-agent runtime.
+Composition uses Agent Framework's agents-as-tools pattern, matching `EXAMPLE_AGENT.md`. The script is intentionally self-contained; [`../foundry-hosted/main.py`](../foundry-hosted/main.py) is a parallel near-identical file packaged for the Foundry hosted-agent runtime.
 
 ## Function tools (Neo4j)
 
@@ -59,10 +57,10 @@ Plain Python functions with type hints and docstrings. Agent Framework auto-conv
 
 ## Anti-hallucination contract
 
-`as_tool()` only forwards the inner agent's text to the parent — easy for an inner agent to silently summarise IDs away. Three guarantees in the instructions:
+The agent graph keeps retrieval and synthesis separate. Three guarantees in the instructions:
 
-1. **Database Agent** emits one fenced ```json``` block per tool call (`tool`, `args`, `rows`). No prose, no summaries.
-2. **Coordinator** passes those JSON blocks verbatim into the Analyst's `task`. Never strips down to bare IDs.
+1. **Database Agent** emits fenced ```json``` blocks per tool call (`tool`, `args`, `rows`) and preserves IDs.
+2. **Coordinator** passes the complete Database Agent output to the Analyst.
 3. **Analyst Agent** must cite every `company_id`, `article_id`, title, and relationship type from the rows. Real IDs look like `EIsFKrN_ZNLSWsvxdQfWutQ` / `ART11195006745` — short placeholders ("101", "AWS partnership") are flagged in the prompt as hallucination.
 
 Result: every value in the report appears verbatim in a tool result.
@@ -81,5 +79,5 @@ Set these in `microsoft-foundry/.env`:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FOUNDRY_QUESTION` | "Research Microsoft's position…" | The single user question. Pick something that exercises both database and analyst. |
-| `FOUNDRY_MODEL_DEPLOYMENT_NAME` | `gpt-4o-mini` | Model to run all three agents on. |
+| `FOUNDRY_MODEL_DEPLOYMENT_NAME` | `gpt-5-mini` | Model to run the coordinator, database agent, and analyst on. |
 | `NEO4J_URI` / `NEO4J_DATABASE` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` | demo graph | Point at your own Aura or self-managed Neo4j. |
