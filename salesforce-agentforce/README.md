@@ -91,7 +91,9 @@ Three integration tracks — implementations of "Salesforce Bindings":
 
 Salesforce Agentforce supports custom MCP (Model Context Protocol) servers. After you register a Neo4j MCP server and allowlist its tools, Salesforce creates reusable MCP actions in the Agentforce Asset Library. You then attach the required actions to a dedicated subagent; registering the server alone does not make its tools available to that agent.
 
-The complete walkthrough of this track — including authentication options, the demo authentication bridge, live-test troubleshooting, and Agentforce Gateway policies — is in [Agentforce integration with Neo4j over MCP](agentforce-mcp.md). The steps below are the condensed version.
+The complete walkthrough of this track — including authentication options, the demo authentication bridge, live-test troubleshooting, and Agentforce Gateway policies — is in [Agentforce integration with Neo4j over MCP](./agentforce-mcp.md). The steps below are the condensed version.
+
+A complete guide, including defining the setting up the Neo4j database, importing sample dataset, setting up Aura Agent and integrating it with salesforce over machine-to-machine OAuth authorization is avalable in [Agentforce integration with Neo4j Aura Agent over MCP](./agentforce-auraagents-mcp.md)
 
 #### Basic configuration
 
