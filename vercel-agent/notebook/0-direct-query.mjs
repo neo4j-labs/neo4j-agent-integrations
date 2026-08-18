@@ -8,6 +8,9 @@
  *   node 0-direct-query.mjs
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import neo4j from 'neo4j-driver';
 
 const driver = neo4j.driver(

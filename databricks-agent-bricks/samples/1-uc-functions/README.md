@@ -1,4 +1,4 @@
-# 1. Databricks Managed MCP server (Neo4j via UC Functions)
+# Databricks Managed MCP server (Neo4j via UC Functions)
 
 ## Introduction
 

@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# environment files — never commit real keys
+.env
+.env.local
+.env.*.local
+
+# TypeScript build cache
+tsconfig.tsbuildinfo
+
+# Next.js auto-generated (regenerated on every build)
+next-env.d.ts
+
+# OS / editor noise
+.DS_Store
+*.swp
