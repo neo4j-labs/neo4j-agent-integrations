@@ -1,25 +1,25 @@
 /**
- * Memory mode `hooks` — the recall half.
+ * Recall — the read half of memory.
  *
  * Resolves on `turn.started` (not `session.started`) so a fact stored on turn 1
- * is already in the prompt on turn 2 of the same session. Returns `null` in the
- * other modes, where the model wrapper or the memory tools do the retrieving.
+ * is already in the prompt on turn 2 of the same session, and retrieves against
+ * what the user actually just said: NAMS search is lexical, so their own nouns
+ * match stored text far better than a paraphrase of them would.
  */
 import { defineDynamic, defineInstructions } from "eve/instructions";
-import { MAX_MEMORIES, MEMORY_MODE, recall, renderMemories } from "../lib/nams";
+import { memory } from "../lib/memory-gateway";
+import { MAX_MEMORIES, renderMemories } from "../lib/nams";
 import { memoryScope } from "../lib/scope";
 
 export default defineDynamic({
   events: {
     "turn.started": async (event, ctx) => {
-      if (MEMORY_MODE !== "hooks") return null;
-
       // Retrieve against what the user actually just asked, so the injected
       // block is relevant to this turn rather than a generic dump.
       const query = latestUserText(event) ?? "user preferences and research interests";
 
       try {
-        const memories = await recall(memoryScope(ctx), query, MAX_MEMORIES);
+        const memories = await memory.for(memoryScope(ctx)).recall(query, MAX_MEMORIES);
         if (memories.length === 0) return null;
         return defineInstructions({ markdown: renderMemories(memories) });
       } catch (error) {

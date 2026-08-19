@@ -69,9 +69,10 @@ The argument for Vercel, in their terms:
 
 - **A gap in the catalog they already named.** They wrote the memory-extension
   example; nobody shipped the graph version.
-- **It exercises four eve primitives at once** — dynamic model resolution,
-  dynamic instructions, hooks, and dynamic tools. Good pressure on the API
-  surface, and a reference implementation for anyone else building memory.
+- **It exercises the primitives the memory-extension example names** — dynamic
+  instructions for recall, hooks for retention, dynamic tools for the graph
+  writes. Good pressure on the API surface, and a reference implementation for
+  anyone else building memory.
 - **Zero platform work.** It's a package plus a registry JSON. Neo4j operates
   the service.
 - **A developer audience that isn't already theirs.** Neo4j's community skews
@@ -113,6 +114,10 @@ Checklist:
 
 ## 5. The demo (~6 minutes)
 
+> Setup, the exact commands, verified questions and expected answers, and what
+> to do when something breaks live: **[`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md)**.
+> This section is what to *say*; the runbook is what to *type*.
+
 Six beats. Each has a point to land — say it out loud; don't assume the
 terminal makes it for you.
 
@@ -133,25 +138,35 @@ than a claim.
 Open [`agent/agent.ts`](industry-research-agent/agent/agent.ts).
 
 ```ts
-model: defineDynamic({
-  fallback: MODEL_ID,
-  events: {
-    "step.started": (_event, ctx) => {
-      const model = baseModel();
-      return MEMORY_MODE === "wrap" ? nams().wrap(model, memoryScope(ctx)) : model;
-    },
-  },
-}),
+"message.received"(event) { /* buffer the user's message  */ },
+"message.completed"(event) { /* buffer the assistant's reply */ },
+
+async "turn.completed"(_event, ctx) {
+  const { user, assistant } = pendingTurn.get();
+  try {
+    await memory.for(memoryScope(ctx)).remember({
+      content: `User asked: ${user}\nAgent answered: ${assistant ?? ""}`,
+      type: "interaction",
+    });
+  } catch (error) {
+    console.warn("[nams] failed to persist turn", error);   // never fail the turn
+  }
+},
 ```
 
-> "That's the whole integration in `wrap` mode. Memory is a property of the
-> model, so the harness, the tools, and the channels never learn it exists.
-> Nothing else in the project changes."
+> "That's the whole integration. Retention is a hook on your runtime events, so
+> the agent remembers because the turn happened — not because the model chose
+> to call a save tool. `agent.ts` is untouched; it's still a plain model id."
 
-Worth naming: `step.started` is the only scope allowed to return a live model
-object — session- and turn-scoped selections get serialized, so they must be id
-strings. Mentioning this signals we read the framework properly, and it's a
-constraint their docs could state more loudly.
+> "`memory` there is our gateway — one `MemoryClient` per user id, and the only
+> file in the project that touches the memory SDK."
+
+Two things worth naming, both constraints their docs could state more loudly: a
+thrown hook fails the turn, so every store is wrapped in try/catch — memory is
+an enhancement, and a NAMS outage should cost a personalized answer, not the
+answer. And the buffer is `defineState`, because the two halves of an exchange
+arrive in different events, which means different steps, and a step can resume
+on another machine.
 
 ### Beat 3 — the money shot *(~90s)*
 
@@ -214,22 +229,36 @@ This is the beat that separates us from "a chatbot with recall."
 npx eve registry view connection/mem0
 ```
 
-Eight lines of TypeScript inside a JSON wrapper. Then show the NAMS
-equivalent — verified live against `https://memory.neo4jlabs.com/mcp`
-(Streamable HTTP, `initialize` → 200, `tools/list` → 35 tools):
+Eight lines of TypeScript inside a JSON wrapper. Then show the NAMS equivalent,
+already running in the project — verified live against
+`https://memory.neo4jlabs.com/mcp` (Streamable HTTP, `initialize` → 200,
+`tools/list` → 48 tools anonymously, 35 with a key):
 
-```ts title="agent/connections/nams.ts"
-import { defineMcpClientConnection } from "eve/connections";
-
+```ts title="agent/connections/memory-graph.ts"
 export default defineMcpClientConnection({
-  url: "https://memory.neo4jlabs.com/mcp",
-  description: "Neo4j Agent Memory: store and recall persistent memory as a graph.",
+  url: process.env.NAMS_MCP_URL ?? "https://memory.neo4jlabs.com/mcp",
+  description: "The agent's own long-term memory as a graph. […] Read-only.",
   auth: { getToken: async () => ({ token: process.env.NAMS_API_KEY! }) },
-  tools: { allow: ["memory_get_context", "memory_add_messages", "memory_add_entity"] },
+  tools: {
+    allow: [
+      "memory_search_entities",
+      "memory_get_entity_by_name",
+      "memory_get_entity_history",
+      "memory_get_trace",
+      "memory_explain_decision",
+    ],
+  },
 });
 ```
 
 > "Structurally identical to the mem0 item you already ship. That's the ask."
+
+Worth saying out loud, because it is the part a platform team will check: those
+are five read tools out of forty-eight. The write tools are deliberately not
+allow-listed — retention is the hook's job, and exposing `memory_add_messages`
+here would give the model a second, optional path to store the same turn. The
+nine `workspace_*` tools include `workspace_delete` and `workspace_reprovision`,
+which is why the list is an allow-list and not a block-list.
 
 ---
 
@@ -284,17 +313,19 @@ tool accepts a `userId`, so a prompt-injected document can't address another
 user's memory. But **facts written to the long-term graph carry no user id**,
 so users sharing a workspace can read each other's stored facts. We reproduced
 it: four test identities each stored one preference, and the fourth was told it
-focused on all four. The answer today is one NAMS workspace per tenant, passed
-as `NAMS_WORKSPACE_ID`. Fix is tracked upstream at
+focused on all four. The answer today is one NAMS workspace per tenant —
+`workspaceIdFor(userId)` in `lib/nams.ts` is the seam, and it works because the
+gateway keeps one client per user. Fix is tracked upstream at
 [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory). Say this
 plainly; it's in our README already, and being first to raise it is worth more
 than hoping it doesn't come up.
 
 **"Is retrieval semantic?"** Not yet — NAMS search is lexical with AND
 semantics and returns no scores, so a paraphrase can miss a fact that is
-definitely stored. This is exactly why `wrap` and `hooks` beat `tools`: they
-retrieve against the user's own words, while `tools` lets the model paraphrase,
-and models paraphrase constantly. Vector retrieval is the roadmap item we'd
+definitely stored. This is exactly why recall lives in dynamic
+instructions rather than in a tool: resolving on `turn.started` retrieves
+against the user's own words, while a `recall_memory` tool retrieves against the
+model's paraphrase of them, and models paraphrase constantly. Vector retrieval is the roadmap item we'd
 most like to talk about.
 
 **"Who operates it, and what does it cost?"** Neo4j Labs runs the hosted
@@ -310,10 +341,13 @@ worth saying out loud, because it's a real eve footgun.
 its step and re-emits events. eve's guidance is to key on `event.meta.id`;
 NAMS has no dedupe key, so we budget for occasional duplicates. Honest gap.
 
-**"Why three modes? Pick one."** Fair. `wrap` is the default and the one to
-ship. The other two exist because this repo's job is to map every attachment
-point a platform offers — and because `hooks` is what a packaged extension
-would actually use. Exactly one is ever active, so no turn is stored twice.
+**"Could this just be a tool?"** It could, and that's the version most memory
+demos ship. We deliberately didn't: a tool-driven agent retains only when the
+model remembers to call `remember`, which holds for a few turns and then quietly
+stops. Hooks make retention a property of the turn. The README still maps the
+other attachment points eve offers — the model wrapper is a legitimate one-liner
+for an agent you'd rather not modify — but the project ships one path, so no turn
+is ever stored twice.
 
 **"Does this work outside Vercel?"** Yes, any Node host — which is worth
 saying, because it means we're not asking them to carry a lock-in story.

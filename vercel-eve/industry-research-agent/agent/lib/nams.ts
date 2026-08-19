@@ -1,35 +1,13 @@
 /**
- * NAMS (Neo4j Agent Memory System) wiring, shared by all three memory modes.
+ * NAMS configuration and the pure helpers around it.
  *
- * Everything here is configuration and small helpers. The memory logic itself
- * lives in `@neo4j-labs/nams-ai-provider`, a published npm package.
+ * Nothing here calls the NAMS SDK — that all happens in `./memory-gateway`,
+ * which imports this file. The split keeps the one stateful thing in the
+ * project (per-user memory clients) in one place, and leaves everything a hook
+ * or a tool needs to reason about — modes, limits, prompt rendering — free of
+ * network calls and trivially testable.
  */
-import {
-  createNams,
-  findExistingConversation,
-  makeClient,
-  resolveConversation,
-  retrieveMemories,
-  storeMemory,
-  type MemoryHit,
-  type NamsConfig,
-  type NamsScope,
-} from "@neo4j-labs/nams-ai-provider";
-
-/**
- * How memory is wired into the agent. Each mode uses a different eve primitive
- * and exactly one is active at a time, so no turn is ever stored twice.
- *
- *   wrap  — `agent/agent.ts` resolves a NAMS-wrapped model (transparent)
- *   hooks — `agent/instructions/memory.ts` recalls, `agent/hooks/persist-turn.ts` retains
- *   tools — `agent/tools/memory.ts` exposes recall_memory / remember to the model
- */
-export type MemoryMode = "wrap" | "hooks" | "tools";
-
-export const MEMORY_MODE: MemoryMode = (() => {
-  const raw = process.env.NAMS_MODE?.trim().toLowerCase();
-  return raw === "hooks" || raw === "tools" ? raw : "wrap";
-})();
+import type { MemoryHit, NamsConfig, NamsScope } from "@neo4j-labs/nams-ai-provider";
 
 /** Max memories injected into the prompt per turn. */
 export const MAX_MEMORIES = Number(process.env.NAMS_MAX_MEMORIES ?? 6);
@@ -37,11 +15,12 @@ export const MAX_MEMORIES = Number(process.env.NAMS_MAX_MEMORIES ?? 6);
 /**
  * Whether to record the agent's own reasoning steps and tool calls.
  *
- * Orthogonal to `MEMORY_MODE`: reasoning is NAMS's third memory type and no
- * mode writes it, so capturing it in all three double-stores nothing. It is
- * what lets the agent answer "why did you say that?" from recorded provenance
- * instead of re-inventing a rationale — and `retrieveMemories` already reads
- * the reasoning source, which stays empty until something fills it.
+ * Independent of the turn memory in `hooks/persist-turn.ts`: reasoning is
+ * NAMS's third memory type and nothing else writes it, so this never
+ * double-stores a turn. It is what lets the agent answer "why did you say
+ * that?" from recorded provenance instead of re-inventing a rationale — and
+ * retrieval already reads the reasoning source, which stays empty until
+ * something fills it.
  *
  * Costs one extra NAMS round trip per turn that produced reasoning or tool
  * calls. Set `NAMS_REASONING=off` to disable.
@@ -58,6 +37,7 @@ function requireApiKey(): string {
   return apiKey;
 }
 
+/** The base config every per-user client is built from. */
 export function namsConfig(): NamsConfig {
   return {
     apiKey: requireApiKey(),
@@ -67,42 +47,28 @@ export function namsConfig(): NamsConfig {
   };
 }
 
-/** Middleware/tools factory — `.wrap(model, scope)` and `.tools(scope)`. */
-export function nams() {
-  return createNams({ ...namsConfig(), maxMemories: MAX_MEMORIES });
-}
-
 /**
- * Resolve the NAMS conversation for a scope and hand back a bound client.
+ * Which NAMS workspace a user's memory belongs to.
  *
- * `conversationId` is deliberately left off `NamsScope`: NAMS then reuses the
- * user's most recent conversation, which is what makes recall work across eve
- * sessions. Pin one only if you want each eve session isolated.
+ * Long-term entities in NAMS are workspace-scoped and carry no user id, so two
+ * users sharing a workspace can surface each other's stored facts. Scoping in
+ * code does not fix that; **a workspace per tenant does.** This is the hook for
+ * that policy — return the tenant's workspace id here and the gateway builds
+ * that user a client bound to it, because `workspaceId` is fixed at client
+ * construction and cannot be varied per request.
+ *
+ * The single-tenant default (one workspace for everyone) is fine for a demo
+ * and for any agent whose users are all the same organization.
  */
-export async function memoryClient(scope: NamsScope) {
-  const config = namsConfig();
-  const client = makeClient(config);
-  const conversationId = await resolveConversation(client, config, scope);
-  return { client, conversationId };
+export function workspaceIdFor(_userId: string): string | undefined {
+  return process.env.NAMS_WORKSPACE_ID || undefined;
 }
 
-/** Search all four NAMS sources (long-term, conversation, cross-session, reasoning). */
-export async function recall(
-  scope: NamsScope,
-  query: string,
-  limit = MAX_MEMORIES,
-): Promise<MemoryHit[]> {
-  const { client, conversationId } = await memoryClient(scope);
-  return retrieveMemories(client, scope, conversationId, query, limit);
-}
-
-/** Persist one memory. `interaction` goes to short-term; the rest build the graph. */
-export async function remember(
-  scope: NamsScope,
-  input: { content: string; type: "fact" | "interaction" | "pattern" | "user_preference"; tags?: string[] },
-): Promise<void> {
-  const { client, conversationId } = await memoryClient(scope);
-  await storeMemory(client, conversationId, input);
+/** What `remember()` accepts. `interaction` is short-term; the rest build the long-term graph. */
+export interface StoreMemoryInput {
+  readonly content: string;
+  readonly type: "fact" | "interaction" | "pattern" | "user_preference";
+  readonly tags?: string[];
 }
 
 /** One tool the model invoked, recorded as a child of the reasoning step that asked for it. */
@@ -119,6 +85,14 @@ export interface ReasoningToolCall {
   readonly failed?: boolean;
 }
 
+/** One model step: what it was thinking, what it did, and what came back. */
+export interface ReasoningStepInput {
+  readonly reasoning: string;
+  readonly actionTaken: string;
+  readonly result?: string;
+  readonly toolCalls?: readonly ReasoningToolCall[];
+}
+
 /**
  * Make a tool's output storable as NAMS tool-call provenance.
  *
@@ -133,57 +107,13 @@ export function serializeToolResult(output: unknown, max = 2000): string | undef
   return text.length <= max ? text : `${text.slice(0, max)}… (truncated)`;
 }
 
-/** One model step: what it was thinking, what it did, and what came back. */
-export interface ReasoningStepInput {
-  readonly reasoning: string;
-  readonly actionTaken: string;
-  readonly result?: string;
-  readonly toolCalls?: readonly ReasoningToolCall[];
-}
-
-/**
- * Persist a turn's reasoning steps and their tool calls to NAMS reasoning memory.
- *
- * Uses `findExistingConversation` rather than `resolveConversation`: a trace is
- * provenance for a conversation that already happened, so it must never be the
- * thing that creates one. If the turn stored no messages there is nothing to
- * hang a trace off, and we skip.
- */
-export async function rememberReasoning(
-  scope: NamsScope,
-  steps: readonly ReasoningStepInput[],
-): Promise<void> {
-  if (steps.length === 0) return;
-
-  const config = namsConfig();
-  const client = makeClient(config);
-  const conversationId = await findExistingConversation(client, config, scope);
-  if (!conversationId) return;
-
-  for (const step of steps) {
-    const recorded = await client.reasoning.recordStep({
-      conversationId,
-      reasoning: step.reasoning,
-      actionTaken: step.actionTaken,
-      result: step.result,
-    });
-
-    for (const call of step.toolCalls ?? []) {
-      await client.reasoning.recordToolCall(recorded.id, call.toolName, call.arguments, {
-        result: call.result,
-        status: call.failed ? "failure" : "success",
-      });
-    }
-  }
-}
-
 /**
  * Render memories as the prompt block the model reads.
  *
  * Stored memory is user-provided data, not instruction. The fence and the
  * closing sentence keep a stored string from reading as a system directive.
  */
-export function renderMemories(memories: MemoryHit[]): string {
+export function renderMemories(memories: readonly MemoryHit[]): string {
   if (memories.length === 0) return "";
   const lines = memories.map((m) => `- (${m.source}/${m.type}) ${m.content}`).join("\n");
   return [
@@ -196,4 +126,4 @@ export function renderMemories(memories: MemoryHit[]): string {
   ].join("\n");
 }
 
-export type { MemoryHit, NamsScope };
+export type { MemoryHit, NamsConfig, NamsScope };

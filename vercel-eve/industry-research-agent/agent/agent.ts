@@ -1,39 +1,18 @@
-import { defineAgent, defineDynamic } from "eve";
-import { baseModel, MODEL_ID } from "./lib/model";
-import { MEMORY_MODE, nams } from "./lib/nams";
-import { memoryScope } from "./lib/scope";
+import { defineAgent } from "eve";
+import { baseModel, MODEL_ID, MODEL_ROUTING } from "./lib/model";
 
 export default defineAgent({
   /**
-   * In `wrap` mode the model itself carries memory.
+   * A plain model id routes through Vercel AI Gateway and lets eve compile the
+   * build-time metadata it wants — routing, credentials, context window.
    *
-   * `nams().wrap(model, scope)` returns a drop-in LanguageModelV4 that
-   * retrieves the caller's memories before every model call and persists the
-   * turn after it. The harness, tools, and channels are untouched — from eve's
-   * point of view this is just a model.
-   *
-   * `step.started` is the only scope allowed to return a live model object, and
-   * it is also where `ctx.session.auth` is settled, so the wrap is bound to
-   * whoever is actually calling. Re-resolving per step is cheap: the wrapper is
-   * middleware over the same underlying model, so it never re-routes the
-   * request or invalidates a prompt cache.
-   *
-   * The other two modes resolve the same base model unwrapped and get their
-   * memory from `agent/instructions/memory.ts` + `agent/hooks/persist-turn.ts`
-   * (`hooks`) or `agent/tools/memory.ts` (`tools`).
-   *
-   * `fallback` is the compiled static model: it anchors build-time metadata and
-   * serves only if the resolver fails.
+   * Memory is deliberately not here. It lives in `agent/instructions/memory.ts`
+   * (recall) and `agent/hooks/persist-turn.ts` (retention), so what the agent
+   * remembers is driven by runtime events rather than by the model choosing to
+   * call a save tool. The one case that still needs a resolved model instance
+   * is the direct-provider route, for running without a Vercel account.
    */
-  model: defineDynamic({
-    fallback: MODEL_ID,
-    events: {
-      "step.started": (_event, ctx) => {
-        const model = baseModel();
-        return MEMORY_MODE === "wrap" ? nams().wrap(model, memoryScope(ctx)) : model;
-      },
-    },
-  }),
+  model: MODEL_ROUTING === "openai" ? baseModel() : MODEL_ID,
 
   reasoning: "low",
 });

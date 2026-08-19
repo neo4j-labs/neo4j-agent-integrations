@@ -41,8 +41,3 @@ export function memoryScope(ctx: ScopeSource): NamsScope {
 
   return { userId: `eve-session:${ctx.session.id}` };
 }
-
-/** True when the scope came from a real authenticated user rather than a dev fallback. */
-export function isAuthenticatedScope(ctx: ScopeSource): boolean {
-  return ctx.session.auth.current?.principalType === "user";
-}

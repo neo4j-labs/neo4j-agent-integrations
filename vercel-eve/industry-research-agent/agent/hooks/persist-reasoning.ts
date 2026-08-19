@@ -2,11 +2,11 @@
  * Reasoning memory — the agent's own decision trail.
  *
  * NAMS has three memory types. Short-term (the conversation) and long-term
- * (entities and preferences) are written by whichever `NAMS_MODE` is active.
- * The third, reasoning, records *why* the agent answered as it did: one step
- * per reasoning block, with the tool calls that step invoked hanging off it.
- * Nothing else writes it, so this hook runs in all three modes without ever
- * storing a turn twice — see `REASONING_ENABLED` in `../lib/nams`.
+ * (entities and preferences) are written by `./persist-turn.ts`. The third,
+ * reasoning, records *why* the agent answered as it did: one step per reasoning
+ * block, with the tool calls that step invoked hanging off it. Nothing else
+ * writes it, so this hook never double-stores a turn — see `REASONING_ENABLED`
+ * in `../lib/nams`.
  *
  * That trail is what makes "why did you recommend that?" answerable from
  * recorded provenance instead of from a plausible-sounding reconstruction.
@@ -19,9 +19,9 @@
  */
 import { defineState } from "eve/context";
 import { defineHook } from "eve/hooks";
+import { memory } from "../lib/memory-gateway";
 import {
   REASONING_ENABLED,
-  rememberReasoning,
   serializeToolResult,
   type ReasoningStepInput,
   type ReasoningToolCall,
@@ -108,7 +108,7 @@ export default defineHook({
       if (steps.length === 0) return;
 
       try {
-        await rememberReasoning(memoryScope(ctx), steps);
+        await memory.for(memoryScope(ctx)).rememberReasoning(steps);
       } catch (error) {
         // A hook that throws fails the turn. Provenance is an enhancement, so
         // losing it must never cost the user an answer they already have.

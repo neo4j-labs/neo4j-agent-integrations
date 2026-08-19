@@ -5,7 +5,8 @@ open-source framework for durable backend agents.
 
 **[→ Tutorial: build and deploy an eve agent on Vercel with Neo4j memory](TUTORIAL.md)**
 **[→ Working project: `industry-research-agent/`](industry-research-agent/)**
-**[→ Demo script and the pitch to Vercel](PITCH_AND_DEMO.md)**
+**[→ Demo runbook: setup, questions, and how to show it](DEMO_RUNBOOK.md)**
+**[→ The pitch to Vercel and objection handling](PITCH_AND_DEMO.md)**
 
 ---
 
@@ -71,42 +72,67 @@ edges in Neo4j, so the memory and the domain knowledge are queryable together.
 
 ## Extension points
 
-eve exposes four places memory can attach. Three are used here.
+eve exposes four places memory can attach. This project uses the second for
+memory itself, the third for the bridge tools, and the fourth for read-only
+traversal of the memory graph; the first is documented as an option not taken,
+because the point of this page is to map the whole surface.
 
-### 1. The model (`agent/agent.ts`)
+**All of them go through one gateway.** `agent/lib/memory-gateway.ts` is the
+only file in the project that calls the NAMS SDK; hooks, tools, dynamic
+instructions, and `agent.ts` all reach memory through `memory.for(scope)`. It
+hands out **one `MemoryClient` per user id** and reuses it, for three reasons:
 
-`defineAgent({ model })` accepts a resolved AI SDK `LanguageModel`, and
-`defineDynamic` can resolve one per step. Since
-`@neo4j-labs/nams-ai-provider` produces a memory-wrapped `LanguageModelV4`,
-memory becomes a property of the model — invisible to the harness, tools, and
-channels.
+- `resolveConversation` caches the user's conversation id in provider state
+  keyed by the client *instance*, so a fresh client per call means a wasted
+  `list_conversations` round trip before every recall and every store — three
+  per turn in `hooks` mode.
+- `workspaceId` is fixed at client construction, so a workspace-per-tenant
+  policy (the only hard isolation NAMS offers — see
+  [Challenges](#2-long-term-entities-are-workspace-scoped-not-user-scoped--blocking-for-multi-tenant))
+  is only expressible with a client per tenant. `workspaceIdFor(userId)` in
+  `lib/nams.ts` is that seam.
+- The map key is the namespace, and the map is bounded (`NAMS_CLIENT_CACHE`,
+  default 256, LRU).
 
-```ts title="agent/agent.ts"
-import { defineAgent, defineDynamic } from "eve";
-import { createNams } from "@neo4j-labs/nams-ai-provider";
-import { gateway } from "ai";
-
-const nams = () => createNams({ apiKey: process.env.NAMS_API_KEY! });
-
-export default defineAgent({
-  model: defineDynamic({
-    fallback: "openai/gpt-5.4",
-    events: {
-      "step.started": (_event, ctx) =>
-        nams().wrap(gateway("openai/gpt-5.4"), { userId: userIdFrom(ctx) }),
-    },
-  }),
-});
+```ts
+const mem = memory.for(memoryScope(ctx));   // namespace = userId
+await mem.recall(query, 6);
+await mem.remember({ content, type: "interaction" });
+await mem.rememberReasoning(steps);
 ```
 
-Constraints worth knowing: only `step.started` may return a live model object
-(session- and turn-scoped selections are serialized, so they must be id
-strings), and `fallback` must stay a plain id because it anchors build-time
-routing and context-window metadata.
+### 1. The model (`agent/agent.ts`) — available, not used here
 
-### 2. Instructions and hooks (`agent/instructions/`, `agent/hooks/`)
+`defineAgent({ model })` accepts a resolved AI SDK `LanguageModel`, and
+`defineDynamic` can resolve one per step. Since `createNams().wrap(model, scope)`
+produces a memory-wrapped `LanguageModelV4`, memory can be made a property of
+the model — invisible to the harness, tools, and channels:
 
-The split a packaged memory extension would ship, and the shape eve's own
+```ts
+model: defineDynamic({
+  fallback: "openai/gpt-5.4",
+  events: {
+    "step.started": (_event, ctx) =>
+      createNams(config).wrap(gateway("openai/gpt-5.4"), { userId: userIdFrom(ctx) }),
+  },
+}),
+```
+
+It is the shortest way to add memory to an agent you would rather not modify,
+and the right choice if that is your constraint. **This project does not use
+it**, because it stores every turn with no say in what is worth keeping, and
+because putting retention in a hook costs one extra file and makes the decision
+explicit. `agent.ts` here is a plain model id.
+
+Constraints worth knowing if you do take this route: only `step.started` may
+return a live model object (session- and turn-scoped selections are serialized,
+so they must be id strings), and `fallback` must stay a plain id because it
+anchors build-time routing and context-window metadata.
+
+### 2. Instructions and hooks (`agent/instructions/`, `agent/hooks/`) — used here
+
+How this project wires memory, the split a packaged memory extension would
+ship, and what eve's own
 [multi-tenant memory pattern](https://vercel.com/docs/eve/patterns/multi-tenant-memory)
 recommends:
 
@@ -119,38 +145,81 @@ recommends:
   event, so storage never depends on the model choosing to call a tool.
 
 Hooks are observe-only and **a thrown hook fails the turn** — always wrap the
-store call in `try`/`catch`.
+store call in `try`/`catch`. This is the shape to ship because it is the only
+one where retention does not depend on the model choosing to save: a tool-driven
+agent remembers enthusiastically for a few turns and then stops.
 
-### 3. Tools (`agent/tools/`)
+### 3. Tools (`agent/tools/`) — the domain surface, not the retention path
 
-`defineTool` files, or a `defineDynamic` map, expose `recall_memory` and
-`remember` to the model. The only mode where memory is visible in the TUI and
-in traces, and the only one that supports "forget that."
+`defineTool` files, or a `defineDynamic` map. Memory *can* be exposed this way
+as `recall_memory` / `remember`, which is the only shape visible in the TUI and
+in traces, and the only one that supports "forget that" — but it is also the
+only one where forgetting to call a tool means forgetting the user, so this
+project does not retain that way. The tool surface is deliberately small —
+`search_news` and nothing else — and everything the model can reach beyond it
+is the read-only MCP connection below.
 
 With dynamic tools, `execute` **must be an inline function expression** — eve
 reconstructs it from its closure on replay and does not detect
 `execute: namedFn`, which silently breaks after a resume.
 
-### 4. Connections (`agent/connections/`) — for the graph, not the memory
+### 4. Connections (`agent/connections/`) — read-only traversal of memory
 
 `defineMcpClientConnection` points eve at any Streamable-HTTP or SSE MCP server,
-exposing its tools as `<connection>__<tool>`:
+exposing its tools as `<connection>__<tool>` and keeping the URL and credentials
+out of model context entirely.
 
-```ts title="agent/connections/neo4j.ts"
-import { defineMcpClientConnection } from "eve/connections";
+NAMS publishes an MCP server alongside its REST API, so
+[`connections/memory-graph.ts`](industry-research-agent/agent/connections/memory-graph.ts)
+mounts it as a way for the model to *walk* memory it is not allowed to write:
 
+```ts title="agent/connections/memory-graph.ts"
 export default defineMcpClientConnection({
-  url: process.env.MCP_URL!,
-  description: "Company News knowledge graph: organizations, people, news.",
-  auth: { getToken: async () => ({ token: process.env.MCP_BEARER_TOKEN! }) },
-  tools: { allow: ["get_neo4j_schema", "read_neo4j_cypher"] },
+  url: process.env.NAMS_MCP_URL ?? "https://memory.neo4jlabs.com/mcp",
+  description: "The agent's own long-term memory as a graph. […] Read-only.",
+  auth: { getToken: async () => ({ token: process.env.NAMS_API_KEY! }) },
+  tools: {
+    allow: [
+      "memory_search_entities",
+      "memory_get_entity_by_name",
+      "memory_get_entity_history",
+      "memory_get_trace",
+      "memory_explain_decision",
+    ],
+  },
 });
 ```
 
-Use this with the [Neo4j MCP server](https://github.com/neo4j/mcp) when you want
-schema-driven Cypher. The example project uses typed `defineTool` files against
-the driver instead — narrower surface, no server to run, and the model picks an
-edge rather than writing Cypher.
+Three things that surface generalizes:
+
+- **`tools.allow`, not `tools.block`.** The server publishes 48 tools (verified
+  live against `tools/list`): 26 `memory_*`, 13 `skill_*`, 9 `workspace_*`. The
+  last group includes `workspace_delete` and `workspace_reprovision`, so an
+  enumerated allow-list is not optional.
+- **No write tools.** `memory_add_messages` here would give the model a second,
+  optional path to store a turn `hooks/persist-turn.ts` already stores — the
+  "did it remember?" coin-flip the hook exists to remove. Retention is the
+  hook's job; the connection reads.
+- **`workspace_id` via `toolCall.providedArguments`.** Every NAMS MCP tool
+  accepts an optional `workspace_id` and no request header binds one, so left
+  alone it appears in the model-facing input schema — a `userId` tool parameter
+  one level out. Declaring it as an application-provided argument makes eve
+  strip it from the schema and inject `workspaceIdFor(userId)` at call time.
+
+For the domain graph, the [Neo4j MCP server](https://github.com/neo4j/mcp) fits
+the same slot when you want schema-driven Cypher. The example project uses typed
+`defineTool` files against the driver instead — narrower surface, no server to
+run, and the model picks an edge rather than writing Cypher.
+
+### Channels (`agent/channels/`) — identity, for free
+
+Not a memory attachment point, but the cheapest way to satisfy the one rule the
+others depend on. [`channels/eve.ts`](industry-research-agent/agent/channels/eve.ts)
+needs an `AuthFn` you write, and `ctx.session.auth` is what `memoryScope` reads.
+Platform channels derive the principal from the inbound event instead — a
+`principalId` qualified by workspace and a `principalType` of `"user"` for a
+human, `"service"` for a bot, which `memoryScope` refuses — so adding one scopes
+memory per sender with no memory code in the channel file.
 
 ---
 
@@ -216,16 +285,18 @@ across sessions and deployments.
 │                                                                 │
 │  agent/channels/eve.ts   auth walk → ctx.session.auth           │
 │           │                                                     │
-│           ▼              ┌── memory (exactly one mode) ──────┐  │
-│  agent/agent.ts ─────────┤ wrap   dynamic model, step.started│  │
-│    dynamic model         │ hooks  instructions/ + hooks/     │  │
-│           │              │ tools  dynamic tools/             │  │
+│           ▼              ┌── memory ─────────────────────────┐  │
+│  agent/agent.ts ─────────┤ instructions/memory.ts   recall    │  │
+│    plain model id        │ hooks/persist-turn.ts    retention │  │
+│           │              │ hooks/persist-reasoning  provenance│  │
 │           │              └───────────────┬───────────────────┘  │
-│           ▼                              │                      │
+│           │                all via lib/memory-gateway.ts        │
+│           ▼                   one MemoryClient per userId       │
 │  harness ── tool loop                    │                      │
-│    company_profile · company_network · search_news              │
+│    search_news       full-text over the news graph              │
+│    memory-graph__*  read-only MCP traversal of memory           │
 └───────────┬──────────────────────────────┼──────────────────────┘
-            │ bolt (read-only)             │ HTTPS
+            │ bolt (read-only by default)  │ HTTPS
             ▼                              ▼
    ┌──────────────────────┐   ┌──────────────────────────────────┐
    │ Company News graph   │   │ NAMS — memory.neo4jlabs.com      │
@@ -242,24 +313,24 @@ across sessions and deployments.
 ```
 industry-research-agent/
 ├── agent/
-│   ├── agent.ts                    ← dynamic model; wraps with NAMS in `wrap` mode
+│   ├── agent.ts                    ← model only; memory lives in hooks
 │   ├── instructions.md             ← research + memory system prompt
 │   ├── channels/eve.ts             ← auth walk = memory boundary
-│   ├── instructions/memory.ts      ← `hooks` mode: recall on turn.started
-│   ├── hooks/persist-turn.ts       ← `hooks` mode: retention on turn.completed
-│   ├── hooks/persist-reasoning.ts  ← all modes: reasoning steps + tool provenance
+│   ├── connections/memory-graph.ts ← NAMS MCP, read-only, allow-listed
+│   ├── instructions/memory.ts      ← recall, resolved on turn.started
+│   ├── hooks/persist-turn.ts       ← retention, flushed on turn.completed
+│   ├── hooks/persist-reasoning.ts  ← reasoning steps + tool provenance
 │   ├── tools/
-│   │   ├── company_profile.ts      ← org, HQ, categories, CEO, board
-│   │   ├── company_network.ts      ← competitors/suppliers/subsidiaries/investors
-│   │   ├── search_news.ts          ← full-text over article chunks
-│   │   └── memory.ts               ← `tools` mode: recall_memory + remember
+│   │   └── search_news.ts          ← full-text over article chunks
 │   └── lib/
-│       ├── nams.ts                 ← NAMS config and helpers
+│       ├── memory-gateway.ts       ← the only file that calls the NAMS SDK
+│       ├── nams.ts                 ← config, workspace policy, pure helpers
 │       ├── scope.ts                ← memory identity from verified session auth
+│       ├── bridge.ts               ← (:User)→domain edges, opt-in via NEO4J_BRIDGE
 │       ├── model.ts                ← AI Gateway or direct provider
-│       └── neo4j.ts                ← read-only driver
+│       └── neo4j.ts                ← driver; reads always, writes only when bridged
 └── evals/
-    ├── graph/company-lookup.eval.ts
+    ├── graph/news-search.eval.ts
     └── memory/cross-session-recall.eval.ts
 ```
 
@@ -305,25 +376,32 @@ await readQuery(
 );
 ```
 
-### Memory modes
+### How memory is wired
 
-Set `NAMS_MODE`. Exactly one is active, so no turn is ever stored twice.
+One shape, three files, all reaching NAMS through the gateway.
 
-| `NAMS_MODE` | eve primitive | Retrieval query written by | Storage driven by | Visible in TUI |
-|---|---|---|---|---|
-| `wrap` (default) | dynamic model, `step.started` | the user | the model wrapper | no |
-| `hooks` | dynamic instructions + hook | the user | the runtime | no |
-| `tools` | dynamic tools, `session.started` | the model | the model | yes |
+| File | eve primitive | Event | Job |
+|---|---|---|---|
+| `instructions/memory.ts` | dynamic instructions | `turn.started` | recall — injects the user's memories as prompt *data* |
+| `hooks/persist-turn.ts` | hook | `message.received` → `message.completed` → `turn.completed` | retention — one write per exchange |
+| `hooks/persist-reasoning.ts` | hook | `actions.requested` / `action.result` / `reasoning.completed` → `turn.completed` | provenance — reasoning steps and tool calls |
 
-**Reasoning memory is orthogonal to all three.** NAMS's third memory type
+The retrieval query is the user's own words, and storage is driven by the
+runtime rather than by the model — neither depends on a tool call the model
+might skip. Retrieval is lexical (see
+[Challenges](#1-retrieval-is-lexical-not-semantic--moderate)), which is the
+second reason recall belongs on `turn.started`: it searches what the user said,
+not a model's paraphrase of it.
+
+**Reasoning memory is independent of the other two.** NAMS's third memory type
 records *why* the agent answered as it did — one step per reasoning block, with
-the tool calls that step invoked hanging off it. No mode writes it, so
+the tool calls that step invoked hanging off it. Nothing else writes it, so
 [`hooks/persist-reasoning.ts`](industry-research-agent/agent/hooks/persist-reasoning.ts)
-runs in every mode without ever double-storing a turn. It buffers
-`actions.requested` / `action.result` / `reasoning.completed` and flushes once
-on `turn.completed` — a step's tool calls are only known after its reasoning
-block completes, and `recordToolCall` needs the id of the step it belongs to.
-Set `NAMS_REASONING=off` to disable; it costs one extra round trip per turn.
+never double-stores a turn. It buffers `actions.requested` / `action.result` /
+`reasoning.completed` and flushes once on `turn.completed` — a step's tool calls
+are only known after its reasoning block completes, and `recordToolCall` needs
+the id of the step it belongs to. Set `NAMS_REASONING=off` to disable; it costs
+one extra round trip per turn.
 
 This is what `retrieveMemories`' fourth source reads, and what makes "why did
 you recommend that?" answerable from recorded provenance. It uses
@@ -332,16 +410,14 @@ for a conversation that already happened and must never be the thing that
 creates one.
 
 ```ts
-// wrap    — transparent, one line
-nams().wrap(baseModel(), memoryScope(ctx))
+const mem = memory.for(memoryScope(ctx));   // every path starts here
 
-// hooks   — recall
-defineInstructions({ markdown: renderMemories(await recall(memoryScope(ctx), event.data.message)) })
-// hooks   — retention
-await remember(memoryScope(ctx), { content, type: "interaction" })
-
-// tools   — model-driven
-recall_memory({ query }) / remember({ content, type })
+// recall     (instructions/memory.ts, turn.started)
+defineInstructions({ markdown: renderMemories(await mem.recall(event.data.message)) })
+// retention  (hooks/persist-turn.ts, turn.completed)
+await mem.remember({ content, type: "interaction" })
+// provenance (hooks/persist-reasoning.ts, turn.completed)
+await mem.rememberReasoning(steps)
 ```
 
 ### Verify
@@ -371,9 +447,14 @@ graph memory different from a key/value store.
 
 The difference appears when memory and domain data are **nodes in the same
 database**, joined by edges. Point NAMS at a Neo4j you control (`endpoint` on
-`MemoryClient`, or `NAMS_ENDPOINT` here), load your domain graph into it, and
-write a **bridge edge** from the memory graph's `User` to the real entity every
-time you store a preference:
+`MemoryClient`, or `NAMS_ENDPOINT` here), load your domain graph into it, set
+`NEO4J_BRIDGE=on`, and write a **bridge edge** from the memory graph's `User` to
+the real entity every time you store a preference. That is
+[`agent/lib/bridge.ts`](industry-research-agent/agent/lib/bridge.ts). Its
+`linkInterest` and `dailyBrief` are what a `track_interest` / `daily_brief`
+tool pair calls — registered with `defineDynamic` and gated on `NEO4J_BRIDGE`,
+which is how this project shipped them before the tool surface was cut back to
+`search_news`:
 
 ```cypher
 // The analyst says "I track Neo4j" → canonicalize to the Organization node.
@@ -389,6 +470,11 @@ MERGE (u)-[f:FOCUSES_ON]->(c)
   ON CREATE SET f.statedAs = $rawText;
 ```
 
+Note that the `User` is `MERGE`d but the domain node is only ever `MATCH`ed: a
+misspelled company must fail to link, not quietly create a second
+`Organization` that shadows the real one. `linkInterest` returns near-miss
+suggestions in that case so the agent asks instead of guessing.
+
 Storing the user's original words on the edge (`statedAs`) is what lets the
 agent later say *why* in the analyst's own language instead of paraphrasing.
 
@@ -397,13 +483,18 @@ not already following?" — stops being a vector lookup plus a post-filter and
 becomes one traversal:
 
 ```cypher
+CALL {
+  MATCH (a:Article) WHERE a.date IS NOT NULL AND a.date <= datetime()
+  RETURN max(a.date) AS newest
+}
+WITH coalesce(newest, datetime()) AS anchor              // "recent" relative to the data
 MATCH (u:User {userId: $userId})-[:FOCUSES_ON]->(cat:IndustryCategory)
 MATCH (o:Organization)-[:HAS_CATEGORY]->(cat)
-WHERE NOT (u)-[:TRACKS]->(o)                       // novelty: not already followed
+WHERE NOT (u)-[:TRACKS]->(o)                             // novelty: not already followed
 MATCH (a:Article)-[:MENTIONS]->(o)
-  WHERE a.date >= date() - duration({days: 7})
-RETURN o.name                        AS company,
-       collect(DISTINCT cat.name)    AS becauseYouFollow,
+  WHERE a.date >= anchor - duration({days: 90})
+RETURN o.name                          AS company,
+       collect(DISTINCT cat.name)      AS becauseYouFollow,
        collect(DISTINCT a.title)[0..3] AS headlines
 ORDER BY size(headlines) DESC
 LIMIT 10;
@@ -414,19 +505,22 @@ row. It cannot drift from the recommendation, because it *is* the
 recommendation — the same property that makes the reasoning trail in
 `hooks/persist-reasoning.ts` worth recording, applied to retrieval.
 
-**Why the shipped project does not do this.** Two hard reasons, both
-environmental rather than architectural:
+**Why this is off by default.** Two hard reasons, both environmental rather
+than architectural:
 
-1. `demo.neo4jlabs.com` is a shared read-only instance. [`lib/neo4j.ts`](industry-research-agent/agent/lib/neo4j.ts)
-   pins `routing: "READ"` deliberately — there is no `MERGE` to be had.
+1. `demo.neo4jlabs.com` is a shared read-only instance. `writeQuery` in
+   [`lib/neo4j.ts`](industry-research-agent/agent/lib/neo4j.ts) refuses unless
+   `NEO4J_BRIDGE=on`, and `readQuery` pins `routing: "READ"` — there is no
+   `MERGE` to be had against the demo graph.
 2. The hosted NAMS workspace is a different database from the demo graph, and
    no traversal crosses databases.
 
 Both dissolve the moment you bring your own Aura instance: load your domain
-data, point `NAMS_ENDPOINT` at NAMS running against it, and the bridge writes
-above are ordinary tool code. The memory wiring in
+data, point `NAMS_ENDPOINT` at NAMS running against it, flip `NEO4J_BRIDGE=on`,
+and the bridge tools are worth registering again. The memory wiring in
 [Extension points](#extension-points) does not change at all — this is a
-deployment topology decision, not a different integration.
+deployment topology decision, not a different integration. Walkthrough:
+[TUTORIAL → Step 8](TUTORIAL.md#step-8--point-nams-at-your-own-neo4j-and-write-bridge-edges).
 
 This is the pattern William Lyon's
 [post](https://lyonwj.com/blog/agent-memory-with-eve-and-nams) is built around,
@@ -447,17 +541,17 @@ A paraphrased query misses a memory that is definitely stored. Reproduced live:
 "What geography do I restrict research to?" → nothing
 ```
 
-*Impact:* `tools` mode is the weakest of the three, because the model writes the
-query and models paraphrase. `wrap` and `hooks` retrieve against the user's own
+*Impact:* a memory *tool* is the weakest shape, because the model writes the
+query and models paraphrase. Recall on `turn.started` retrieves against the user's own
 words and hit far more often.
-*Workaround:* prefer `wrap`/`hooks`; describe the tool as taking keywords, not
+*Workaround:* keep recall out of the model's hands; describe any memory tool you do add as taking keywords, not
 questions. The provider already fans a query out into single keywords.
 
 ### 2. Long-term entities are workspace-scoped, not user-scoped — blocking for multi-tenant
 
 `memoryScope` correctly scopes conversations by user, but facts written to the
 long-term graph carry no user id, so users sharing a workspace read each other's
-stored facts. Reproduced in this project while testing the three modes. Four
+stored facts. Reproduced in this project during testing. Four
 `DEMO_USER_ID` values each stored one preference in the same workspace; the
 fourth user then asked what they focus on:
 
@@ -471,7 +565,14 @@ Only "Nordic fintech" belonged to that user. The other three came from the other
 test identities, and the agent presented all four as one profile without
 hesitation.
 
-*Workaround:* **one NAMS workspace per tenant**, passed as `NAMS_WORKSPACE_ID`.
+*Workaround:* **one NAMS workspace per tenant.** Return the tenant's workspace
+id from `workspaceIdFor(userId)` in
+[`lib/nams.ts`](industry-research-agent/agent/lib/nams.ts); the gateway builds
+that tenant a client bound to it. This only works because the gateway keeps one
+client per user — `workspaceId` is fixed at client construction and cannot be
+varied per request on a shared client, which is the third reason
+[the gateway exists](#extension-points). Scoping in application code is not
+enough on its own.
 Tracking upstream at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory).
 
 ### 3. Entity extraction is asynchronous — minor
@@ -561,7 +662,8 @@ the same item shape applies with a plain bearer key. Verified live against
 
 ```
 initialize  → 200  {"name":"nams-memory","version":"0.1.0"}   (Streamable HTTP)
-tools/list  → 200  35 tools (26 memory_*, 9 workspace_*)
+tools/list  → 200  35 tools with a key (26 memory_*, 9 workspace_*)
+            → 200  48 anonymously (the same, plus 13 skill_*)
 ```
 
 Which makes the whole integration this file:
@@ -579,12 +681,18 @@ export default defineMcpClientConnection({
 
 Two caveats before shipping it. The surface includes destructive
 `workspace_delete` / `workspace_reprovision`, so `tools.allow` is not optional
-here. And no header binds a workspace — use a workspace-bound key or pass
-`workspace_id` per call via `toolCall.providedArguments`.
+here. And no request header binds a workspace — use a workspace-bound key, or
+pass `workspace_id` per call via `toolCall.providedArguments`, which also strips
+it from the schema the model sees. The shipped
+[`connections/memory-graph.ts`](industry-research-agent/agent/connections/memory-graph.ts)
+does the latter.
 
-This is deliberately *not* wired into the example project: it would register
-memory tools alongside whichever of the three modes is active and double-handle
-every turn. It is the right shape for a registry entry, not a fourth mode.
+The example project mounts this server, but **read-only**
+([`connections/memory-graph.ts`](industry-research-agent/agent/connections/memory-graph.ts)):
+allowing the write tools would register memory tools alongside the retention
+hook and double-handle every turn. A registry entry would make the same
+distinction — a read surface the model can traverse, with retention still owned
+by the extension's hook.
 
 The [Neo4j MCP server](https://github.com/neo4j/mcp) fits the same slot for the
 knowledge graph itself, giving eve agents schema-driven Cypher against any Aura
@@ -600,35 +708,38 @@ and explanation into one Cypher query instead of a cross-system join.
 
 ### 4. Channels as identity
 
-Slack, Discord, Teams, Telegram, and Linear channels attach a user principal for
-the human sender automatically. `eve add slack` therefore gives correctly scoped
-per-user memory with no additional auth code — a strong demo of memory that
-follows a person across surfaces.
+Platform channels attach a user principal for the human sender automatically, so
+a memory scope derived from `ctx.session.auth` gives correctly scoped per-user
+memory with no additional auth code — memory that follows a person across
+surfaces, for free.
 
 ---
 
 ## Status
 
-- ✅ Transparent memory via the model wrapper (`wrap`)
-- ✅ Recall via dynamic instructions, retention via hooks (`hooks`)
-- ✅ Model-driven memory tools (`tools`)
-- ✅ Reasoning steps and tool provenance recorded in every mode
+- ✅ Recall via dynamic instructions, retention via hooks — no memory tool the model can forget to call
+- ✅ One `MemoryClient` per user behind a single gateway; the SDK has one call site
+- ✅ Reasoning steps and tool provenance recorded
 - ✅ Typed graph tools over the Neo4j driver
+- ✅ Bridge edges from `(:User)` to domain nodes, behind `NEO4J_BRIDGE=on`
+- ✅ NAMS MCP mounted as a read-only connection, allow-listed to 5 of 48 tools
 - ✅ `eve build` bundles the driver and provider with no `externalDependencies`
 - ✅ Deploys to Vercel; verified fail-closed auth on the built output
 - ✅ Cross-session recall covered by an eval
 - ⚠️ Lexical-only retrieval; no vector search in NAMS today
 - ⚠️ Long-term memory is workspace-scoped — one workspace per tenant
 - ⚠️ Non-string tool-call results silently stored as `""` — serialize first
-- ❌ Memory and domain data live in separate databases; no bridge edges (see
+- ⚠️ Bridge edges need your own Neo4j; the shared demo instance is read-only, so
+  they are off by default (see
   [Co-locating memory and domain data](#co-locating-memory-and-domain-data))
 - ❌ No published eve extension or registry entry yet
 - 🔄 eve is in beta; APIs may change before GA
 
 ## Effort Score: 3/10
 
-Transparent memory is one dynamic resolver in `agent.ts`. Most of the work is
-deciding where the principal comes from, not writing memory code.
+Recall is one dynamic instructions file, retention is one hook, and both go
+through a gateway of about 150 lines. Most of the work is deciding where
+the principal comes from, not writing memory code.
 
 ## Impact Score: 9/10
 
