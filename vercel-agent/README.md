@@ -155,7 +155,6 @@ npm test                             # route tests, fully mocked — no credenti
 
 Neither sample needs `--legacy-peer-deps`: both install cleanly under npm's strict peer resolution.
 
-The demo used to require it. It ran React 18 on Next.js 14, which violated `@neo4j-ndl/react`'s `react >=19.0.0` peer, and a `legacy-peer-deps=true` `.npmrc` masked the conflict. Moving to React 19 on Next.js 16 satisfies the peer honestly and the `.npmrc` is gone. The AI SDK was never the cause — `@ai-sdk/react@4` accepts `react ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1`, so it was satisfied by both.
 
 ## Configuration
 
