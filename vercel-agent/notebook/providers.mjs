@@ -9,6 +9,8 @@
  *                                      npm install @ai-sdk/google
  *   AI_PROVIDER=anthropic            → ANTHROPIC_API_KEY required
  *                                      npm install @ai-sdk/anthropic
+ *   AI_PROVIDER=mistral              → MISTRAL_API_KEY required
+ *                                      npm install @ai-sdk/mistral
  *
  * Optionally set AI_MODEL to override the provider default:
  *   AI_MODEL=gpt-5.4-mini

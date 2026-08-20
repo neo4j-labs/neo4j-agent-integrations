@@ -17,14 +17,16 @@ A production-ready Next.js chat application demonstrating **NAMS (Neo4j Agent Me
 git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
 cd neo4j-agent-integrations/vercel-agent/vercel_Nams_demo
 
-npm install --legacy-peer-deps    # --legacy-peer-deps: NDL components pin React 18
+npm install --legacy-peer-deps    # --legacy-peer-deps: NDL components require React 19
 
 cp .env.local.example .env.local  # set MEMORY_API_KEY and OPENAI_API_KEY at minimum
 
 npm run dev                       # http://localhost:3000
 ```
 
-`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.1.0` in `package.json` — the only version currently published to npm) — nothing to build or link locally. This package's peer dependencies target **Vercel AI SDK v6** (`ai@~6.0.0`, `@ai-sdk/mcp@~1.0.0`), so this demo pins matching `ai`/`@ai-sdk/*` versions rather than the newer v7 line. A `.npmrc` with `legacy-peer-deps=true` is included to smooth over a minor `zod` peer-range mismatch — plain `npm install` works out of the box.
+`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.2.1` in `package.json`) — nothing to build or link locally. Its peer dependencies target **Vercel AI SDK v7** (`ai@^7.0.0`, `@ai-sdk/mcp@^2.0.0`, `@ai-sdk/provider@^4.0.0`), and this demo pins matching `ai`/`@ai-sdk/*` versions — the same set the [`notebook/`](../notebook/) scripts use, so both samples resolve to identical dependency versions.
+
+A `.npmrc` with `legacy-peer-deps=true` is included so plain `npm install` works out of the box. It is needed for one reason only: `@neo4j-ndl/react` declares `react >=19.0.0` while this demo runs React 18 with Next.js 14. The AI SDK is not involved — `@ai-sdk/react@4` explicitly accepts `react ^18 || 19.x`.
 
 ---
 
@@ -38,11 +40,11 @@ NAMS_MODE=middleware   # transparent memory, wraps a model instance
 NAMS_MODE=tools        # model calls query_memory / store_memory explicitly
 ```
 
-| Mode | Call | Memory handling | Tool calls visible in UI |  |
-|------|------|-----------------|--------------------------|---------|
-| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No | |
-| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |  |
-| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |  |
+| Mode | Call | Memory handling | Tool calls visible in UI |
+|------|------|-----------------|--------------------------|
+| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No |
+| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |
+| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |
 
 Choose **provider** when you construct models from a provider and want a drop-in replacement. Choose **middleware** when the base model is already resolved (e.g. it isn't always `openai`). Choose **tools** when you want the memory cycle to be explicit and inspectable.
 
@@ -248,7 +250,7 @@ vercel_Nams_demo/
 npm install --legacy-peer-deps
 ```
 
-`--legacy-peer-deps` is required: `@neo4j-ndl/react` pins React 18 while some AI SDK packages advertise React 19.
+`--legacy-peer-deps` is required because `@neo4j-ndl/react` declares a `react >=19.0.0` peer while this demo runs React 18 (Next.js 14). Every AI SDK package here accepts React 18, so the AI SDK is not the cause.
 
 ### 2. Configure
 
@@ -446,7 +448,7 @@ During end-to-end testing with two different `userId`s sharing one NAMS workspac
 |---------|------|
 | `@neo4j-labs/nams-ai-provider` | NAMS integration — `createNams()`, `createNamsProvider()`, `enforceQueryMemory()` |
 | `@neo4j-labs/agent-memory` | NAMS REST client used by the provider |
-| `ai` (Vercel AI SDK v6) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
+| `ai` (Vercel AI SDK v7) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
 | `@ai-sdk/openai` | OpenAI model provider |
 | `@ai-sdk/react` | `useChat` React hook |
 | `@ai-sdk/mcp` | MCP client used by `lib/neo4j-mcp.ts` |

@@ -23,6 +23,11 @@ cp .env.example .env   # fill in OPENAI_API_KEY, NEO4J_*, MCP_*, and MEMORY_API_
 npm install
 ```
 
+These scripts run **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`, `@ai-sdk/openai@^4`)
+with `@neo4j-labs/nams-ai-provider@^0.2`, the same set the
+[`vercel_Nams_demo/`](../vercel_Nams_demo/) app pins — both resolve to identical
+versions.
+
 ## Running
 
 ```bash
@@ -87,6 +92,7 @@ providers via `AI_PROVIDER`:
 | OpenAI (default) | `openai` | `OPENAI_API_KEY` |
 | Google Gemini | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
 | Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
 
 ## Notes
 
