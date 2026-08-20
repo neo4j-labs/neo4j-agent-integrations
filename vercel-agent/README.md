@@ -14,7 +14,7 @@ This folder covers both, twice: once as small Node.js scripts you can read top t
 | Sample | Runtime | AI SDK | What it shows |
 |---|---|---|---|
 | **[notebook/](./notebook/)** | Node.js `.mjs` scripts | **v7** | Five progressive scripts: direct driver query → MCP agent → MCP + custom Cypher tools → low-level memory client → NAMS provider. Multi-LLM (OpenAI / Gemini / Anthropic / Mistral). |
-| **[vercel_Nams_demo/](./vercel_Nams_demo/)** | Next.js 14 app | **v7** | Full chat app: three NAMS integration modes, live MCP graph access, memory + reasoning-trace panels, route-level tests. |
+| **[vercel_Nams_demo/](./vercel_Nams_demo/)** | Next.js 16 app | **v7** | Full chat app: three NAMS integration modes, live MCP graph access, memory + reasoning-trace panels, route-level tests. |
 
 Start with `notebook/` to understand the wiring; go to `vercel_Nams_demo/` for the shape of a real application.
 
@@ -68,14 +68,22 @@ Both samples run **AI SDK v7** on identical dependency versions, so what you lea
 
 | Package | Version | Notes |
 |---|---|---|
-| `ai` | `^7.0.68` | |
-| `@ai-sdk/openai` | `^4.0.43` | |
-| `@ai-sdk/mcp` | `^2.0.33` | |
-| `@ai-sdk/react` | `^4.0.71` | demo only |
+| `ai` | `^7.0.70` | |
+| `@ai-sdk/openai` | `^4.0.44` | |
+| `@ai-sdk/mcp` | `^2.0.34` | |
+| `@ai-sdk/react` | `^4.0.73` | demo only |
 | `@ai-sdk/provider` | `4.0.7` (resolved) | `LanguageModelV4` / `ProviderV4` |
 | `@neo4j-labs/nams-ai-provider` | `^0.2.1` | the v7-targeted build |
-| `@neo4j-labs/agent-memory` | `^0.4.0` | |
-| `zod` | `^3.25.76` | |
+| `@neo4j-labs/agent-memory` | `^0.4.1` | |
+| `zod` | `^3.25.76` | held on zod 3; `nams-ai-provider` peers accept `^4.1.8` too |
+
+The demo adds its own framework layer, which the scripts have no equivalent for:
+
+| Package | Version | Notes |
+|---|---|---|
+| `next` | `^16.3.1` | demo only |
+| `react` / `react-dom` | `^19.2.8` | demo only; React 19 is what `@neo4j-ndl/react` requires |
+| `vitest` | `^4.1.11` | demo only, dev |
 
 The `ai` major, the `@ai-sdk/*` majors, and the provider spec version move in lockstep. You cannot mix them within one install — this is a per-application choice, not a per-file one.
 
@@ -138,14 +146,16 @@ NAMS_MODE=tools node 4-nams-provider-agent.mjs         # memory as visible tool 
 ```bash
 cd neo4j-agent-integrations/vercel-agent/vercel_Nams_demo
 
-npm install                          # .npmrc sets legacy-peer-deps
+npm install                          # no flags needed
 cp .env.local.example .env.local     # MEMORY_API_KEY + OPENAI_API_KEY at minimum
 
 npm run dev                          # http://localhost:3000
 npm test                             # route tests, fully mocked — no credentials needed
 ```
 
-`npm install --legacy-peer-deps` is the explicit equivalent if you install from outside the folder. It is needed because `@neo4j-ndl/react` declares a `react >=19.0.0` peer while the demo runs React 18 on Next.js 14 — not because of the AI SDK, which accepts React 18. The `notebook/` scripts need no such flag; they install cleanly under strict peer resolution.
+Neither sample needs `--legacy-peer-deps`: both install cleanly under npm's strict peer resolution.
+
+The demo used to require it. It ran React 18 on Next.js 14, which violated `@neo4j-ndl/react`'s `react >=19.0.0` peer, and a `legacy-peer-deps=true` `.npmrc` masked the conflict. Moving to React 19 on Next.js 16 satisfies the peer honestly and the `.npmrc` is gone. The AI SDK was never the cause — `@ai-sdk/react@4` accepts `react ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1`, so it was satisfied by both.
 
 ## Configuration
 
