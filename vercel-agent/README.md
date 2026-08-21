@@ -18,20 +18,48 @@
 
 ## Architecture
 
+**Before** (original — 3 extension points, AI SDK v5/v6):
+
 ![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApuZW80ai1kcml2ZXIiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG1lbWRiWygiTmVvNGoKTWVtb3J5IERCIildCiAgICBtY3AgLS0-IGRi)
 
-## Notebooks
+**After** (current — 4 extension points, AI SDK v7, NAMS, demo app):
 
-| File | Description |
-|------|-------------|
-| [vercel_agent.html](https://htmlpreview.github.io/?https://raw.githubusercontent.com/karanchellani/neo4j-agent-integrations/vercel-agent/vercel-agent/vercel_agent.html) | **Observable notebook** — interactive browser demo (direct queries, custom tools, memory agent) |
-| [vercel_agent.ipynb](vercel_agent.ipynb) | **Jupyter setup notebook** — Node.js install, credentials, MCP server start |
+![The vercel AI sdk with Nams](./asset/architecture.svg)
+
+
+## Code Examples
+
+### Node.js Scripts — [`notebook/`](./notebook/)
+
+Step-by-step agent scripts that progress from a raw Neo4j query to NAMS-backed multi-session memory. All scripts target **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`).
+
+| Script | Description |
+|--------|-------------|
+| `0-direct-query.mjs` | Direct Neo4j query — sanity check, no AI |
+| `1-mcp-agent.mjs` | MCP agent via `createMCPClient` (stable v7 API) |
+| `2-custom-tools-agent.mjs` | MCP + custom Cypher tools merged in one `generateText` call |
+| `3-memory-agent.mjs` | Memory using raw `@neo4j-labs/agent-memory` client (manual before/after hooks) |
+| `4-nams-provider-agent.mjs` | Memory via `@neo4j-labs/nams-ai-provider` — provider / middleware / tools modes |
+
+See [`notebook/README.md`](./notebook/README.md) for full setup and env-var reference.
+
+### Next.js Chat App — [`vercel_Nams_demo/`](./vercel_Nams_demo/)
+
+A production-ready Next.js 16 / React 19 chat application showing all three **NAMS** (Neo4j Agent Memory System) modes with a live reasoning-trace UI. Uses `ToolLoopAgent` from AI SDK v7, `@neo4j-labs/nams-ai-provider@^0.2`, and optionally Neo4j MCP for live graph queries.
+
+| Mode (`NAMS_MODE`) | How memory is handled |
+|--------------------|----------------------|
+| `provider` (default) | `createNamsProvider()` wraps the provider — transparent middleware, no tool calls visible |
+| `middleware` | `createNams().wrap(model, scope)` — same behaviour applied to an already-resolved model |
+| `tools` | `createNams().toolsWithMcp()` — `query_memory` / `store_memory` driven by the model; `enforceQueryMemory()` guards the read |
+
+See [`vercel_Nams_demo/README.md`](./vercel_Nams_demo/README.md) for architecture, integration-mode deep-dives, and setup.
 
 ## Extension Points
 
 ### 1. MCP Integration
 
-The Vercel AI SDK supports MCP via the `@ai-sdk/mcp` package. The `experimental_createMCPClient` function connects to any MCP server over HTTP or SSE transport, and `mcpClient.tools()` returns a tools object ready for `generateText`.
+The Vercel AI SDK supports MCP via the `@ai-sdk/mcp` package. `createMCPClient` (stable since AI SDK v7 / `@ai-sdk/mcp@^2`) connects to any MCP server over HTTP or SSE transport, and `mcpClient.tools()` returns a tools object ready for `generateText`.
 
 ```bash
 npm install @ai-sdk/mcp
@@ -39,13 +67,13 @@ npm install @ai-sdk/mcp
 
 ```js
 import { generateText, stepCountIs } from 'ai';
-import { experimental_createMCPClient } from '@ai-sdk/mcp';
+import { createMCPClient } from '@ai-sdk/mcp';
 
 // Credentials passed per-request via Basic Auth header
 const creds = Buffer.from(`${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`)
   .toString('base64');
 
-const mcpClient = await experimental_createMCPClient({
+const mcpClient = await createMCPClient({
   transport: {
     type:    'http',
     url:     `http://localhost:${process.env.MCP_PORT}/mcp`,
@@ -220,16 +248,87 @@ async function runWithMemory(query) {
 
 ---
 
+### 4. NAMS Provider — `@neo4j-labs/nams-ai-provider`
+
+[NAMS](https://memory.neo4jlabs.com) is a hosted memory service backed by Neo4j. The `@neo4j-labs/nams-ai-provider` package wraps the Vercel AI SDK with persistent memory retrieval and storage — no self-managed Neo4j instance required for memory. It supports the same three modes as the demo:
+
+```bash
+npm install @neo4j-labs/nams-ai-provider
+```
+
+**Provider mode (transparent — recommended starting point):**
+
+```js
+import { createNamsProvider } from '@neo4j-labs/nams-ai-provider';
+import { openai } from '@ai-sdk/openai';
+import { generateText, stepCountIs } from 'ai';
+
+const model = createNamsProvider({
+  apiKey:       process.env.MEMORY_API_KEY,
+  baseProvider: openai,
+  scope:        { userId: 'user-1', conversationId: 'session-1' },
+}).languageModel('gpt-5.4-mini');
+
+const { text } = await generateText({
+  model,
+  prompt:   'What were the Google supply-chain risks we discussed before?',
+  tools:    mcpTools,         // optional — add MCP or custom tools
+  stopWhen: stepCountIs(10),
+});
+```
+
+Memory is retrieved and injected before each call and the turn is persisted after — no before/after hooks to write. The model sees memories as part of its system prompt context.
+
+**Tools mode (model-driven — visible reasoning trace):**
+
+```js
+import { createNams, enforceQueryMemory } from '@neo4j-labs/nams-ai-provider';
+import { ToolLoopAgent, stepCountIs } from 'ai';   // ToolLoopAgent is v7+
+
+const { tools, close } = await createNams({ apiKey: process.env.MEMORY_API_KEY })
+  .toolsWithMcp(
+    { userId: 'user-1', conversationId: 'session-1' },
+    mcpConfig,   // optional — merges MCP tools alongside query_memory / store_memory
+  );
+
+const agent = new ToolLoopAgent({
+  model:       openai('gpt-5.4-mini'),
+  tools,
+  prepareStep: enforceQueryMemory({ graceSteps: 2 }),  // forces read if model skips it
+  stopWhen:    stepCountIs(10),
+  onFinish:    async () => { await close(); },
+});
+
+const result = await agent.run('Which companies did Google invest in?');
+```
+
+`enforceQueryMemory` guarantees `query_memory` is called in the first steps. `ensureStored()` (used in the demo's `onFinish`) closes the write-side gap for models that answer without calling `store_memory`.
+
+**Middleware mode:**
+
+```js
+import { createNams } from '@neo4j-labs/nams-ai-provider';
+
+const nams  = createNams({ apiKey: process.env.MEMORY_API_KEY });
+const model = nams.wrap(openai('gpt-5.4-mini'), { userId: 'user-1', conversationId: 'session-1' });
+```
+
+Identical to provider mode but applied to an already-resolved model instance — useful when the base model isn't always the same provider.
+
+**When to use:** Production agents that need cross-session memory without managing a dedicated Neo4j memory database. The demo ([`vercel_Nams_demo/`](./vercel_Nams_demo/)) is the reference client for all three modes; the notebook ([`notebook/4-nams-provider-agent.mjs`](./notebook/4-nams-provider-agent.mjs)) is the minimal script version.
+
+---
+
 ## MCP Authentication
 
 **Supported Mechanisms:**
 
-✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `experimental_createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
+✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
 
 ```js
 const creds = Buffer.from(`${NEO4J_USERNAME}:${NEO4J_PASSWORD}`).toString('base64');
 
-const mcpClient = await experimental_createMCPClient({
+const mcpClient = await createMCPClient({
   transport: {
     type:    'http',
     url:     'http://localhost:8443/mcp',
@@ -251,16 +350,30 @@ All three agent files import `getModel()` from [`providers.mjs`](providers.mjs),
 | **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` | `npm install @ai-sdk/anthropic` |
 | **Mistral** | `mistral` | `MISTRAL_API_KEY` | `npm install @ai-sdk/mistral` |
 
+## AI SDK Version Notes (v6 vs v7)
+
+The notebook and demo target **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`). The table below summarises every breaking or renamed API from v6.
+
+| Area | v6 | v7 |
+|------|----|----|
+| MCP client import | `experimental_createMCPClient` from `@ai-sdk/mcp@^1` | `createMCPClient` (stable) from `@ai-sdk/mcp@^2` |
+| Multi-step control | `stopWhen: stepCountIs(N)` (replaces removed `maxSteps`) | `stopWhen: stepCountIs(N)` still works — `stepCountIs` is a literal alias for the new `isStepCount` export |
+| Agentic loop class | Not available — use `generateText` with `stopWhen` | `ToolLoopAgent` class with `prepareStep`, `onFinish`, `onStepFinish` hooks |
+| `tool()` generics (TypeScript) | `tool<INPUT, OUTPUT>` | `tool<INPUT, OUTPUT, CONTEXT>` — a two-arg call now binds to `tool<INPUT, CONTEXT>` and infers `OUTPUT = never`, surfacing as a type error on `execute`. Add the third param or drop explicit generics |
+| `@ai-sdk/mcp` peer | `ai@^5` / `ai@^6` | `ai@^7` |
+
+> **Upgrading from v6 scripts:** replace `experimental_createMCPClient` with `createMCPClient` and bump `@ai-sdk/mcp` to `^2`. No other changes are needed for the patterns shown here.
+
 ## Challenges and Gaps
 
 | Area | Detail |
 |------|--------|
 | **JavaScript only** | The Vercel AI SDK has no Python support — all agent code runs in Node.js |
-| **`stopWhen` is v6+** | `maxSteps` was silently removed in AI SDK v6; passing it does nothing. Use `stopWhen: stepCountIs(N)` |
+| **`maxSteps` removed** | Silently removed in AI SDK v6 — passing it does nothing. Use `stopWhen: stepCountIs(N)` |
 | **MCP transport type** | `neo4j-mcp-server` HTTP mode requires `type: 'http'`, not `type: 'sse'` |
-| **Memory DB** | Memory uses `neo4j-driver` directly — requires a separate writable Neo4j instance from the read-only knowledge graph |
+| **Memory DB (manual)** | Extension Point 3 uses `neo4j-driver` directly — requires a separate writable Neo4j instance; Extension Point 4 (NAMS) removes this requirement |
 | **Edge runtime** | Neo4j driver needs persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
-| **`experimental_createMCPClient`** | Still experimental; API may change in future SDK versions |
+| **NAMS `enforceQueryMemory`** | Only guards the read side — use `ensureStored()` in `onFinish` to guarantee write-back when the model skips `store_memory` |
 
 ## Resources
 
