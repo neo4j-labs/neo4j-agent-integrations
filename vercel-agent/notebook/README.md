@@ -23,11 +23,10 @@ cp .env.example .env   # fill in OPENAI_API_KEY, NEO4J_*, MCP_*, and MEMORY_API_
 npm install
 ```
 
-> **Note:** `@neo4j-labs/nams-ai-provider@0.1.0` declares a peer dependency on
-> `zod@~3.0.0`, which is narrower than the `zod@^3.25.x` this project (and the
-> rest of the AI SDK) actually uses. The package works correctly with 3.25.x
-> in practice, so the included `.npmrc` sets `legacy-peer-deps=true` to keep
-> plain `npm install` working — no extra flags needed.
+These scripts run **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`, `@ai-sdk/openai@^4`)
+with `@neo4j-labs/nams-ai-provider@^0.2`, the same set the
+[`vercel_Nams_demo/`](../vercel_Nams_demo/) app pins — both resolve to identical
+versions.
 
 ## Running
 
@@ -48,7 +47,7 @@ NAMS_MODE=middleware node 4-nams-provider-agent.mjs   # transparent memory on a 
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | ✅ | LLM API key (or the key matching `AI_PROVIDER`) |
 | `AI_PROVIDER` | optional | `openai` (default), `google`, `anthropic`, `mistral` |
-| `AI_MODEL` | optional | Overrides the provider default (`gpt-4o-mini` for OpenAI) |
+| `AI_MODEL` | optional | Overrides the provider default (`gpt-5.4-mini` for OpenAI) |
 | `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` / `NEO4J_DATABASE` | for scripts 0 & 2 | Direct driver connection |
 | `MCP_URL` | for scripts 1–4 | Hosted MCP endpoint (or use `MCP_PORT` for a local server) |
 | `MCP_PORT` | optional | Local `neo4j-mcp-server` port → `http://localhost:${MCP_PORT}/mcp` |

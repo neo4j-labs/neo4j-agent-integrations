@@ -17,14 +17,18 @@ A production-ready Next.js chat application demonstrating **NAMS (Neo4j Agent Me
 git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
 cd neo4j-agent-integrations/vercel-agent/vercel_Nams_demo
 
-npm install --legacy-peer-deps    # --legacy-peer-deps: NDL components pin React 18
+npm install                       # no flags needed — strict peer resolution passes
 
 cp .env.local.example .env.local  # set MEMORY_API_KEY and OPENAI_API_KEY at minimum
 
 npm run dev                       # http://localhost:3000
 ```
 
-`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.1.0` in `package.json` — the only version currently published to npm) — nothing to build or link locally. This package's peer dependencies target **Vercel AI SDK v6** (`ai@~6.0.0`, `@ai-sdk/mcp@~1.0.0`), so this demo pins matching `ai`/`@ai-sdk/*` versions rather than the newer v7 line. A `.npmrc` with `legacy-peer-deps=true` is included to smooth over a minor `zod` peer-range mismatch — plain `npm install` works out of the box.
+`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.2.1` in `package.json`) — nothing to build or link locally. Its peer dependencies target **Vercel AI SDK v7** (`ai@^7.0.0`, `@ai-sdk/mcp@^2.0.0`, `@ai-sdk/provider@^4.0.0`), and this demo pins matching `ai`/`@ai-sdk/*` versions — the same set the [`notebook/`](../notebook/) scripts use, so both samples resolve to identical dependency versions.
+
+Plain `npm install` works out of the box — no `--legacy-peer-deps`, no `.npmrc`. The demo runs **React 19 on Next.js 16**, which satisfies every peer range in the tree, including `@neo4j-ndl/react`'s `react >=19.0.0`.
+
+It previously pinned React 18 on Next.js 14 and suppressed the resulting NDL peer conflict with a `legacy-peer-deps=true` `.npmrc`. React 19 removes the conflict at its source, so the escape hatch is gone. Note that bumping React alone would not have been enough: `next@14` peers `react@^18.2.0`, so React 19 there just trades the NDL conflict for a Next one.
 
 ---
 
@@ -38,11 +42,11 @@ NAMS_MODE=middleware   # transparent memory, wraps a model instance
 NAMS_MODE=tools        # model calls query_memory / store_memory explicitly
 ```
 
-| Mode | Call | Memory handling | Tool calls visible in UI |  |
-|------|------|-----------------|--------------------------|---------|
-| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No | |
-| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |  |
-| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |  |
+| Mode | Call | Memory handling | Tool calls visible in UI |
+|------|------|-----------------|--------------------------|
+| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No |
+| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |
+| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |
 
 Choose **provider** when you construct models from a provider and want a drop-in replacement. Choose **middleware** when the base model is already resolved (e.g. it isn't always `openai`). Choose **tools** when you want the memory cycle to be explicit and inspectable.
 
@@ -106,6 +110,8 @@ const agent = new ToolLoopAgent({
 `enforceQueryMemory({ graceSteps: 2 })` is a `prepareStep` guard: if the model hasn't called `query_memory` within the first two steps, the loop forces it. Without it, smaller models regularly answer from conversation history alone and skip memory entirely. It is applied in tools mode only — the other two modes have no memory tools to enforce.
 
 Calling `toolsWithMcp(scope)` with no second argument returns NAMS memory tools only, and `close()` is a no-op.
+
+**Write-side counterpart:** `enforceQueryMemory` can guarantee the *read* because there is always a later step to force. The *write* has no such hook — the loop ends the moment the model emits final text, so a turn where it says "I'll remember that" without calling `store_memory` persists nothing. [`ensureStored()`](lib/nams-enrich.ts) closes that gap from `onFinish`: it inspects the finished turn and stores it if the model didn't. Failures are swallowed, since memory must never break a response.
 
 **MCP in provider / middleware mode:** `toolsWithMcp()` also emits `query_memory`/`store_memory`, which would double-handle memory alongside the middleware. So those modes call [`getNeo4jMcpTools()`](lib/neo4j-mcp.ts) directly and pass only the MCP tools to the agent.
 
@@ -221,6 +227,7 @@ vercel_Nams_demo/
 │
 ├── lib/
 │   ├── constants.ts               ← SYSTEM_PROMPT + buildDbToolsPrompt()
+│   ├── nams-enrich.ts             ← ensureStored() — persists a turn the model didn't store
 │   └── neo4j-mcp.ts               ← MCP client, auth resolution, explainMcpError()
 │
 ├── test/
@@ -230,9 +237,10 @@ vercel_Nams_demo/
 ├── types/index.ts                 ← MemoryHit, QueryOutput, ReasoningStep, ParsedMemory
 ├── utils/message.ts               ← getMsgText, parseMemory, formatErrorMessage
 ├── constants.ts                   ← DEFAULT_SUGGESTIONS, SESSION_STORAGE_KEY
+├── declarations.d.ts              ← `declare module '*.css'`
 ├── .env.local.example
 ├── package.json
-├── vitest.config.ts
+├── vitest.config.mts
 └── next.config.js
 ```
 
@@ -245,10 +253,10 @@ vercel_Nams_demo/
 ### 1. Install
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 ```
 
-`--legacy-peer-deps` is required: `@neo4j-ndl/react` pins React 18 while some AI SDK packages advertise React 19.
+No flags required — the dependency tree resolves cleanly under npm's strict peer checking.
 
 ### 2. Configure
 
@@ -288,6 +296,7 @@ npm run dev
 | `MCP_BEARER_TOKEN` | No | — | `Authorization: Bearer` — takes precedence over Basic |
 | `MCP_NEO4J_USERNAME` | No | — | Basic auth username |
 | `MCP_NEO4J_PASSWORD` | No | — | Basic auth password |
+| `NEXT_ALLOWED_DEV_ORIGINS` | No | — | Comma-separated extra hosts allowed to load `next dev` internal assets. `localhost`, `127.0.0.1`, `[::1]` and `**.app.github.dev` are already allowed in [`next.config.js`](next.config.js); add a LAN IP or remote devcontainer domain here if you reach the dev server another way |
 
 MCP stays disabled unless `MCP_URL` (or `MCP_PORT`) is set **and** one auth pair is supplied: either `MCP_BEARER_TOKEN`, or both `MCP_NEO4J_USERNAME` and `MCP_NEO4J_PASSWORD`.
 
@@ -446,14 +455,14 @@ During end-to-end testing with two different `userId`s sharing one NAMS workspac
 |---------|------|
 | `@neo4j-labs/nams-ai-provider` | NAMS integration — `createNams()`, `createNamsProvider()`, `enforceQueryMemory()` |
 | `@neo4j-labs/agent-memory` | NAMS REST client used by the provider |
-| `ai` (Vercel AI SDK v6) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
+| `ai` (Vercel AI SDK v7) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
 | `@ai-sdk/openai` | OpenAI model provider |
 | `@ai-sdk/react` | `useChat` React hook |
 | `@ai-sdk/mcp` | MCP client used by `lib/neo4j-mcp.ts` |
 | `@neo4j-ndl/react`, `@neo4j-ndl/base` | Neo4j Design Language UI components |
 | `zod` | Tool input schemas |
-| `next`, `react`, `react-dom` | App framework and UI runtime |
-| `vitest` (dev) | Route-level tests (`npm test`) |
+| `next` (16), `react`, `react-dom` (19) | App framework and UI runtime |
+| `vitest` 4 (dev) | Route-level tests (`npm test`) |
 
 ---
 

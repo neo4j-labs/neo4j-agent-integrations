@@ -13,11 +13,11 @@
  *                                      npm install @ai-sdk/mistral
  *
  * Optionally set AI_MODEL to override the provider default:
- *   AI_MODEL=gpt-4o-mini
+ *   AI_MODEL=gpt-5.4-mini
  */
 
 const PROVIDER_DEFAULTS = {
-  openai:    'gpt-4o-mini',
+  openai:    'gpt-5.4-mini',
   google:    'gemini-2.0-flash',
   anthropic: 'claude-3-5-sonnet-20241022',
   mistral:   'mistral-large-latest',

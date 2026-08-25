@@ -10,25 +10,25 @@
         "test:watch": "vitest"
     },
     "dependencies": {
-        "@ai-sdk/mcp": "^1.0.52",
-        "@ai-sdk/openai": "^3.0.53",
-        "@ai-sdk/react": "^3.0.240",
-        "@neo4j-labs/agent-memory": "^0.4.0",
-        "@neo4j-labs/nams-ai-provider": "^0.2.0",
-        "@neo4j-ndl/base": "^4.12.4",
-        "@neo4j-ndl/react": "^4.12.5",
+        "@ai-sdk/mcp": "^2.0.34",
+        "@ai-sdk/openai": "^4.0.44",
+        "@ai-sdk/react": "^4.0.73",
+        "@neo4j-labs/agent-memory": "^0.4.1",
+        "@neo4j-labs/nams-ai-provider": "^0.2.1",
+        "@neo4j-ndl/base": "^4.17.5",
+        "@neo4j-ndl/react": "^4.18.9",
         "@tanstack/react-table": "^8.21.3",
-        "ai": "^6.0.209",
-        "next": "^14.2.0",
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
+        "ai": "^7.0.70",
+        "next": "^16.3.1",
+        "react": "^19.2.8",
+        "react-dom": "^19.2.8",
         "zod": "^3.25.76"
     },
     "devDependencies": {
         "@types/node": "^20",
-        "@types/react": "^18",
-        "@types/react-dom": "^18",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
         "typescript": "^5",
-        "vitest": "^2.0.0"
+        "vitest": "^4.1.11"
     }
 }
