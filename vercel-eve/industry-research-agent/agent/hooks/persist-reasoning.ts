@@ -8,33 +8,26 @@
  * writes it, so this hook never double-stores a turn — see `REASONING_ENABLED`
  * in `../lib/nams`.
  *
- * That trail is what makes "why did you recommend that?" answerable from
- * recorded provenance instead of from a plausible-sounding reconstruction.
- *
  * Why everything is buffered and flushed on `turn.completed` rather than
  * written as each event arrives: a step's tool calls are only known *after*
  * its `reasoning.completed` fires, and `recordToolCall` needs the id of the
  * step it belongs to. Buffering also keeps the write off the streaming path,
- * so recording provenance never delays the answer.
+ * so recording history never delays the answer.
  */
 import { defineState } from "eve/context";
 import { defineHook } from "eve/hooks";
 import { memory } from "../lib/memory-gateway";
 import {
   REASONING_ENABLED,
+  memoryScope,
   serializeToolResult,
   type ReasoningStepInput,
   type ReasoningToolCall,
 } from "../lib/nams";
-import { memoryScope } from "../lib/scope";
 
-/** Durable state is JSON, so step indices are string keys here. */
 interface PendingTrace {
-  /** stepIndex → the reasoning block that step emitted. */
   readonly blocks: Record<string, string>;
-  /** callId → the arguments the model requested, kept until the result lands. */
   readonly requested: Record<string, { toolName: string; args: Record<string, unknown> }>;
-  /** stepIndex → the tool calls that completed during that step. */
   readonly calls: Record<string, ReasoningToolCall[]>;
 }
 
@@ -44,8 +37,6 @@ const pendingTrace = defineState<PendingTrace>("nams.pending-trace", () => EMPTY
 
 export default defineHook({
   events: {
-    // Arguments arrive with the request and are gone by the time the result
-    // does, so hold them by callId until the matching result shows up.
     "actions.requested"(event) {
       if (!REASONING_ENABLED) return;
 
@@ -72,7 +63,6 @@ export default defineHook({
         const call: ReasoningToolCall = {
           toolName: result.toolName,
           arguments: pending?.args ?? {},
-          // Serialize at capture time so the buffered turn state stays small too.
           result: serializeToolResult(result.output),
           failed: result.isError === true,
         };
@@ -110,8 +100,6 @@ export default defineHook({
       try {
         await memory.for(memoryScope(ctx)).rememberReasoning(steps);
       } catch (error) {
-        // A hook that throws fails the turn. Provenance is an enhancement, so
-        // losing it must never cost the user an answer they already have.
         console.warn("[nams] failed to persist reasoning trace", error);
       }
     },
@@ -132,13 +120,9 @@ function buildSteps(
     const reasoning = blocks[index];
     const toolCalls = calls[index] ?? [];
 
-    // A step with neither is a bare model reply; there is no provenance in it.
     if (!reasoning && toolCalls.length === 0) continue;
 
     steps.push({
-      // Low-effort reasoning models often call tools without emitting a block.
-      // The tool calls are still provenance worth keeping, so record the step
-      // and say plainly that the rationale was not exposed.
       reasoning: reasoning ?? "(model emitted no reasoning block for this step)",
       actionTaken: toolCalls.length > 0 ? toolCalls.map((c) => c.toolName).join(", ") : "respond",
       result: toolCalls.length > 0 ? `${toolCalls.length} tool call(s)` : undefined,

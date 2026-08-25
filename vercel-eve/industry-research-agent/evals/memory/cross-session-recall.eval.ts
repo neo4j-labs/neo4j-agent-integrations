@@ -8,22 +8,22 @@ import { includes } from "eve/evals/expect";
  * `t.newSession()` discards the transcript entirely, so anything the agent
  * still knows afterwards came out of NAMS.
  *
- * The recall query deliberately reuses the user's own noun ("beat"). Retrieval
+ * The recall query reuses the user's own noun ("coverage area"). Retrieval
  * on the hosted NAMS API is lexical, so a paraphrase can miss a memory that is
- * definitely stored — see the README's "Known limitations".
+ * definitely stored.
  */
-const BEAT = "undersea cable operators";
+const COVERAGE_AREA = "undersea cable operators";
 
 export default defineEval({
   description: "A fact stored in one session is recalled in a fresh session.",
   tags: ["memory"],
   async test(t) {
-    await t.send(`Remember this about me: my research beat is ${BEAT}.`);
+    await t.send(`Remember this about me: my research coverage area is ${COVERAGE_AREA}.`);
     t.succeeded();
 
     await t.newSession();
 
-    await t.send("What is my research beat?");
+    await t.send("What is my research coverage area?");
     t.succeeded();
     t.check(t.reply, includes("undersea cable"));
   },

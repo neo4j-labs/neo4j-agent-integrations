@@ -1,67 +1,97 @@
 /**
- * NAMS configuration and the pure helpers around it.
+ * NAMS configuration, identity, and the shared types.
  *
- * Nothing here calls the NAMS SDK — that all happens in `./memory-gateway`,
- * which imports this file. The split keeps the one stateful thing in the
- * project (per-user memory clients) in one place, and leaves everything a hook
- * or a tool needs to reason about — modes, limits, prompt rendering — free of
- * network calls and trivially testable.
+ * No SDK calls happen here — `./memory-gateway` is the only file in the project
+ * that touches `@neo4j-labs/nams-ai-provider`. This file holds what the gateway
+ * and its callers both need: how to build a config, who the memory belongs to,
+ * and the shapes that cross the boundary.
  */
+import type { SessionAuth } from "eve/context";
 import type { MemoryHit, NamsConfig, NamsScope } from "@neo4j-labs/nams-ai-provider";
 
 /** Max memories injected into the prompt per turn. */
 export const MAX_MEMORIES = Number(process.env.NAMS_MAX_MEMORIES ?? 6);
 
-/**
- * Whether to record the agent's own reasoning steps and tool calls.
- *
- * Independent of the turn memory in `hooks/persist-turn.ts`: reasoning is
- * NAMS's third memory type and nothing else writes it, so this never
- * double-stores a turn. It is what lets the agent answer "why did you say
- * that?" from recorded provenance instead of re-inventing a rationale — and
- * retrieval already reads the reasoning source, which stays empty until
- * something fills it.
- *
- * Costs one extra NAMS round trip per turn that produced reasoning or tool
- * calls. Set `NAMS_REASONING=off` to disable.
- */
 export const REASONING_ENABLED: boolean = process.env.NAMS_REASONING?.trim().toLowerCase() !== "off";
+
+/** Whether a completed turn is promoted into the long-term entity graph. */
+export const GRAPH_MEMORY_ENABLED: boolean =
+  process.env.NAMS_GRAPH_MEMORY?.trim().toLowerCase() !== "off";
 
 function requireApiKey(): string {
   const apiKey = process.env.NAMS_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "NAMS_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com and put it in .env.local.",
+      "NAMS_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com and put it in .env.",
     );
   }
   return apiKey;
 }
 
-/** The base config every per-user client is built from. */
-export function namsConfig(): NamsConfig {
+/**
+ * The base config every per-user client is built from.
+ *
+ * No `workspaceId` here on purpose: the gateway sets it per user from
+ * `workspaceIdFor` below, which is the seam a multi-tenant policy would use.
+ */
+export function namsConfig(): Omit<NamsConfig, "workspaceId"> {
   return {
     apiKey: requireApiKey(),
-    // Blank uses the workspace the key is bound to.
-    workspaceId: process.env.NAMS_WORKSPACE_ID || undefined,
     endpoint: process.env.NAMS_ENDPOINT || undefined,
   };
 }
 
 /**
- * Which NAMS workspace a user's memory belongs to.
+ * The workspace a given user's memory belongs in.
  *
- * Long-term entities in NAMS are workspace-scoped and carry no user id, so two
- * users sharing a workspace can surface each other's stored facts. Scoping in
- * code does not fix that; **a workspace per tenant does.** This is the hook for
- * that policy — return the tenant's workspace id here and the gateway builds
- * that user a client bound to it, because `workspaceId` is fixed at client
- * construction and cannot be varied per request.
- *
- * The single-tenant default (one workspace for everyone) is fine for a demo
- * and for any agent whose users are all the same organization.
+ * One workspace per tenant is the only hard isolation NAMS offers — long-term
+ * entities carry no user id, and `listConversations` ignores its `userId`
+ * filter (see README, "Challenges"). This function is the seam where that
+ * policy would live; today it returns the single configured workspace.
  */
 export function workspaceIdFor(_userId: string): string | undefined {
   return process.env.NAMS_WORKSPACE_ID || undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Who the memory belongs to.
+//
+// Derived from verified session context only. No tool accepts a `userId`
+// argument, so the model cannot address another user's memory by inventing an
+// id — the classic multi-tenant memory failure.
+// ---------------------------------------------------------------------------
+
+/** The subset of `ctx` every eve callback shares — tools, hooks, and dynamic resolvers alike. */
+interface ScopeSource {
+  readonly session: {
+    readonly id: string;
+    readonly auth: SessionAuth;
+  };
+}
+
+/**
+ * Resolve the NAMS user id for the active turn.
+ *
+ * Precedence:
+ *   1. the authenticated caller of this turn (`auth.current`)
+ *   2. the caller that started the session (`auth.initiator`)
+ *   3. `DEMO_USER_ID`, so `eve dev` recalls across restarts without auth
+ *   4. the eve session id, which scopes memory to this session only
+ *
+ * Steps 3 and 4 exist for local development. In production, put a real
+ * authenticator in `agent/channels/eve.ts` so step 1 always wins.
+ */
+export function memoryScope(ctx: ScopeSource): NamsScope {
+  const principal = ctx.session.auth.current ?? ctx.session.auth.initiator;
+
+  if (principal?.principalType === "user" && principal.principalId) {
+    return { userId: principal.principalId };
+  }
+
+  const demoUserId = process.env.DEMO_USER_ID?.trim();
+  if (demoUserId) return { userId: demoUserId };
+
+  return { userId: `eve-session:${ctx.session.id}` };
 }
 
 /** What `remember()` accepts. `interaction` is short-term; the rest build the long-term graph. */
@@ -75,12 +105,6 @@ export interface StoreMemoryInput {
 export interface ReasoningToolCall {
   readonly toolName: string;
   readonly arguments: Record<string, unknown>;
-  /**
-   * Must already be a string. The hosted NAMS API accepts any JSON value here
-   * but stores `""` for anything that is not a string — silently, with a 200.
-   * Verified against the live service: an object result round-trips as `""`,
-   * the same object stringified round-trips intact. Use `serializeToolResult`.
-   */
   readonly result?: string;
   readonly failed?: boolean;
 }
@@ -93,13 +117,6 @@ export interface ReasoningStepInput {
   readonly toolCalls?: readonly ReasoningToolCall[];
 }
 
-/**
- * Make a tool's output storable as NAMS tool-call provenance.
- *
- * Stringifies, because non-strings are silently discarded (see above), and
- * caps the length, because a graph query can return kilobytes and a provenance
- * write must never become the biggest request of the turn.
- */
 export function serializeToolResult(output: unknown, max = 2000): string | undefined {
   if (output === undefined) return undefined;
   const text = typeof output === "string" ? output : JSON.stringify(output);
@@ -107,12 +124,6 @@ export function serializeToolResult(output: unknown, max = 2000): string | undef
   return text.length <= max ? text : `${text.slice(0, max)}… (truncated)`;
 }
 
-/**
- * Render memories as the prompt block the model reads.
- *
- * Stored memory is user-provided data, not instruction. The fence and the
- * closing sentence keep a stored string from reading as a system directive.
- */
 export function renderMemories(memories: readonly MemoryHit[]): string {
   if (memories.length === 0) return "";
   const lines = memories.map((m) => `- (${m.source}/${m.type}) ${m.content}`).join("\n");

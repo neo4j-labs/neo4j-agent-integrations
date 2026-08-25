@@ -8,8 +8,7 @@
  */
 import { defineDynamic, defineInstructions } from "eve/instructions";
 import { memory } from "../lib/memory-gateway";
-import { MAX_MEMORIES, renderMemories } from "../lib/nams";
-import { memoryScope } from "../lib/scope";
+import { MAX_MEMORIES, memoryScope, renderMemories } from "../lib/nams";
 
 export default defineDynamic({
   events: {

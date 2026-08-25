@@ -4,12 +4,6 @@ import { readQuery } from "../lib/neo4j";
 
 /**
  * Full-text search across article chunks.
- *
- * The graph also carries vector embeddings on `:Chunk` (index `news`), but
- * those were built with OpenAI `text-embedding-ada-002`; querying them with a
- * different embedding model returns confident nonsense. Full text needs no
- * embedding call at all, so it works whichever model the agent is routed to.
- * See the README for the vector variant.
  */
 export default defineTool({
   description:

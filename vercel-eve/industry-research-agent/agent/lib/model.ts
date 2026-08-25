@@ -27,10 +27,17 @@ export const MODEL_ROUTING: "gateway" | "openai" = (() => {
   return !hasGatewayCredential() && process.env.OPENAI_API_KEY ? "openai" : "gateway";
 })();
 
-export function baseModel(): LanguageModelV4 {
+export function baseModel(id: string = MODEL_ID): LanguageModelV4 {
   if (MODEL_ROUTING === "openai") {
     // Gateway ids are "<provider>/<model>"; the direct provider wants the bare id.
-    return openai(MODEL_ID.replace(/^openai\//, "")) as LanguageModelV4;
+    return openai(id.replace(/^openai\//, "")) as LanguageModelV4;
   }
-  return gateway(MODEL_ID) as LanguageModelV4;
+  return gateway(id) as LanguageModelV4;
+}
+
+/**
+ * The model that extracts entities and relationships out of a stored memory.
+ */
+export function extractionModel(): LanguageModelV4 {
+  return baseModel(process.env.NAMS_EXTRACTION_MODEL?.trim() || MODEL_ID);
 }

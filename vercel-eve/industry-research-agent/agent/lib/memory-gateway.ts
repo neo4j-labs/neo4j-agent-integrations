@@ -19,10 +19,11 @@
  *   2. `workspaceId` is fixed when the client is constructed. One NAMS
  *      workspace per tenant is the only hard isolation NAMS offers today
  *      (long-term entities carry no user id — see README, "Challenges"), and
- *      that policy is only expressible if each tenant has its own client. *
+ *      that policy is only expressible if each tenant has its own client.
+ *
  * The map key *is* the namespace. Nothing in this file reads a user id from
- * anywhere but the `NamsScope` it was handed, and `agent/lib/scope.ts` derives
- * that scope from verified session auth only.
+ * anywhere but the `NamsScope` it was handed, and `memoryScope` in
+ * `agent/lib/nams.ts` derives that scope from verified session auth only.
  */
 import {
   findExistingConversation,
@@ -31,8 +32,12 @@ import {
   retrieveMemories,
   storeMemory,
 } from "@neo4j-labs/nams-ai-provider";
+import type { GraphExtractor } from "@neo4j-labs/nams-ai-provider";
 import type { MemoryClient } from "@neo4j-labs/agent-memory";
+import { createGraphExtractor } from "./graph-extractor";
+import { extractionModel } from "./model";
 import {
+  GRAPH_MEMORY_ENABLED,
   MAX_MEMORIES,
   namsConfig,
   workspaceIdFor,
@@ -44,6 +49,40 @@ import {
 } from "./nams";
 
 /**
+ * The entity extractor, shared by every user.
+ *
+ * Without one, `storeMemory` falls back to a single flat node whose name is the
+ * first words of the memory — a sentence-shaped entity per turn, which is worse
+ * than no graph at all. With one, a stored memory becomes real entities and the
+ * relationships between them.
+ *
+ * The extractor is `./graph-extractor`, not the provider's — see that file for
+ * the prompt and the entity filter that differ.
+ *
+ * Built once and lazily: `extractionModel()` reads credentials from the
+ * environment, so constructing it at module load would make an unrelated import
+ * of this file throw on a machine with no model credential. A failure is
+ * remembered, not retried — a missing credential does not become one failed
+ * model call per turn for the life of the instance.
+ */
+let extractor: GraphExtractor | undefined;
+let extractorUnavailable = false;
+
+function graphExtractor(): GraphExtractor | undefined {
+  if (!GRAPH_MEMORY_ENABLED || extractorUnavailable) return undefined;
+  if (!extractor) {
+    try {
+      extractor = createGraphExtractor(extractionModel());
+    } catch (error) {
+      extractorUnavailable = true;
+      console.warn("[nams] no extraction model — long-term memory falls back to flat entities", error);
+      return undefined;
+    }
+  }
+  return extractor;
+}
+
+/**
  * How many per-user clients to keep. A warm serverless instance can serve many
  * users over its life, and each client holds a conversation-id cache, so the
  * map is bounded and evicts least-recently-used.
@@ -51,7 +90,7 @@ import {
 const MAX_CACHED_USERS = Number(process.env.NAMS_CLIENT_CACHE ?? 256);
 
 /** Everything the agent is allowed to do with one user's memory. */
-export interface UserMemory {
+interface UserMemory {
   readonly userId: string;
 
   /** Search all four NAMS sources (long-term, conversation, cross-session, reasoning). */
@@ -76,7 +115,7 @@ class MemoryGateway {
   /** The per-user handle. Cheap: everything expensive is cached on the entry. */
   for(scope: NamsScope): UserMemory {
     const userId = scope.userId;
-    if (!userId) throw new Error("MemoryGateway.for() requires a userId — see agent/lib/scope.ts");
+    if (!userId) throw new Error("MemoryGateway.for() requires a userId — see memoryScope in agent/lib/nams.ts");
 
     const entry = this.#entry(userId);
     // Conversation stays unpinned unless the caller pinned one: NAMS then
@@ -94,7 +133,9 @@ class MemoryGateway {
 
       remember: async (input) => {
         const conversationId = await resolveConversation(entry.client, entry.config, userScope);
-        await storeMemory(entry.client, conversationId, input);
+        // Ignored for `interaction`, which never reaches the long-term half of
+        // `storeMemory`; load-bearing for every other type.
+        await storeMemory(entry.client, conversationId, input, { extractor: graphExtractor() });
       },
 
       rememberReasoning: async (steps) => {
