@@ -1,18 +1,5 @@
 /**
  * Reasoning memory — the agent's own decision trail.
- *
- * NAMS has three memory types. Short-term (the conversation) and long-term
- * (entities and preferences) are written by `./persist-turn.ts`. The third,
- * reasoning, records *why* the agent answered as it did: one step per reasoning
- * block, with the tool calls that step invoked hanging off it. Nothing else
- * writes it, so this hook never double-stores a turn — see `REASONING_ENABLED`
- * in `../lib/nams`.
- *
- * Why everything is buffered and flushed on `turn.completed` rather than
- * written as each event arrives: a step's tool calls are only known *after*
- * its `reasoning.completed` fires, and `recordToolCall` needs the id of the
- * step it belongs to. Buffering also keeps the write off the streaming path,
- * so recording history never delays the answer.
  */
 import { defineState } from "eve/context";
 import { defineHook } from "eve/hooks";
@@ -81,7 +68,6 @@ export default defineHook({
       if (!reasoning) return;
 
       const key = String(event.data.stepIndex);
-      // A step can emit several reasoning blocks; keep them in order.
       pendingTrace.update((s) => ({
         ...s,
         blocks: { ...s.blocks, [key]: s.blocks[key] ? `${s.blocks[key]}\n\n${reasoning}` : reasoning },

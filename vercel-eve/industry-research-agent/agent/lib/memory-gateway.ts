@@ -56,8 +56,7 @@ import {
  * than no graph at all. With one, a stored memory becomes real entities and the
  * relationships between them.
  *
- * The extractor is `./graph-extractor`, not the provider's — see that file for
- * the prompt and the entity filter that differ.
+ * The extractor is `./graph-extractor`
  *
  * Built once and lazily: `extractionModel()` reads credentials from the
  * environment, so constructing it at module load would make an unrelated import
@@ -87,7 +86,7 @@ function graphExtractor(): GraphExtractor | undefined {
  * users over its life, and each client holds a conversation-id cache, so the
  * map is bounded and evicts least-recently-used.
  */
-const MAX_CACHED_USERS = Number(process.env.NAMS_CLIENT_CACHE ?? 256);
+const MAX_CACHED_USERS = Number(process.env.NAMS_CLIENT_CACHE ?? 250);
 
 /** Everything the agent is allowed to do with one user's memory. */
 interface UserMemory {
@@ -118,9 +117,6 @@ class MemoryGateway {
     if (!userId) throw new Error("MemoryGateway.for() requires a userId — see memoryScope in agent/lib/nams.ts");
 
     const entry = this.#entry(userId);
-    // Conversation stays unpinned unless the caller pinned one: NAMS then
-    // reuses the user's most recent conversation, which is what makes recall
-    // work across eve sessions.
     const userScope: NamsScope = { userId, conversationId: scope.conversationId };
 
     return {
@@ -133,18 +129,11 @@ class MemoryGateway {
 
       remember: async (input) => {
         const conversationId = await resolveConversation(entry.client, entry.config, userScope);
-        // Ignored for `interaction`, which never reaches the long-term half of
-        // `storeMemory`; load-bearing for every other type.
         await storeMemory(entry.client, conversationId, input, { extractor: graphExtractor() });
       },
 
       rememberReasoning: async (steps) => {
         if (steps.length === 0) return;
-
-        // `findExistingConversation`, not `resolveConversation`: a trace is
-        // provenance for a conversation that already happened, so it must never
-        // be the thing that creates one. No conversation yet means the turn
-        // stored nothing to hang a trace off, and we skip.
         const conversationId = await findExistingConversation(entry.client, entry.config, userScope);
         if (!conversationId) return;
 
@@ -170,7 +159,6 @@ class MemoryGateway {
   #entry(userId: string): UserEntry {
     const cached = this.#users.get(userId);
     if (cached) {
-      // Refresh LRU position.
       this.#users.delete(userId);
       this.#users.set(userId, cached);
       return cached;
@@ -188,8 +176,4 @@ class MemoryGateway {
   }
 }
 
-/**
- * The gateway instance. Module scope, so it lives as long as the serverless
- * instance does and its caches survive between turns of the same session.
- */
 export const memory = new MemoryGateway();

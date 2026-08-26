@@ -1,10 +1,5 @@
 /**
  * NAMS configuration, identity, and the shared types.
- *
- * No SDK calls happen here — `./memory-gateway` is the only file in the project
- * that touches `@neo4j-labs/nams-ai-provider`. This file holds what the gateway
- * and its callers both need: how to build a config, who the memory belongs to,
- * and the shapes that cross the boundary.
  */
 import type { SessionAuth } from "eve/context";
 import type { MemoryHit, NamsConfig, NamsScope } from "@neo4j-labs/nams-ai-provider";
@@ -14,7 +9,7 @@ export const MAX_MEMORIES = Number(process.env.NAMS_MAX_MEMORIES ?? 6);
 
 export const REASONING_ENABLED: boolean = process.env.NAMS_REASONING?.trim().toLowerCase() !== "off";
 
-/** Whether a completed turn is promoted into the long-term entity graph. */
+/** Whether a completed turn is moved  into the long-term entity graph. */
 export const GRAPH_MEMORY_ENABLED: boolean =
   process.env.NAMS_GRAPH_MEMORY?.trim().toLowerCase() !== "off";
 
@@ -28,12 +23,6 @@ function requireApiKey(): string {
   return apiKey;
 }
 
-/**
- * The base config every per-user client is built from.
- *
- * No `workspaceId` here on purpose: the gateway sets it per user from
- * `workspaceIdFor` below, which is the seam a multi-tenant policy would use.
- */
 export function namsConfig(): Omit<NamsConfig, "workspaceId"> {
   return {
     apiKey: requireApiKey(),
@@ -41,27 +30,11 @@ export function namsConfig(): Omit<NamsConfig, "workspaceId"> {
   };
 }
 
-/**
- * The workspace a given user's memory belongs in.
- *
- * One workspace per tenant is the only hard isolation NAMS offers — long-term
- * entities carry no user id, and `listConversations` ignores its `userId`
- * filter (see README, "Challenges"). This function is the seam where that
- * policy would live; today it returns the single configured workspace.
- */
 export function workspaceIdFor(_userId: string): string | undefined {
   return process.env.NAMS_WORKSPACE_ID || undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Who the memory belongs to.
-//
-// Derived from verified session context only. No tool accepts a `userId`
-// argument, so the model cannot address another user's memory by inventing an
-// id — the classic multi-tenant memory failure.
-// ---------------------------------------------------------------------------
 
-/** The subset of `ctx` every eve callback shares — tools, hooks, and dynamic resolvers alike. */
 interface ScopeSource {
   readonly session: {
     readonly id: string;
@@ -101,7 +74,6 @@ export interface StoreMemoryInput {
   readonly tags?: string[];
 }
 
-/** One tool the model invoked, recorded as a child of the reasoning step that asked for it. */
 export interface ReasoningToolCall {
   readonly toolName: string;
   readonly arguments: Record<string, unknown>;

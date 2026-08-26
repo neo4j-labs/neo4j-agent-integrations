@@ -29,7 +29,6 @@ export const MODEL_ROUTING: "gateway" | "openai" = (() => {
 
 export function baseModel(id: string = MODEL_ID): LanguageModelV4 {
   if (MODEL_ROUTING === "openai") {
-    // Gateway ids are "<provider>/<model>"; the direct provider wants the bare id.
     return openai(id.replace(/^openai\//, "")) as LanguageModelV4;
   }
   return gateway(id) as LanguageModelV4;

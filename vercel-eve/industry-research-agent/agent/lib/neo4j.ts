@@ -13,21 +13,10 @@
  * They live in one file because they are one decision — how this agent reaches
  * the graph — and reading them apart hides that the second exists only because
  * of a gap in the first.
- *
- * Read-only by construction on both routes: there is no write path in this
- * file, and the MCP server refuses writes on its own side.
  */
 import neo4j, { type Driver } from "neo4j-driver";
 
-// ---------------------------------------------------------------------------
 // Route 1 — MCP. Consumed by `connections/neo4j-graph.ts`.
-//
-// The server authenticates with HTTP Basic, not Bearer: it answers an
-// unauthenticated request with `WWW-Authenticate: Basic realm="Neo4j MCP
-// Server"`. eve's `auth.getToken` always sends `Authorization: Bearer <token>`,
-// so the credentials go through `headers` instead — which is why this is a
-// header builder rather than an auth provider.
-// ---------------------------------------------------------------------------
 
 const DEFAULT_URL = "https://neo4j-mcp-official-1008050579172.us-central1.run.app/mcp";
 
@@ -38,29 +27,18 @@ const MCP_PASSWORD = process.env.MCP_NEO4J_PASSWORD ?? "companies";
 
 /**
  * The three tools the server publishes today, all read-only.
- *
- * Kept as an explicit allow-list rather than "whatever the server lists":
- * `read-cypher`'s own description points at a `write-cypher` sibling, so a
- * server-side change could hand the model a write tool against a shared demo
- * instance. Naming the three we want means that can't happen silently.
  */
 export const MCP_TOOLS = ["get-schema", "read-cypher", "list-gds-procedures"] as const;
 
 /**
  * Headers that authenticate every request to the MCP server.
- *
- * Passed to `defineMcpClientConnection({ headers })`, which accepts a callback
- * and re-resolves it per request, so rotating the env vars does not require a
- * redeploy of anything holding a cached token.
  */
 export function neo4jMcpHeaders(): Record<string, string> {
   const encoded = Buffer.from(`${MCP_USERNAME}:${MCP_PASSWORD}`).toString("base64");
   return { Authorization: `Basic ${encoded}` };
 }
 
-// ---------------------------------------------------------------------------
 // Route 2 — Bolt. Consumed by `tools/search_news.ts`.
-// ---------------------------------------------------------------------------
 
 const BOLT_URI = process.env.NEO4J_URI ?? "neo4j+s://demo.neo4jlabs.com:7687";
 const BOLT_USERNAME = process.env.NEO4J_USERNAME ?? "companies";
@@ -71,8 +49,6 @@ let driver: Driver | undefined;
 
 function getDriver(): Driver {
   driver ??= neo4j.driver(BOLT_URI, neo4j.auth.basic(BOLT_USERNAME, BOLT_PASSWORD), {
-    // Serverless invocations are short-lived; a small pool avoids holding
-    // connections open past the request that opened them.
     maxConnectionPoolSize: 10,
     connectionAcquisitionTimeout: 10_000,
   });
@@ -81,10 +57,6 @@ function getDriver(): Driver {
 
 /**
  * Run a read-only Cypher query and return plain JSON rows.
- *
- * `READ` access mode is pinned at the driver rather than trusted to the query
- * text, so a write clause fails no matter what the query says. Neo4j integers
- * are narrowed to JS numbers so results survive eve's durable JSON boundary.
  */
 export async function readQuery<T = Record<string, unknown>>(
   cypher: string,

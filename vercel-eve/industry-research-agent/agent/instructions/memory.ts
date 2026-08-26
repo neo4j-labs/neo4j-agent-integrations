@@ -13,8 +13,6 @@ import { MAX_MEMORIES, memoryScope, renderMemories } from "../lib/nams";
 export default defineDynamic({
   events: {
     "turn.started": async (event, ctx) => {
-      // Retrieve against what the user actually just asked, so the injected
-      // block is relevant to this turn rather than a generic dump.
       const query = latestUserText(event) ?? "user preferences and research interests";
 
       try {
@@ -22,8 +20,6 @@ export default defineDynamic({
         if (memories.length === 0) return null;
         return defineInstructions({ markdown: renderMemories(memories) });
       } catch (error) {
-        // Memory is an enhancement, never a hard dependency: a NAMS outage
-        // should degrade the answer, not fail the turn.
         console.warn("[nams] recall failed, continuing without memory", error);
         return null;
       }

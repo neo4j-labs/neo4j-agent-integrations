@@ -78,7 +78,7 @@ instructions all reach memory through `memory.for(scope)`. It hands out **one
   policy (the only hard isolation NAMS offers) is only expressible with a client
   per tenant. `workspaceIdFor(userId)` in `lib/nams.ts` is that seam.
 - The map key is the namespace, and the map is bounded (`NAMS_CLIENT_CACHE`,
-  default 256, LRU).
+  default 250, LRU).
 
 ```ts
 const mem = memory.for(memoryScope(ctx));   // namespace = userId

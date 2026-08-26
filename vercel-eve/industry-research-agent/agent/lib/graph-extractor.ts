@@ -1,33 +1,5 @@
 /**
  * Entity extraction — how a stored memory becomes a graph.
- *
- * A local replacement for the provider's `createGraphExtractor`, kept for two
- * reasons that outlived the bug that first forced it.
- *
- * **The bug (fixed upstream in 0.2.1, still worth knowing).** The 0.2.0 schema
- * marked `description` as `.optional()`, and OpenAI's structured-output mode
- * rejects any object property missing from `required`:
- *
- *   Invalid schema for response_format 'response': ... 'required' is required
- *   to be supplied and to be an array including every key in properties.
- *   Missing 'description'.
- *
- * Every extraction threw, `storeMemory` swallowed it, and the fallback stored
- * one flat entity whose *name was the first 60 characters of the turn* — a
- * graph made of sentences. `.nullable()` says the same "may be absent" while
- * staying in `required`.
- *
- * **The two reasons it stays.**
- *   1. The prompt. The shipped extractor is told to skip "entities about memory,
- *      recall, or stored profiles". Ours is told the opposite about one thing:
- *      *include* the analyst's own identity and coverage areas, because those
- *      are the point of this agent's memory.
- *   2. The filter. See `isNotDomainEntity` below — the shipped default drops any
- *      all-lowercase name as a common noun, which takes real coverage areas with
- *      it.
- *
- * Same signature as the provider's version, so it drops straight into
- * `storeMemory`'s `opts.extractor`.
  */
 import { generateText, Output, zodSchema } from "ai";
 import type { LanguageModel } from "ai";
@@ -40,7 +12,7 @@ const graphSchema = z.object({
   entities: z
     .array(
       z.object({
-        name: z.string().describe('Canonical entity name, e.g. "Neo4j", "ArangoDB", "Alex"'),
+        name: z.string().describe('Canonical entity name, e.g. "Neo4j", "Alex"'),
         type: z
           .string()
           .describe("person | organization | tool | place | concept | preference | event"),
@@ -62,11 +34,7 @@ const graphSchema = z.object({
 /**
  * What the extractor is told to ignore.
  *
- * Extraction runs on raw turn text, which includes turns *about the agent*. An
- * earlier `/channels` turn is what put `analysis`, `final`, `private reasoning`
- * and `concise wrap-up` into the workspace as `Concept` entities — correct
- * extraction of the wrong subject. `hooks/persist-turn.ts` filters slash
- * commands before spending a model call; this catches the rest.
+ * Extraction runs on raw turn text, which includes turns *about the agent*. 
  */
 const PROMPT_RULES = [
   "Extract entities and the relationships between them from the memory below.",
@@ -96,22 +64,15 @@ const PROMPT_RULES = [
  * is supposed to remember.
  */
 const NOT_DOMAIN_ENTITIES = new Set([
-  // The conversation's participants are not things the graph should hold.
   "user", "users", "the user", "assistant", "the assistant", "agent", "the agent", "model",
-  // The agent's own vocabulary, harvested from turns about how it works.
   "tool", "tools", "skill", "skills", "memory", "conversation", "session", "channel",
   "analysis", "final", "response", "answer", "reasoning", "query", "schema",
-  // Generic nouns that are categories, not named things.
   "graph", "database", "dataset", "news", "article", "articles", "company", "companies",
 ]);
 
 function isNotDomainEntity(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   if (NOT_DOMAIN_ENTITIES.has(normalized)) return true;
-  // Tool names reach the extractor verbatim ("search_news",
-  // "neo4j-graph__read-cypher") and as prose ("search_news tool"). The
-  // underscore is what identifies them: requiring one keeps real hyphenated
-  // organizations ("T-Mobile", "Coca-Cola") out of this branch.
   if (/^[a-z0-9-]+_[a-z0-9_-]+( tool)?$/.test(normalized)) return true;
   return normalized.endsWith(" tool") || normalized.endsWith(" tools");
 }
@@ -127,7 +88,7 @@ function isNotDomainEntity(name: string): boolean {
  * spends round trips to be told the same thing and logs one warning per edge.
  *
  * Entities still land, which is what the Entity Explorer shows. Point NAMS at
- * your own Neo4j (BridgeTransport) and the edges start being written with no
+ * our own Neo4j (BridgeTransport) and the edges start being written with no
  * change here.
  */
 let relationshipsSupported = true;
@@ -159,8 +120,6 @@ export function createGraphExtractor(model: LanguageModel): GraphExtractor {
 
       const from = nameToId.get(rel.from);
       const to = nameToId.get(rel.to);
-      // A relationship naming an entity the model did not also emit — or one the
-      // filter dropped — has nothing to attach to.
       if (!from || !to) continue;
 
       try {

@@ -237,7 +237,7 @@ lifetime is ours.
 the client *instance*, so a fresh client per call means a wasted
 `list_conversations` round trip before every recall and every store. The map key
 is the userId namespace, and the map is bounded (`NAMS_CLIENT_CACHE`, default
-256, LRU).
+250, LRU).
 
 **What the gateway exposes** is three verbs and nothing else — `recall`,
 `remember`, `rememberReasoning`. `rememberReasoning` uses
