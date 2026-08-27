@@ -140,8 +140,12 @@ def _get_oauth_token(server_url: str) -> str | None:
                     "expires_at": now + expires_in,
                 }
                 return access_token
-    except Exception as e:
-        logger.warning(f"Failed to fetch MCP OAuth token from {token_url}: {e}")
+    except Exception as exc:
+        # Log only the exception class name to avoid leaking client secret or token data
+        logger.warning(
+            "Failed to fetch MCP OAuth token (%s). Falling back to unauthenticated request.",
+            type(exc).__name__,
+        )
 
     return None
 
