@@ -128,9 +128,9 @@ flowchart LR
     Agent -->|Execute MCP Tool| MCPClient
     MCPClient -->|1. Discover Token URL| Discovery
     MCPClient -->|2. Client Credentials Grant| TokenEndpoint
-    TokenEndpoint -->>|3. Bearer Access Token| MCPClient
-    MCPClient -->|4. Tool Request with Bearer Token| AuraMCP
-    AuraMCP -->>|5. Tool Results| Agent
+    TokenEndpoint -->|3. Access Token| MCPClient
+    MCPClient -->|4. Tool Request with Token| AuraMCP
+    AuraMCP -->|5. Tool Results| Agent
 ```
 
 ---
