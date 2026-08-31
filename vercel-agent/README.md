@@ -55,6 +55,12 @@ A production-ready Next.js 16 / React 19 chat application showing all three **NA
 
 See [`vercel_Nams_demo/README.md`](./vercel_Nams_demo/README.md) for architecture, integration-mode deep-dives, and setup.
 
+### eve Agent — [`vercel-eve/`](./vercel-eve/)
+
+Persistent, graph-backed memory for [eve](https://vercel.com/docs/eve), Vercel's open-source framework for durable backend agents. The working project, [`vercel-eve/industry-research-agent/`](./vercel-eve/industry-research-agent/), implements the repo's reference agent on eve: recall via dynamic instructions on `turn.started`, retention via hooks on `turn.completed`, the NAMS and Neo4j MCP servers mounted as read-only connections, and cross-session recall covered by an eval that discards the transcript between sessions.
+
+See [`vercel-eve/README.md`](./vercel-eve/README.md) for extension points, authentication as the memory boundary, and the documented NAMS gaps.
+
 ## Extension Points
 
 ### 1. MCP Integration
