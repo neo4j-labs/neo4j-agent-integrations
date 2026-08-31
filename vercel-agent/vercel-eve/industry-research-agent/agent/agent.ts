@@ -14,5 +14,5 @@ export default defineAgent({
    */
   model: MODEL_ROUTING === "openai" ? baseModel() : MODEL_ID,
 
-  reasoning: "low",
+  reasoning: "medium",
 });
