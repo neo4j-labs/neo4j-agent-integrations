@@ -1,0 +1,21 @@
+cd "${module_path}"
+
+if [ ! -d "minilm" ]; then
+  echo "Downloading sentence transformer model..."
+  python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2').save('./minilm')"
+fi
+
+SNOWSQL="$${SNOWSQL:-snowsql}"
+
+echo "Uploading model files to Snowflake stage..."
+find minilm -type f | while read -r file; do
+  rel_path="$${file#./minilm/}"
+  dir_path="$(dirname "$rel_path")"
+  "$SNOWSQL" \
+    -a "${account_locator}" \
+    -u "${service_user}" \
+    --private-key-path "${private_key_path}" \
+    -q "USE DATABASE ${database}; USE SCHEMA ${schema}; PUT file://$file @${stage_name}/$dir_path AUTO_COMPRESS=FALSE OVERWRITE=TRUE;"
+done
+
+echo "Upload complete."
