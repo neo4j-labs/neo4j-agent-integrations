@@ -79,13 +79,41 @@ def _build_path_xref_map(integrations_map: list) -> dict:
     return m
 
 
-def _make_inline(folder: str, path_xref: dict):
+def _heading_slug(text: str) -> str:
+    """GitHub-style heading slug, matching the anchors authors write in MD."""
+    s = re.sub(r'`|\*|_', '', text.strip().lower())
+    s = re.sub(r'[^\w\s-]', '', s)
+    return re.sub(r'\s+', '-', s).strip('-')
+
+
+def _resolvable_anchors(md_text: str) -> set:
+    """In-page anchors that actually have a matching heading in this document.
+
+    Only these become AsciiDoc cross-references; anything else keeps the old
+    behaviour of degrading to plain text rather than emitting a dead xref.
+    """
+    headings = {
+        _heading_slug(m.group(1))
+        for m in re.finditer(r'^#{1,6}\s+(.+)$', md_text, re.MULTILINE)
+    }
+    referenced = {
+        m.group(1).lower()
+        for m in re.finditer(r'\]\(#([^)]+)\)', md_text)
+    }
+    return (headings & referenced) - {''}
+
+
+def _make_inline(folder: str, path_xref: dict, anchors: set = None):
     """Return an _inline function closed over folder context and slug lookup."""
+    anchors = anchors or set()
 
     def _link(m):
         text, url = m.group(1), m.group(2)
         if url.startswith('#'):
-            return text  # fragment-only: drop anchor, keep text
+            target = url[1:].lower()
+            if target in anchors:
+                return f'<<{target},{text}>>'
+            return text  # no matching heading: drop anchor, keep text
 
         if url.startswith('http'):
             return f'{url}[{text}^]'
@@ -154,7 +182,8 @@ def _make_inline(folder: str, path_xref: dict):
 
 def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
     """Convert a full Markdown document to AsciiDoc for an integration page."""
-    _inline = _make_inline(folder, path_xref or {})
+    anchors = _resolvable_anchors(md_text)
+    _inline = _make_inline(folder, path_xref or {}, anchors)
     lines = md_text.splitlines()
     out = []
 
@@ -273,6 +302,34 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             i += 1
             continue
 
+        # ── Standalone <img> tag → AsciiDoc image macro ──────────────────────
+        # Raw HTML passthrough would keep a relative src (e.g. "images/x.png"),
+        # which resolves against the page URL instead of Antora's imagesdir and
+        # 404s on the published site. The macro routes through imagesdir and
+        # preserves the alt text / width the author set.
+        img_tag = re.match(r'^\s*<img\s+([^>]*?)/?>\s*$', line, re.IGNORECASE)
+        if img_tag:
+            attrs = img_tag.group(1)
+
+            def _attr(name):
+                m = re.search(
+                    rf'{name}\s*=\s*"([^"]*)"|{name}\s*=\s*\'([^\']*)\'',
+                    attrs, re.IGNORECASE)
+                return (m.group(1) or m.group(2)) if m else ''
+
+            src = _attr('src')
+            if src:
+                if in_table:
+                    flush_table()
+                macro_attrs = [_attr('alt') or 'Screenshot']
+                width = _attr('width')
+                if width.isdigit():
+                    macro_attrs.append(width)
+                out.append(f'image::{src}[{",".join(macro_attrs)}]')
+                out.append('')
+                i += 1
+                continue
+
         # ── Inline HTML (iframes etc.) — wrap in passthrough block ──────────
         if re.match(r'^\s*<[a-zA-Z]', line) and not re.match(r'^\s*<!--', line):
             if in_table:
@@ -299,6 +356,11 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
                 flush_table()
             level = len(h_match.group(1))
             text = h_match.group(2).strip()
+            # Explicit anchor for headings targeted by an in-page link, so the
+            # xref resolves regardless of the idprefix/idseparator in effect.
+            slug = _heading_slug(text)
+            if slug in anchors:
+                out.append(f'[#{slug}]')
             if level == 1:
                 if skip_first_h1:
                     skip_first_h1 = False
@@ -331,8 +393,25 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
                 i += 1
             out.append('[NOTE]')
             out.append('====')
+            # Fenced code blocks nested inside a blockquote must become
+            # AsciiDoc listing blocks, otherwise the ``` fences leak through.
+            bq_in_code = False
             for bql in bq_lines:
-                out.append(_inline(bql))
+                fence = re.match(r'^\s*(`{3,}|~{3,})\s*([\w+-]*)\s*$', bql)
+                if fence:
+                    if bq_in_code:
+                        out.append('----')
+                        bq_in_code = False
+                    else:
+                        lang = fence.group(2)
+                        if lang:
+                            out.append(f'[source,{lang}]')
+                        out.append('----')
+                        bq_in_code = True
+                    continue
+                out.append(bql if bq_in_code else _inline(bql))
+            if bq_in_code:
+                out.append('----')
             out.append('====')
             out.append('')
             continue

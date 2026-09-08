@@ -2,12 +2,13 @@
 
 ## Overview
 
-**Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using three distinct patterns:
+**Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using four distinct patterns:
 
 
 **1. Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).  
 **2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.  
 **3. Managed Agent Memory (via NAMS):** Offloads memory infrastructure entirely using the cloud-managed [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs), accessible via REST API or directly as an MCP tool.  
+**4. Semantic Retrieval (via neo4j-graphrag):** Gives the agent vector, full-text, and hybrid search over unstructured content in the graph using [`neo4j-graphrag`](https://neo4j.com/docs/neo4j-graphrag-python/current/), with retrievers exposed as ADK tools.  
 
 Examples target **ADK 2.0**, which introduces graph-based workflows alongside the conversational agent model.
 
@@ -17,6 +18,7 @@ Examples target **ADK 2.0**, which introduces graph-based workflows alongside th
 **Standardized Tooling:** Connect Google ADK agents to Neo4j securely via the Model Context Protocol (MCP).  
 **Graph Introspection:** Allow agents to autonomously discover graph schemas and execute Cypher queries.  
 **Deterministic Workflows:** Use ADK 2.0 `Workflow` graphs to put generated Cypher through validation and routing that the model cannot skip.  
+**GraphRAG Retrieval:** Combine vector similarity with graph traversal so retrieved text arrives with the surrounding relationships, dates, and verifiable source IDs.  
 **Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."  
 **Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.  
 
@@ -30,6 +32,12 @@ To run the full architecture (MCP + Memory), install the following dependencies:
 ```bash
 pip install "google-adk>=2.0.0" neo4j-mcp-server "neo4j-agent-memory[google-adk,vertex-ai]" spacy
 python -m spacy download en_core_web_sm
+```
+
+For the GraphRAG retrieval examples:
+
+```bash
+pip install "google-adk>=2.0.0" neo4j-graphrag sentence-transformers
 ```
 
 ## Configuration & Authentication  
@@ -204,16 +212,58 @@ workflow = Workflow(
 ```
 
 > Annotate node parameters as `str | None`. A routing `Event` carries no payload, so a downstream node bound to a bare `str` receives `None` and fails input validation.
-  
-## Example  
+
+**5. GraphRAG Retrieval as an ADK Tool**  
+`neo4j-graphrag` retrievers turn a question into graph results. `HybridCypherRetriever` combines vector and full-text search, then runs a `retrieval_query` that traverses outward from each match — so retrieved text arrives with its source article, date, and related entities. Wrapping the retriever in a `FunctionTool` lets the agent choose it like any other tool.  
+
+```python
+from google.adk.tools.function_tool import FunctionTool
+from neo4j_graphrag.embeddings import SentenceTransformerEmbeddings
+from neo4j_graphrag.retrievers import HybridCypherRetriever
+
+# `node` and `score` are in scope: continue into the graph from each vector hit.
+RETRIEVAL_QUERY = """
+WITH node AS chunk, score
+MATCH (article:Article)-[:HAS_CHUNK]->(chunk)
+OPTIONAL MATCH (article)-[:MENTIONS]->(org:Organization)
+RETURN chunk.text AS text, article.id AS article_id, article.title AS title,
+       collect(DISTINCT org.name)[..5] AS companies, score
+"""
+
+retriever = HybridCypherRetriever(
+    driver=driver,
+    vector_index_name="news_sbert",
+    fulltext_index_name="news_fulltext",
+    retrieval_query=RETRIEVAL_QUERY,
+    embedder=SentenceTransformerEmbeddings(),
+)
+
+def search_news(question: str) -> str:
+    """Search news by meaning and return the source article and companies mentioned.
+
+    Args:
+        question: A natural-language description of what to look for.
+    """
+    result = retriever.search(query_text=question, top_k=5)
+    return json.dumps([item.content for item in result.items])
+
+agent = Agent(model="gemini-3-flash", name="news_analyst",
+              tools=[FunctionTool(search_news)])
+```
+
+> The embedding model must match the model that built the vector index. A mismatch does not raise an error — it silently returns meaningless results. Re-embed a stored chunk and compare against its saved vector to confirm the pairing.
+
+## Example
 
 | Notebook | Description |
 |----------|-------------|
 | [google_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/google_adk.ipynb) | Walkthrough of using Google ADK with Neo4j MCP: agent setup, Cypher query execution, deterministic workflows, and utilising persistent graph memory for agent |
-  
+| [neo4j_graphrag_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/neo4j_graphrag_adk.ipynb) | Walkthrough of using `neo4j-graphrag` with Google ADK: pairing embedding models with vector indexes, vector, hybrid and graph-traversal retrievers, and exposing them as agent tools |
+
 ## Resources  
 • [Neo4j MCP Server Documentation](https://neo4j.com/docs/mcp/current/)
 • [Google ADK Official Documentation](https://docs.cloud.google.com/agent-builder/agent-development-kit/overview)
 • [ADK 2.0 Graph Workflows](https://adk.dev/graphs/)
+• [Neo4j GraphRAG for Python](https://neo4j.com/docs/neo4j-graphrag-python/current/)
 • [Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/)
 • [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs)

@@ -71,6 +71,7 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[strands-agents](./aws-strands-agents/)** - AWS Strands
 - **[google-adk](./google-adk/)** - Google ADK
 - **[crewai](./crewai/)** - CrewAI
+- **[flue](./flue/)** - Flue 
 - **[pydantic-ai](./pydantic-ai/)** - Pydantic AI
 - **[llamaindex](./llamaindex/)** - LlamaIndex
 - **[haystack](./haystack/)** - Haystack

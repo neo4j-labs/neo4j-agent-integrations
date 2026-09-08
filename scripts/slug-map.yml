@@ -63,6 +63,15 @@ integrations:
         title: "Microsoft Agent Framework — Foundry-hosted Multi-Agent"
         nav_label: "Foundry-hosted Multi-Agent"
 
+  - folder: flue
+    slug: flue
+    title: "Flue + Neo4j Integration"
+    tags: "flue, typescript, agents, neo4j, mcp, javascript"
+    product: Flue
+    category: "Agent Frameworks"
+    nav_label: Flue
+    thin: false
+
   - folder: crewai
     slug: crewai
     title: "CrewAI + Neo4j Integration"
@@ -131,6 +140,15 @@ integrations:
         title: "Microsoft Foundry — Foundry SDK + Neo4j"
         nav_label: "Foundry SDK + Neo4j"
 
+  - folder: microsoft-copilot-studio
+    slug: microsoft-copilot-studio
+    title: "Microsoft Copilot Studio + Neo4j Integration"
+    tags: "microsoft, copilot-studio, low-code, agents, neo4j, mcp, azure"
+    product: "Microsoft Copilot Studio"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Microsoft Copilot Studio"
+    thin: false
+
   - folder: databricks-agent-bricks
     slug: databricks-agent-bricks
     title: "Databricks Agent Bricks + Neo4j Integration"
@@ -152,6 +170,10 @@ integrations:
         slug: databricks-official-mcp
         title: "Databricks Agent Bricks — Official MCP Server"
         nav_label: "Official MCP Server"
+      - src: samples/4-aura-mcp/README.md
+        slug: databricks-aura-mcp
+        title: "Databricks Agent Bricks — Aura MCP over Unity AI Gateway"
+        nav_label: "Aura MCP (Unity Gateway)"
 
   - folder: google-adk
     slug: google-adk
@@ -160,6 +182,15 @@ integrations:
     product: "Google ADK"
     category: "Cloud & Enterprise Platforms"
     nav_label: "Google ADK"
+    thin: false
+
+  - folder: gcp-managed-agents
+    slug: gcp-managed-agents
+    title: "Vertex AI Managed Agents + Neo4j Integration"
+    tags: "google, gcp, vertex-ai, managed-agents, neo4j, mcp, memory-bank"
+    product: "Vertex AI Managed Agents"
+    category: "Cloud & Enterprise Platforms"
+    nav_label: "Vertex AI Managed Agents"
     thin: false
 
   - folder: google-gemini-enterprise
@@ -197,6 +228,10 @@ integrations:
         slug: salesforce-agentforce-mcp
         title: "Salesforce Agentforce — Neo4j MCP Integration"
         nav_label: "Direct MCP Integration"
+      - src: agentforce-auraagents-mcp.md
+        slug: salesforce-auraagents
+        title: "Salesforce Agentforce — Multi-Agent Integration with Aura Agents"
+        nav_label: "Multi-Agent MCP Integration"
       - src: agentforce-memory.md
         slug: salesforce-agentforce-memory
         title: "Salesforce Agentforce — Neo4j Agent Memory"
@@ -209,7 +244,25 @@ integrations:
     product: "IBM watsonx Orchestrate"
     category: "Cloud & Enterprise Platforms"
     nav_label: "IBM watsonx Orchestrate"
-    thin: true
+    thin: false
+    sub_pages:
+      - src: docs/console-agent-setup.md
+        slug: ibm-watsonx-console-setup
+        title: "IBM watsonx Orchestrate — Console Agent Setup"
+        nav_label: "Console Agent Setup"
+      - src: docs/known-issues.md
+        slug: ibm-watsonx-known-issues
+        title: "IBM watsonx Orchestrate — Known Issues"
+        nav_label: "Known Issues"
+
+  - folder: datarobot
+    slug: datarobot
+    title: "DataRobot + Neo4j Integration"
+    tags: "datarobot, agentic-ai, agents, neo4j, mcp, agent-memory"
+    product: DataRobot
+    category: "Cloud & Enterprise Platforms"
+    nav_label: DataRobot
+    thin: false
 
   - folder: servicenow-ai-agents
     slug: servicenow-ai-agents
@@ -273,6 +326,15 @@ integrations:
     category: "Agent Frameworks"
     nav_label: "Vercel AI SDK"
     thin: false
+    sub_pages:
+      - src: notebook/README.md
+        slug: vercel-agent-notebook
+        title: "Vercel AI SDK — Node.js Scripts"
+        nav_label: "Node.js Scripts"
+      - src: vercel_Nams_demo/README.md
+        slug: vercel-agent-nams-chat
+        title: "Vercel AI SDK — NAMS Chat with Neo4j Agent Memory"
+        nav_label: "NAMS Chat (Agent Memory)"
 
   - folder: uipath-ai-agent
     slug: uipath-ai-agent

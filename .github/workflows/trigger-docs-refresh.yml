@@ -8,10 +8,78 @@ on:
       - '**/README.md'
       - 'scripts/slug-map.yml'
       - 'scripts/publish-to-labs.py'
-      - 'labs-pages/modules/**'
+      - 'scripts/check-nav.py'
+      - 'scripts/validate-adoc.py'
+  pull_request:
+    paths:
+      - '*/README.md'
+      - '**/README.md'
+      - 'scripts/slug-map.yml'
+      - 'scripts/publish-to-labs.py'
+      - 'scripts/check-nav.py'
+      - 'scripts/validate-adoc.py'
 
 jobs:
+  # Convert every README named in slug-map.yml and lint the result before the
+  # docs-refresh build can consume it. Also runs on pull requests, so breakage
+  # surfaces pre-merge rather than after publish.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout neo4j-agent-integrations
+        uses: actions/checkout@v4
+
+      # labs-pages is a separate public repository holding the navigation and
+      # the landing pages. It is not vendored here (locally it is usually a
+      # symlink), so clone it to check that its xrefs resolve.
+      - name: Checkout labs-pages
+        uses: actions/checkout@v4
+        with:
+          repository: neo4j-documentation/labs-pages
+          ref: publish
+          path: labs-pages-nav
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+          gem install asciidoctor --no-document
+
+      - name: Convert README.md -> AsciiDoc
+        run: |
+          mkdir -p /tmp/labs-pages/modules/genai-ecosystem/pages/genai-frameworks
+          python3 scripts/publish-to-labs.py --convert \
+            --labs-pages-dir /tmp/labs-pages
+
+      - name: Lint generated AsciiDoc
+        run: |
+          python3 scripts/publish-to-labs.py --validate \
+            --labs-pages-dir /tmp/labs-pages
+
+      - name: Render with Asciidoctor
+        # Catches malformed markup and dangling in-page anchors that the
+        # rule-based linter cannot see. Gated on ERROR, not WARN: two pages
+        # carry pre-existing "section title out of sequence" warnings, which
+        # are printed for visibility but must not fail the build.
+        run: |
+          cd /tmp/labs-pages/modules/genai-ecosystem/pages/genai-frameworks
+          asciidoctor -a idprefix='' -a idseparator=- \
+            --failure-level=ERROR -o /dev/null *.adoc
+
+      - name: Check nav.adoc and landing pages resolve
+        # An xref to a page that was never generated is a hard Antora build
+        # failure, so this gate runs against the real labs-pages navigation.
+        run: |
+          python3 scripts/check-nav.py \
+            --pages-dir /tmp/labs-pages/modules/genai-ecosystem/pages/genai-frameworks \
+            --nav-dir labs-pages-nav
+
   trigger:
+    needs: validate
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch docs-refresh build

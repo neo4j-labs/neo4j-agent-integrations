@@ -1,0 +1,13 @@
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Dependencies and generated state
+node_modules/
+.flue/
+dist/
+*.tsbuildinfo
+
+# OS noise
+.DS_Store
