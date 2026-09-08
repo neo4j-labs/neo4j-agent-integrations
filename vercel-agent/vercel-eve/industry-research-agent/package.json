@@ -1,0 +1,38 @@
+{
+  "name": "industry-research-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vercel eve agent with a Neo4j knowledge graph and NAMS persistent memory",
+  "type": "module",
+  "imports": {
+    "#*": "./agent/*",
+    "#evals/*": "./evals/*"
+  },
+  "scripts": {
+    "build": "eve build",
+    "dev": "eve dev",
+    "start": "eve start",
+    "deploy": "eve deploy",
+    "eval": "eve eval",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.36",
+    "@neo4j-labs/agent-memory": "^0.4.1",
+    "@neo4j-labs/nams-ai-provider": "^0.2.1",
+    "ai": "^7.0.38",
+    "eve": "^0.31.3",
+    "neo4j-driver": "^6.2.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.x",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "ai": "^7.0.38"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

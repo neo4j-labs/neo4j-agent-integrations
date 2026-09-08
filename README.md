@@ -76,7 +76,7 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[llamaindex](./llamaindex/)** - LlamaIndex
 - **[haystack](./haystack/)** - Haystack
 - **[claude-agent](./claude-agent/)** - Claude Agent
-- **[vercel-agent](./vercel-agent/)** - Vercel AI SDK (Provider + MCP + custom tools + NAMS agent memory)
+- **[vercel-agent](./vercel-agent/)** - Vercel AI SDK (Provider + MCP + custom tools + NAMS agent memory), plus [vercel-eve](./vercel-agent/vercel-eve/) — graph-backed memory for Vercel's eve agent framework
 
 ### Workflow & Orchestration
 - **[ibm-watsonx](./ibm-watsonx/)** - IBM watsonx Orchestrate
