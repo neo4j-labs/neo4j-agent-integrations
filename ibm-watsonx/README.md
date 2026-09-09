@@ -20,7 +20,7 @@ The agent inspects the graph schema, generates Cypher, and answers questions abo
 
 ## Architecture
 
-![IBM Watsonx orchestrate + Neo4j MCP Integration](ibm_neo4j_architecture.png.png)
+![IBM Watsonx orchestrate + Neo4j MCP Integration](ibm_neo4j_architecture.png)
 
 The runtime execution flow functions along the following boundaries:
 
