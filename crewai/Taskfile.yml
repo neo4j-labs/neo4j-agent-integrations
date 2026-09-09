@@ -1,0 +1,36 @@
+---
+# https://taskfile.dev
+version: '3'
+
+tasks:
+  install:
+    desc: "🛠️ Install dependencies in a virtual environment"
+    cmds:
+      - echo "Setting up .venv and installing dependencies..."
+      - test -d .venv || python3 -m venv .venv
+      - .venv/bin/pip install --prefer-binary -r requirements.txt
+      - .venv/bin/pip install -e .
+
+  test:
+    desc: "🧪 Run unit tests with pytest"
+    cmds:
+      - .venv/bin/python -m pytest -vv tests/
+
+  lint:
+    desc: "🧹 Check and format code with ruff"
+    cmds:
+      - .venv/bin/python -m ruff check . --fix || echo "ruff check finished"
+      - .venv/bin/python -m ruff format . || true
+
+  run:
+    desc: "▶️ Run the multi-agent crew (pass company name with -- 'Company Name')"
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        COMPANY="${1:-Google}"
+        .venv/bin/python main.py --company "$COMPANY"
+
+  server:
+    desc: "🚀 Start the production FastAPI API server"
+    cmds:
+      - .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 --reload
