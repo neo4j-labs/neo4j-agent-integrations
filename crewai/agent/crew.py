@@ -213,9 +213,11 @@ def build_company_intelligence_crew(
 
 def build_query_crew(query: str) -> Crew:
     """Build a single-agent crew for an open-ended natural-language query."""
-    tools = get_neo4j_tools() + get_memory_tools()
+    tools = get_memory_tools()
     if is_mcp_enabled():
         tools.extend(load_mcp_tools())
+    else:
+        tools.extend(get_neo4j_tools())
 
     agent = create_query_agent(tools)
     crew_kwargs: dict[str, Any] = {

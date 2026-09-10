@@ -173,6 +173,21 @@ NEO4J_DATABASE=companies
 MCP_SERVER_COMMAND=neo4j-mcp-server
 ```
 
+For an Aura instance, replace the `NEO4J_*` values with the connection details
+from the Aura console:
+
+```ini
+NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
+NEO4J_USERNAME=<database-username>
+NEO4J_PASSWORD=<database-password>
+NEO4J_DATABASE=<database-name>
+
+# Optional metadata for external deployment tooling; the application does not
+# use these to establish the database connection.
+AURA_INSTANCEID=<instance-id>
+AURA_INSTANCENAME=<instance-name>
+```
+
 To enable local MCP tools, install the MCP dependency group:
 
 ```bash
@@ -192,7 +207,8 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and ask normal-language
 questions about the graph. The chat interface uses `/api/v1/query`; each message
 is an independent agent run that can use the built-in Neo4j tools and optional
-local MCP tools.
+local MCP tools. When `MCP_SERVER_COMMAND` is configured, normal-language
+queries use the local MCP tools for graph access.
 
 ### 5. Run the Full Research Crew
 
