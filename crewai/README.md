@@ -257,6 +257,14 @@ Or via Taskfile:
 task run -- "Microsoft"
 ```
 
+### Client Showcase Notebook
+
+For a guided client demonstration in a single Jupyter notebook, use
+[`notebooks/client_showcase.ipynb`](notebooks/client_showcase.ipynb). It covers
+installation, local configuration, MCP verification, custom-tool discovery,
+natural-language graph queries, and the full multi-agent briefing without
+embedding credentials.
+
 ---
 
 ## Running Tests
