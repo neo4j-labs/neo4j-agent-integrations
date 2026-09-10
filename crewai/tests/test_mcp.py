@@ -61,7 +61,18 @@ def test_load_mcp_tools(monkeypatch):
 
     mock_tools_metadata = [
         {"name": "get_schema", "description": "Get database schema", "input_schema": {}},
-        {"name": "read_cypher", "description": "Run a read query", "input_schema": {}},
+        {
+            "name": "read_cypher",
+            "description": "Run a read query",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Cypher query"},
+                    "params": {"type": "object", "description": "Query parameters"},
+                },
+                "required": ["query"],
+            },
+        },
     ]
     monkeypatch.setattr(
         "agent.mcp._async_list_mcp_tools", AsyncMock(return_value=mock_tools_metadata)
@@ -70,6 +81,9 @@ def test_load_mcp_tools(monkeypatch):
     tools = load_mcp_tools("neo4j-mcp-server")
 
     assert [tool.name for tool in tools] == ["mcp_get_schema", "mcp_read_cypher"]
+    read_cypher = next(tool for tool in tools if tool.name == "mcp_read_cypher")
+    assert set(read_cypher.args_schema.model_fields) == {"query", "params"}
+    assert read_cypher.args_schema.model_fields["query"].is_required()
 
 
 def test_dynamic_mcp_tool_execution(monkeypatch):

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 try:
     from mcp import ClientSession
@@ -115,10 +115,34 @@ async def _async_call_mcp_tool(
         return "\n".join(content) if content else json.dumps(result.model_dump())
 
 
-class DynamicMCPToolInput(BaseModel):
-    """Dynamic input container for local MCP tools."""
+def _input_type(schema: dict[str, Any]) -> type[Any]:
+    """Map MCP JSON schema types to Pydantic-compatible Python types."""
+    return {
+        "array": list[Any],
+        "boolean": bool,
+        "integer": int,
+        "number": float,
+        "object": dict[str, Any],
+        "string": str,
+    }.get(schema.get("type"), Any)
 
-    arguments: str = Field(default="{}", description="JSON string containing MCP tool arguments.")
+
+def _create_input_schema(tool_name: str, input_schema: dict[str, Any]) -> type[BaseModel]:
+    """Create a typed CrewAI input model from an MCP tool's JSON schema."""
+    properties = input_schema.get("properties", {})
+    required = set(input_schema.get("required", []))
+    fields = {
+        field_name: (
+            _input_type(field_schema),
+            Field(
+                default=... if field_name in required else field_schema.get("default", None),
+                description=field_schema.get("description", ""),
+            ),
+        )
+        for field_name, field_schema in properties.items()
+    }
+    model_name = "".join(part.title() for part in tool_name.replace("-", "_").split("_"))
+    return create_model(f"{model_name}MCPInput", **fields)
 
 
 class DynamicMCPTool(BaseTool):
@@ -128,10 +152,11 @@ class DynamicMCPTool(BaseTool):
     description: str = "Execute a local MCP tool."
     server_command: str = ""
     target_tool_name: str = ""
+    args_schema: type[BaseModel] = BaseModel
 
     def _run(self, **kwargs: Any) -> str:
         arguments = kwargs
-        if "arguments" in kwargs and len(kwargs) == 1:
+        if "arguments" in kwargs and len(kwargs) == 1 and isinstance(kwargs["arguments"], str):
             try:
                 arguments = json.loads(kwargs["arguments"])
             except json.JSONDecodeError as error:
@@ -163,6 +188,9 @@ def load_mcp_tools(command: str | None = None) -> list[BaseTool]:
             description=f"[MCP] {metadata.get('description') or metadata['name']}",
             server_command=local_command,
             target_tool_name=metadata["name"],
+            args_schema=_create_input_schema(
+                metadata["name"], metadata.get("input_schema", {})
+            ),
         )
         for metadata in tools_metadata
     ]
