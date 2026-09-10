@@ -46,3 +46,14 @@ def test_get_investments_uses_local_mcp_when_configured(monkeypatch):
 
     assert result == '[{"name": "Contoso"}]'
     mcp_query.assert_awaited_once()
+
+
+def test_company_query_uses_local_mcp_when_configured(monkeypatch):
+    monkeypatch.setenv("MCP_SERVER_COMMAND", "neo4j-mcp-server")
+    mcp_query = AsyncMock(return_value='[{"name": "Contoso"}]')
+    monkeypatch.setattr(custom_tools_module, "execute_read_query", mcp_query)
+
+    result = asyncio.run(custom_tools.query_company("Contoso"))
+
+    assert result == '{\n  "name": "Contoso"\n}'
+    mcp_query.assert_awaited_once()

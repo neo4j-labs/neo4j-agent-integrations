@@ -5,6 +5,7 @@ import asyncio
 import shlex
 import shutil
 import sysconfig
+import threading
 from pathlib import Path
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
@@ -34,8 +35,64 @@ def get_vertex_client() -> genai.Client:
         )
     return _vertex_client
                       
+class MCPRecord:
+    """Provide the Neo4j record interface expected by existing custom tools."""
+
+    def __init__(self, value: dict[str, Any]) -> None:
+        self.value = value
+
+    def data(self) -> dict[str, Any]:
+        return self.value
+
+
+def _run_async_synchronously(coroutine: Any) -> Any:
+    """Run an async MCP call from the custom tools' async function bodies."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+
+    result: list[Any] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            result.append(asyncio.run(coroutine))
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
+    if errors:
+        raise errors[0]
+    return result[0]
+
+
+class LocalMCPDriver:
+    """Adapt the local MCP read-cypher tool to the Neo4j driver interface."""
+
+    def __enter__(self) -> "LocalMCPDriver":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        return None
+
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[MCPRecord], None, None]:
+        parameters.pop("database_", None)
+        response = _run_async_synchronously(execute_read_query(query, parameters))
+        if response is None:
+            raise RuntimeError("Local MCP was not configured.")
+        payload = json.loads(response)
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Unexpected local MCP response: {response}")
+        return [MCPRecord(record) for record in payload], None, None
+
+
 def get_driver():
-    """Returns a Neo4j driver instance."""
+    """Return local MCP query transport when configured, otherwise a Neo4j driver."""
+    if os.environ.get("MCP_SERVER_COMMAND", "").strip():
+        return LocalMCPDriver()
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
 
 
@@ -142,8 +199,9 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
     """
     Find related organizations through graph traversal.
     """
-    query = """
-    MATCH path = (o1:Organization {name: $company})-[*1..$depth]-(o2:Organization)
+    depth = max(1, min(int(max_depth), 3))
+    query = f"""
+    MATCH path = (o1:Organization {{name: $company}})-[*1..{depth}]-(o2:Organization)
     WHERE o1 <> o2
     RETURN DISTINCT o2.name as organization,
            reduce(s = "", r IN relationships(path) | s + "(" + type(r) + ")->") as relationships,
@@ -156,7 +214,6 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
             records, _, _ = driver.execute_query(
                 query,
                 company=company_name,
-                depth=max_depth,
                 database_=NEO4J_DATABASE
             )
             results = [record.data() for record in records]
