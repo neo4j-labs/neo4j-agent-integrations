@@ -67,11 +67,14 @@ flowchart TD
    - Cross-session memory and shared context graph across all crew members.
    - Tools: `search_memory`, `save_memory_fact`, and `get_preferences`.
    - Allows agents to remember prior analyses and adapt to user reporting preferences.
+   - The browser chat remains stateless: each submitted message is a separate
+     agent run, so it does not automatically include prior browser messages.
 
 4. **Model Context Protocol (MCP) Support**:
    - Runs the official `neo4j-mcp-server` locally over stdio; no hosted MCP endpoint or OAuth credentials are required.
    - Forwards the integration's Neo4j credentials to the MCP server and defaults its tools to read-only mode.
-   - Discovers local MCP tools and exposes them to the researcher and analyst agents.
+   - Discovers local MCP tools and exposes them to the researcher, analyst,
+     and natural-language query agents.
 
 5. **Production Deployment Options**:
    - CLI execution script (`main.py`).
@@ -194,17 +197,24 @@ To enable local MCP tools, install the MCP dependency group:
 pip install -e ".[mcp]"
 ```
 
-### Optional Repository Custom Tools
+### Repository Custom Tools
 
 The repository's `custom_tools` package provides company, relationship, industry,
 article, investment, and Vertex AI news-search capabilities. It is installed
 automatically by `pip install -r requirements.txt` from a repository checkout.
 The query assistant always receives these tools and the LLM chooses whether to
-invoke them.
+invoke them. When `MCP_SERVER_COMMAND` is set, the custom tools execute their
+read queries through the local MCP server instead of opening a separate Neo4j
+driver connection.
 
 The news-search tool requires Google Vertex AI credentials and a compatible
 `news_google` vector index. Other custom tools do not initialize a Vertex client
 unless the news-search tool is called.
+
+> The shared custom tools target a Companies/News graph schema (for example,
+> `Article`, `Chunk`, `IndustryCategory`, and `HAS_INVESTOR`). For a NAMS graph
+> without those labels or relationships, use the local MCP `read-cypher` tool
+> for general graph exploration; schema-specific custom tools may return no data.
 
 ### 4. Chat in Your Browser
 
@@ -218,9 +228,8 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and ask normal-language
 questions about the graph. The chat interface uses `/api/v1/query`; each message
-is an independent agent run that can use the built-in Neo4j tools and optional
-local MCP tools. When `MCP_SERVER_COMMAND` is configured, normal-language
-queries use the local MCP tools for graph access.
+is an independent agent run. When `MCP_SERVER_COMMAND` is configured,
+normal-language queries and custom-tool graph reads use the local MCP tools.
 
 ### 5. Run the Full Research Crew
 
@@ -277,9 +286,9 @@ curl -X POST http://localhost:8000/api/v1/research \
 ### 2. Natural-Language Queries
 
 Send a normal-language request to the graph intelligence assistant. It can use
-the built-in Neo4j tools and optional local MCP tools to answer the request. This
-endpoint is stateless; persist conversation state externally if your application
-requires multi-turn context.
+the built-in Neo4j tools, shared custom tools, and local MCP tools to answer the
+request. This endpoint is stateless; persist conversation state externally if
+your application requires multi-turn context.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/query \
