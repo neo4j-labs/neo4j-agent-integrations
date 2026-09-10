@@ -179,7 +179,22 @@ To enable local MCP tools, install the MCP dependency group:
 pip install -e ".[mcp]"
 ```
 
-### 4. Run the Crew
+### 4. Chat in Your Browser
+
+Start the FastAPI server:
+
+```bash
+task server
+# or
+uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and ask normal-language
+questions about the graph. The chat interface uses `/api/v1/query`; each message
+is an independent agent run that can use the built-in Neo4j tools and optional
+local MCP tools.
+
+### 5. Run the Full Research Crew
 
 Run a complete company intelligence workflow:
 
@@ -208,7 +223,7 @@ pytest -vv tests/
 
 ## Production Deployment
 
-### 1. FastAPI REST Server
+### 1. FastAPI REST Server and Chat Interface
 
 Start the production API server:
 
@@ -218,8 +233,10 @@ task server
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000` in a browser for the chat interface. It submits
-normal-language requests to the query API and displays the response in the conversation.
+Open [http://localhost:8000](http://localhost:8000) for the chat interface. It
+submits normal-language requests to the query API and displays the response in
+the conversation. API documentation remains available at
+[http://localhost:8000/docs](http://localhost:8000/docs).
 
 Trigger research runs programmatically:
 
@@ -232,7 +249,9 @@ curl -X POST http://localhost:8000/api/v1/research \
 ### 2. Natural-Language Queries
 
 Send a normal-language request to the graph intelligence assistant. It can use
-the built-in Neo4j tools and optional local MCP tools to answer the request.
+the built-in Neo4j tools and optional local MCP tools to answer the request. This
+endpoint is stateless; persist conversation state externally if your application
+requires multi-turn context.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/query \
