@@ -226,7 +226,18 @@ curl -X POST http://localhost:8000/api/v1/research \
   -d '{"company_name": "Apple", "output_file": "apple_report.md"}'
 ```
 
-### 2. Docker Deployment
+### 2. Natural-Language Queries
+
+Send a normal-language request to the graph intelligence assistant. It can use
+the built-in Neo4j tools and optional local MCP tools to answer the request.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Which organizations are connected to Google?"}'
+```
+
+### 3. Docker Deployment
 
 ```dockerfile
 FROM python:3.11-slim

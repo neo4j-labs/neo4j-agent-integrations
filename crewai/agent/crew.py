@@ -15,8 +15,8 @@ from typing import Any
 from crewai import Agent, Crew, Process, Task
 from crewai.tools import BaseTool
 
-from agent.memory import build_crew_memory, get_memory_tools, is_memory_configured
 from agent.mcp import is_mcp_enabled, load_mcp_tools
+from agent.memory import get_memory_tools
 from agent.tools import (
     CompanyProfileTool,
     CompanyRelationshipsTool,
@@ -87,6 +87,35 @@ def create_writer_agent(tools: list[BaseTool] | None = None) -> Agent:
     )
 
 
+def create_query_agent(tools: list[BaseTool]) -> Agent:
+    """Create an agent that answers an open-ended graph intelligence request."""
+    return Agent(
+        role="Neo4j Graph Intelligence Assistant",
+        goal="Answer user questions accurately using the Neo4j knowledge graph and available MCP tools.",
+        backstory=(
+            "You are a precise graph intelligence assistant. You use available tools to retrieve facts "
+            "before answering, distinguish verified results from inferences, and never claim data that "
+            "is not returned by a tool."
+        ),
+        tools=tools,
+        verbose=os.environ.get("CREW_VERBOSE", "true").lower() == "true",
+        allow_delegation=False,
+    )
+
+
+def create_query_task(agent: Agent, query: str) -> Task:
+    """Create a task that answers a normal-language user query."""
+    return Task(
+        description=(
+            "Answer the following user request using the available Neo4j and MCP tools when needed. "
+            "Use only verified tool results for factual claims, and state clearly if the graph does not "
+            f"contain enough information.\n\nUser request: {query}"
+        ),
+        expected_output="A concise, accurate Markdown response that directly answers the user request.",
+        agent=agent,
+    )
+
+
 def create_research_task(agent: Agent, company_name: str) -> Task:
     """Task for gathering initial company profile and leadership data from Neo4j."""
     return Task(
@@ -147,10 +176,6 @@ def build_company_intelligence_crew(
     crew_id: str | None = None,
 ) -> Crew:
     """Assemble and configure the full multi-agent Crew for company intelligence."""
-    effective_crew_id = crew_id or f"crew_{company_name.lower().replace(' ', '_')}"
-
-    # Load shared tools
-    neo4j_tools = get_neo4j_tools()
     memory_tools = get_memory_tools()
     mcp_tools = load_mcp_tools() if is_mcp_enabled() else []
 
@@ -183,5 +208,20 @@ def build_company_intelligence_crew(
         "process": Process.sequential,
         "verbose": os.environ.get("CREW_VERBOSE", "true").lower() == "true",
     }
+    return Crew(**crew_kwargs)
 
+
+def build_query_crew(query: str) -> Crew:
+    """Build a single-agent crew for an open-ended natural-language query."""
+    tools = get_neo4j_tools() + get_memory_tools()
+    if is_mcp_enabled():
+        tools.extend(load_mcp_tools())
+
+    agent = create_query_agent(tools)
+    crew_kwargs: dict[str, Any] = {
+        "agents": [agent],
+        "tasks": [create_query_task(agent, query)],
+        "process": Process.sequential,
+        "verbose": os.environ.get("CREW_VERBOSE", "true").lower() == "true",
+    }
     return Crew(**crew_kwargs)
