@@ -7,10 +7,13 @@ suitable for deployment in cloud environments, Docker containers, and enterprise
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -22,6 +25,8 @@ app = FastAPI(
     description="REST API for triggering and executing multi-agent graph intelligence workflows.",
     version="0.1.0",
 )
+STATIC_DIRECTORY = Path(__file__).parent / "web"
+app.mount("/static", StaticFiles(directory=STATIC_DIRECTORY), name="static")
 
 
 class ResearchRequest(BaseModel):
@@ -46,6 +51,12 @@ class QueryResponse(BaseModel):
     query: str
     status: str
     result: str
+
+
+@app.get("/", include_in_schema=False)
+def chat_interface() -> FileResponse:
+    """Serve the browser chat interface."""
+    return FileResponse(STATIC_DIRECTORY / "index.html")
 
 
 @app.get("/health")

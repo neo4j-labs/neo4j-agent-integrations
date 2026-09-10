@@ -6,6 +6,15 @@ from fastapi.testclient import TestClient
 import server
 
 
+def test_chat_interface_is_served():
+    response = TestClient(server.app).get("/")
+
+    assert response.status_code == 200
+    assert "Neo4j Graph Intelligence Assistant" in response.text
+    assert 'action="/api/v1/query"' not in response.text
+    assert 'fetch("/api/v1/query"' in response.text
+
+
 def test_query_endpoint_runs_natural_language_query(monkeypatch):
     crew = MagicMock()
     crew.kickoff.return_value = "Verified graph answer"

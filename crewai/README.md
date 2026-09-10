@@ -218,6 +218,9 @@ task server
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
+Open `http://localhost:8000` in a browser for the chat interface. It submits
+normal-language requests to the query API and displays the response in the conversation.
+
 Trigger research runs programmatically:
 
 ```bash
