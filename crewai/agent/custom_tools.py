@@ -5,7 +5,6 @@ import asyncio
 import importlib.util
 import json
 import logging
-import os
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -74,12 +73,11 @@ class CustomNeo4jTool(BaseTool):
 
 
 def get_custom_tools() -> list[BaseTool]:
-    """Return opt-in CrewAI wrappers for every installed shared custom tool."""
-    if os.environ.get("CUSTOM_TOOLS_ENABLED", "false").lower() != "true":
-        return []
+    """Return CrewAI wrappers for every installed shared custom tool."""
     if importlib.util.find_spec("custom_tools") is None:
         raise RuntimeError(
-            "Custom tools are enabled but unavailable. Install them with: pip install -e ../custom_tools"
+            "Shared custom tools are unavailable. Install the repository dependencies with: "
+            "pip install -r requirements.txt"
         )
 
     return [

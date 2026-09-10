@@ -8,9 +8,7 @@ import custom_tools
 from agent.custom_tools import CustomNeo4jTool, get_custom_tools
 
 
-def test_get_custom_tools_returns_all_wrappers_when_enabled(monkeypatch):
-    monkeypatch.setenv("CUSTOM_TOOLS_ENABLED", "true")
-
+def test_get_custom_tools_returns_all_wrappers():
     tools = get_custom_tools()
 
     assert len(tools) == 12

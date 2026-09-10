@@ -197,16 +197,10 @@ pip install -e ".[mcp]"
 ### Optional Repository Custom Tools
 
 The repository's `custom_tools` package provides company, relationship, industry,
-article, investment, and Vertex AI news-search capabilities. Install it from a
-repository checkout, then enable it in `.env`:
-
-```bash
-pip install -e ../custom_tools
-```
-
-```ini
-CUSTOM_TOOLS_ENABLED=true
-```
+article, investment, and Vertex AI news-search capabilities. It is installed
+automatically by `pip install -r requirements.txt` from a repository checkout.
+The query assistant always receives these tools and the LLM chooses whether to
+invoke them.
 
 The news-search tool requires Google Vertex AI credentials and a compatible
 `news_google` vector index. Other custom tools do not initialize a Vertex client
@@ -297,12 +291,16 @@ curl -X POST http://localhost:8000/api/v1/query \
 
 ```dockerfile
 FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
+WORKDIR /app/crewai
+COPY custom_tools /app/custom_tools
+COPY crewai/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+COPY crewai .
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
+
+Build this image from the repository root so both `crewai/` and
+`custom_tools/` are available in the build context.
 
 ---
 
