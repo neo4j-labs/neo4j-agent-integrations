@@ -15,6 +15,7 @@ from typing import Any
 from crewai import Agent, Crew, Process, Task
 from crewai.tools import BaseTool
 
+from agent.custom_tools import get_custom_tools
 from agent.mcp import is_mcp_enabled, load_mcp_tools
 from agent.memory import get_memory_tools
 from agent.tools import (
@@ -218,6 +219,7 @@ def build_query_crew(query: str) -> Crew:
         tools.extend(load_mcp_tools())
     else:
         tools.extend(get_neo4j_tools())
+    tools.extend(get_custom_tools())
 
     agent = create_query_agent(tools)
     crew_kwargs: dict[str, Any] = {

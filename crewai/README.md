@@ -194,6 +194,24 @@ To enable local MCP tools, install the MCP dependency group:
 pip install -e ".[mcp]"
 ```
 
+### Optional Repository Custom Tools
+
+The repository's `custom_tools` package provides company, relationship, industry,
+article, investment, and Vertex AI news-search capabilities. Install it from a
+repository checkout, then enable it in `.env`:
+
+```bash
+pip install -e ../custom_tools
+```
+
+```ini
+CUSTOM_TOOLS_ENABLED=true
+```
+
+The news-search tool requires Google Vertex AI credentials and a compatible
+`news_google` vector index. Other custom tools do not initialize a Vertex client
+unless the news-search tool is called.
+
 ### 4. Chat in Your Browser
 
 Start the FastAPI server:

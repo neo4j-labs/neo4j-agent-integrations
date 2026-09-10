@@ -14,8 +14,19 @@ NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "companies")
 
 logging.basicConfig(level=logging.INFO)
 
-# client definition for embeddings. Users can define their own embedding function.
-client = genai.Client(vertexai=True, project=os.environ.get("GOOGLE_CLOUD_PROJECT"), location='us-central1') 
+_vertex_client: genai.Client | None = None
+
+
+def get_vertex_client() -> genai.Client:
+    """Create the Vertex AI client only when a news embedding is requested."""
+    global _vertex_client
+    if _vertex_client is None:
+        _vertex_client = genai.Client(
+            vertexai=True,
+            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+            location="us-central1",
+        )
+    return _vertex_client
                       
 def get_driver():
     """Returns a Neo4j driver instance."""
@@ -353,7 +364,7 @@ async def embed_query(text: str, model: str = "text-embedding-004") -> List[floa
     logging.info(f"Generating Gemini embedding for text using model: {model}")
     
     try:
-        response = await client.aio.models.embed_content(
+        response = await get_vertex_client().aio.models.embed_content(
             model=model,
             contents=text
         )
