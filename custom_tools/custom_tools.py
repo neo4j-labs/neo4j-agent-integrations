@@ -2,9 +2,15 @@ import os
 import json
 import logging
 import asyncio
+import shlex
+import shutil
+import sysconfig
+from pathlib import Path
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
 from google import genai
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com:7687")
@@ -31,6 +37,47 @@ def get_vertex_client() -> genai.Client:
 def get_driver():
     """Returns a Neo4j driver instance."""
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+
+
+def _get_mcp_environment() -> dict[str, str]:
+    """Forward the standard Neo4j configuration to the local MCP server."""
+    environment = dict(os.environ)
+    for mcp_setting, integration_setting in {
+        "NEO4J_MCP_URI": "NEO4J_URI",
+        "NEO4J_MCP_USERNAME": "NEO4J_USERNAME",
+        "NEO4J_MCP_PASSWORD": "NEO4J_PASSWORD",
+        "NEO4J_MCP_DATABASE": "NEO4J_DATABASE",
+    }.items():
+        if not environment.get(mcp_setting) and environment.get(integration_setting):
+            environment[mcp_setting] = environment[integration_setting]
+    environment.setdefault("NEO4J_MCP_READ_ONLY", "true")
+    environment.setdefault("NEO4J_TELEMETRY", "false")
+    return environment
+
+
+async def execute_read_query(query: str, params: Dict[str, Any]) -> str | None:
+    """Run a parameterized read query through local MCP when it is configured."""
+    command = os.environ.get("MCP_SERVER_COMMAND", "").strip()
+    if not command:
+        return None
+
+    command_parts = shlex.split(command)
+    if not command_parts:
+        raise ValueError("MCP_SERVER_COMMAND must contain an executable command.")
+    executable = command_parts[0]
+    if not os.path.dirname(executable):
+        executable = shutil.which(executable) or str(Path(sysconfig.get_path("scripts")) / executable)
+    server_params = StdioServerParameters(
+        command=executable,
+        args=command_parts[1:],
+        env=_get_mcp_environment(),
+    )
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            result = await session.call_tool("read-cypher", {"query": query, "params": params})
+            text = "\n".join(item.text for item in result.content if hasattr(item, "text"))
+            return text or json.dumps(result.model_dump())
 
 async def query_company(company_name: str) -> str:
     """
@@ -344,6 +391,10 @@ async def get_investments(company: str) -> str:
     WHERE o.name = $company
     RETURN i.id as id, i.name as name, head(labels(i)) as type
     """
+    mcp_result = await execute_read_query(query, {"company": company})
+    if mcp_result is not None:
+        return mcp_result
+
     try:
         with get_driver() as driver:
             records, _, _ = driver.execute_query(
