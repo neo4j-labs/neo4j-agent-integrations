@@ -17,11 +17,13 @@ This integration demonstrates how specialized AI agents collaborate sequentially
 ```mermaid
 flowchart TD
     subgraph Client["User & Client Layer"]
+        Browser["Browser Chat UI\n(/)"]
         CLI["CLI (main.py)"]
         API["FastAPI REST Server (server.py)"]
     end
 
     subgraph CrewAI["CrewAI Multi-Agent Orchestrator"]
+        QueryAgent["Graph Intelligence Assistant\n(Stateless /api/v1/query)"]
         Researcher["🔍 Lead Knowledge Graph Researcher\n(Extracts entities, leadership, industries)"]
         Analyst["📊 Strategic Market & Graph Analyst\n(Analyzes multi-hop graph paths & risk)"]
         Writer["✍️ Executive Intelligence Briefing Author\n(Synthesizes findings into Markdown briefs)"]
@@ -31,11 +33,13 @@ flowchart TD
     end
 
     subgraph DataLayer["Data & Knowledge Layer"]
-        Neo4j[("Neo4j Knowledge Graph\n(Companies & Ecosystem DB)")]
+        Neo4j[("Neo4j Knowledge Graph\n(Companies, News, or NAMS graph)")]
         NAMS[("Neo4j Agent Memory (NAMS)\n(Cross-Session Shared Graph Memory)")]
-        MCPServer["Local Neo4j MCP Server (Optional)\n(stdio subprocess)"]
+        MCPServer["Local Neo4j MCP Server\n(stdio subprocess)"]
+        CustomTools["Shared Custom Tools\n(Companies / News schema)"]
     end
 
+    Browser -->|Natural-language query| API
     CLI --> CrewAI
     API --> CrewAI
 
@@ -43,6 +47,10 @@ flowchart TD
     Analyst <-->|"Multi-Hop Graph Traversal"| Neo4j
     Writer <-->|"Preferences & Fact Storage"| NAMS
 
+    QueryAgent -.->|"Local MCP tools"| MCPServer
+    QueryAgent -.->|"Always available"| CustomTools
+    CustomTools -->|"Read queries via MCP"| MCPServer
+    MCPServer <-->|"Read-only Cypher"| Neo4j
     Researcher -.->|"Dynamic Tools"| MCPServer
     Analyst -.->|"Dynamic Tools"| MCPServer
 ```
@@ -115,16 +123,21 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph AgentRuntime["CrewAI Agent Runtime"]
-        Agent["CrewAI Agent"]
+        QueryAgent["Graph Intelligence Assistant"]
+        CustomTools["Shared Custom Tool Wrapper"]
         MCPClient["agent/mcp.py Client"]
+        CustomMCPClient["custom_tools MCP Client"]
     end
 
     subgraph LocalProcess["Local Process"]
         Neo4jMCP["neo4j-mcp-server\n(stdio)"]
     end
 
-    Agent -->|Execute MCP Tool| MCPClient
+    QueryAgent -->|Execute MCP tool| MCPClient
+    QueryAgent -->|Execute custom tool| CustomTools
+    CustomTools -->|Parameterized read query| CustomMCPClient
     MCPClient <-->|JSON-RPC over stdio| Neo4jMCP
+    CustomMCPClient <-->|JSON-RPC over stdio| Neo4jMCP
     Neo4jMCP <-->|Read-only Cypher| Neo4j[Neo4j Database]
 ```
 
