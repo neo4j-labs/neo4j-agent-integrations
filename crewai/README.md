@@ -1,13 +1,13 @@
-# CrewAI + Neo4j Client Showcase
+# CrewAI + Neo4j Walkthrough
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CrewAI](https://img.shields.io/badge/CrewAI-v1.15+-orange.svg)](https://www.crewai.com/)
 [![Neo4j](https://img.shields.io/badge/Neo4j-5.x%20%7C%20Aura-008CC1.svg)](https://neo4j.com/)
 [![MCP Ready](https://img.shields.io/badge/MCP-Enabled-purple.svg)](https://modelcontextprotocol.io/)
 
-This integration is delivered as a guided, client-facing notebook. It demonstrates CrewAI orchestration with Neo4j, optional Neo4j Agent Memory Server (NAMS), local MCP, and the repository's shared custom tools. No web service or browser application is required.
+This integration is delivered as a guided notebook. It demonstrates CrewAI orchestration with Neo4j, optional Neo4j Agent Memory Server (NAMS), local MCP, and the repository's shared custom tools. It does not require a web service or browser application.
 
-## Client Workflow
+## Notebook Workflow
 
 Open and run [`notebooks/crewai_neo4j_walkthrough.ipynb`](notebooks/crewai_neo4j_walkthrough.ipynb). Its dedicated sections cover:
 
@@ -21,7 +21,7 @@ Open and run [`notebooks/crewai_neo4j_walkthrough.ipynb`](notebooks/crewai_neo4j
 
 ```mermaid
 flowchart LR
-    Notebook["Client showcase notebook"]
+    Notebook["CrewAI + Neo4j walkthrough"]
     CrewAI["CrewAI agents"]
     MCP["Local neo4j-mcp-server\nstdio process"]
     Custom["Shared custom tools"]
