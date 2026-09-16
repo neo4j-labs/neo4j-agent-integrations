@@ -9,7 +9,7 @@ This integration is delivered as a guided, client-facing notebook. It demonstrat
 
 ## Client Workflow
 
-Open and run [`notebooks/client_showcase.ipynb`](notebooks/client_showcase.ipynb). Its dedicated sections cover:
+Open and run [`notebooks/crewai_neo4j_walkthrough.ipynb`](notebooks/crewai_neo4j_walkthrough.ipynb). Its dedicated sections cover:
 
 1. Installing the integration and shared custom-tool dependencies.
 2. Loading a local, untracked configuration file.
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 pip install -e .
 cp .env.example .env
 cd notebooks
-jupyter notebook client_showcase.ipynb
+jupyter notebook crewai_neo4j_walkthrough.ipynb
 ```
 
 The notebook's installation cell uses these same relative paths. Keep credentials exclusively in `crewai/.env`; do not add them to the notebook or commit that file.
