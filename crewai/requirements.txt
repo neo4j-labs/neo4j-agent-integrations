@@ -12,6 +12,7 @@ neo4j-agent-memory>=0.2.0
 # Utilities
 pydantic>=2.0.0
 python-dotenv>=1.0.0
+jupyter>=1.0.0
 
 # Local MCP (Model Context Protocol) support
 mcp>=1.0.0
