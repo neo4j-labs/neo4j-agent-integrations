@@ -2,16 +2,9 @@ import os
 import json
 import logging
 import asyncio
-import shlex
-import shutil
-import sysconfig
-import threading
-from pathlib import Path
 from neo4j import GraphDatabase
 from typing import List, Dict, Any
 from google import genai
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
 
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com:7687")
@@ -21,120 +14,12 @@ NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "companies")
 
 logging.basicConfig(level=logging.INFO)
 
-_vertex_client: genai.Client | None = None
-
-
-def get_vertex_client() -> genai.Client:
-    """Create the Vertex AI client only when a news embedding is requested."""
-    global _vertex_client
-    if _vertex_client is None:
-        _vertex_client = genai.Client(
-            vertexai=True,
-            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-            location="us-central1",
-        )
-    return _vertex_client
+# client definition for embeddings. Users can define their own embedding function.
+client = genai.Client(vertexai=True, project=os.environ.get("GOOGLE_CLOUD_PROJECT"), location='us-central1') 
                       
-class MCPRecord:
-    """Provide the Neo4j record interface expected by existing custom tools."""
-
-    def __init__(self, value: dict[str, Any]) -> None:
-        self.value = value
-
-    def data(self) -> dict[str, Any]:
-        return self.value
-
-
-def _run_async_synchronously(coroutine: Any) -> Any:
-    """Run an async MCP call from the custom tools' async function bodies."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coroutine)
-
-    result: list[Any] = []
-    errors: list[BaseException] = []
-
-    def run() -> None:
-        try:
-            result.append(asyncio.run(coroutine))
-        except BaseException as error:
-            errors.append(error)
-
-    thread = threading.Thread(target=run)
-    thread.start()
-    thread.join()
-    if errors:
-        raise errors[0]
-    return result[0]
-
-
-class LocalMCPDriver:
-    """Adapt the local MCP read-cypher tool to the Neo4j driver interface."""
-
-    def __enter__(self) -> "LocalMCPDriver":
-        return self
-
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
-        return None
-
-    def execute_query(self, query: str, **parameters: Any) -> tuple[list[MCPRecord], None, None]:
-        parameters.pop("database_", None)
-        response = _run_async_synchronously(execute_read_query(query, parameters))
-        if response is None:
-            raise RuntimeError("Local MCP was not configured.")
-        payload = json.loads(response)
-        if not isinstance(payload, list):
-            raise RuntimeError(f"Unexpected local MCP response: {response}")
-        return [MCPRecord(record) for record in payload], None, None
-
-
 def get_driver():
-    """Return local MCP query transport when configured, otherwise a Neo4j driver."""
-    if os.environ.get("MCP_SERVER_COMMAND", "").strip():
-        return LocalMCPDriver()
+    """Returns a Neo4j driver instance."""
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
-
-
-def _get_mcp_environment() -> dict[str, str]:
-    """Forward the standard Neo4j configuration to the local MCP server."""
-    environment = dict(os.environ)
-    for mcp_setting, integration_setting in {
-        "NEO4J_MCP_URI": "NEO4J_URI",
-        "NEO4J_MCP_USERNAME": "NEO4J_USERNAME",
-        "NEO4J_MCP_PASSWORD": "NEO4J_PASSWORD",
-        "NEO4J_MCP_DATABASE": "NEO4J_DATABASE",
-    }.items():
-        if not environment.get(mcp_setting) and environment.get(integration_setting):
-            environment[mcp_setting] = environment[integration_setting]
-    environment.setdefault("NEO4J_MCP_READ_ONLY", "true")
-    environment.setdefault("NEO4J_TELEMETRY", "false")
-    return environment
-
-
-async def execute_read_query(query: str, params: Dict[str, Any]) -> str | None:
-    """Run a parameterized read query through local MCP when it is configured."""
-    command = os.environ.get("MCP_SERVER_COMMAND", "").strip()
-    if not command:
-        return None
-
-    command_parts = shlex.split(command)
-    if not command_parts:
-        raise ValueError("MCP_SERVER_COMMAND must contain an executable command.")
-    executable = command_parts[0]
-    if not os.path.dirname(executable):
-        executable = shutil.which(executable) or str(Path(sysconfig.get_path("scripts")) / executable)
-    server_params = StdioServerParameters(
-        command=executable,
-        args=command_parts[1:],
-        env=_get_mcp_environment(),
-    )
-    async with stdio_client(server_params) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            result = await session.call_tool("read-cypher", {"query": query, "params": params})
-            text = "\n".join(item.text for item in result.content if hasattr(item, "text"))
-            return text or json.dumps(result.model_dump())
 
 async def query_company(company_name: str) -> str:
     """
@@ -199,9 +84,8 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
     """
     Find related organizations through graph traversal.
     """
-    depth = max(1, min(int(max_depth), 3))
-    query = f"""
-    MATCH path = (o1:Organization {{name: $company}})-[*1..{depth}]-(o2:Organization)
+    query = """
+    MATCH path = (o1:Organization {name: $company})-[*1..$depth]-(o2:Organization)
     WHERE o1 <> o2
     RETURN DISTINCT o2.name as organization,
            reduce(s = "", r IN relationships(path) | s + "(" + type(r) + ")->") as relationships,
@@ -214,6 +98,7 @@ async def analyze_relationships(company_name: str, max_depth: int = 2) -> str:
             records, _, _ = driver.execute_query(
                 query,
                 company=company_name,
+                depth=max_depth,
                 database_=NEO4J_DATABASE
             )
             results = [record.data() for record in records]
@@ -448,10 +333,6 @@ async def get_investments(company: str) -> str:
     WHERE o.name = $company
     RETURN i.id as id, i.name as name, head(labels(i)) as type
     """
-    mcp_result = await execute_read_query(query, {"company": company})
-    if mcp_result is not None:
-        return mcp_result
-
     try:
         with get_driver() as driver:
             records, _, _ = driver.execute_query(
@@ -472,7 +353,7 @@ async def embed_query(text: str, model: str = "text-embedding-004") -> List[floa
     logging.info(f"Generating Gemini embedding for text using model: {model}")
     
     try:
-        response = await get_vertex_client().aio.models.embed_content(
+        response = await client.aio.models.embed_content(
             model=model,
             contents=text
         )
