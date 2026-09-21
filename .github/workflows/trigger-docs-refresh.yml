@@ -46,8 +46,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pyyaml
+          echo "$(ruby -r rubygems -e 'puts Gem.user_dir')/bin" >> "$GITHUB_PATH"
           gem install --user-install asciidoctor --no-document
-          echo "$(ruby -r rubygems -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
 
       - name: Convert README.md -> AsciiDoc
         run: |
