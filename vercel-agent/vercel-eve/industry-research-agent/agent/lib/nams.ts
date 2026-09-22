@@ -1,15 +1,12 @@
-/**
- * NAMS configuration, identity, and the shared types.
- */
 import type { SessionAuth } from "eve/context";
 import type { MemoryHit, NamsConfig, NamsScope } from "@neo4j-labs/nams-ai-provider";
 
-/** Max memories injected into the prompt per turn. */
+/** Max memories added to the prompt each turn. */
 export const MAX_MEMORIES = Number(process.env.NAMS_MAX_MEMORIES ?? 6);
 
 export const REASONING_ENABLED: boolean = process.env.NAMS_REASONING?.trim().toLowerCase() !== "off";
 
-/** Whether a completed turn is moved  into the long-term entity graph. */
+/** Also save finished turns to the long-term graph. */
 export const GRAPH_MEMORY_ENABLED: boolean =
   process.env.NAMS_GRAPH_MEMORY?.trim().toLowerCase() !== "off";
 
@@ -34,7 +31,6 @@ export function workspaceIdFor(_userId: string): string | undefined {
   return process.env.NAMS_WORKSPACE_ID || undefined;
 }
 
-
 interface ScopeSource {
   readonly session: {
     readonly id: string;
@@ -43,16 +39,8 @@ interface ScopeSource {
 }
 
 /**
- * Resolve the NAMS user id for the active turn.
- *
- * Precedence:
- *   1. the authenticated caller of this turn (`auth.current`)
- *   2. the caller that started the session (`auth.initiator`)
- *   3. `DEMO_USER_ID`, so `eve dev` recalls across restarts without auth
- *   4. the eve session id, which scopes memory to this session only
- *
- * Steps 3 and 4 exist for local development. In production, put a real
- * authenticator in `agent/channels/eve.ts` so step 1 always wins.
+ * Whose memory to use: the signed-in user, else DEMO_USER_ID,
+ * else the eve session id (the last two are for local dev).
  */
 export function memoryScope(ctx: ScopeSource): NamsScope {
   const principal = ctx.session.auth.current ?? ctx.session.auth.initiator;
@@ -67,7 +55,7 @@ export function memoryScope(ctx: ScopeSource): NamsScope {
   return { userId: `eve-session:${ctx.session.id}` };
 }
 
-/** What `remember()` accepts. `interaction` is short-term; the rest build the long-term graph. */
+/** A memory to save. `interaction` is the chat log; other types go to the long-term graph. */
 export interface StoreMemoryInput {
   readonly content: string;
   readonly type: "fact" | "interaction" | "pattern" | "user_preference";

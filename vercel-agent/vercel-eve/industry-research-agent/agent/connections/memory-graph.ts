@@ -1,6 +1,3 @@
-/**
- * NAMS's MCP server, exposed as a read-only view of the agent's own memory.
- */
 import { defineMcpClientConnection } from "eve/connections";
 import type { ConnectionToolCallDefinition } from "eve/connections";
 import { memoryScope, workspaceIdFor } from "../lib/nams";
@@ -24,19 +21,7 @@ export default defineMcpClientConnection({
     getToken: async () => ({ token: process.env.NAMS_API_KEY! }),
   },
 
-  /**
-   * Five read tools out of the 40 the server publishes.
-   *
-   * The rest are writes (`memory_add_entity`, `memory_add_messages`,
-   * `memory_create_conversation`, `memory_create_relation`, `memory_record_*`),
-   * entity merges (`memory_resolve_entity`), ontology mutation
-   * (`memory_ontology_create` / `_update`), and thirteen `skill_*` tools that
-   * let a caller generate, edit, and publish the agent's own skills.
-   *
-   * Nothing in this project should reach any of them: memory is written by
-   * `hooks/`, on the runtime's schedule, not by a model deciding to call a save
-   * tool. Naming the five reads is what keeps that true.
-   */
+  // Read-only. The hooks save memory, not the model.
   tools: {
     allow: [
       "memory_search_entities",

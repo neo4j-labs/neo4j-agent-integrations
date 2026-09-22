@@ -2,9 +2,6 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { readQuery } from "../lib/neo4j";
 
-/**
- * Full-text search across article chunks.
- */
 export default defineTool({
   description:
     "Search news articles about companies and industry themes. " +

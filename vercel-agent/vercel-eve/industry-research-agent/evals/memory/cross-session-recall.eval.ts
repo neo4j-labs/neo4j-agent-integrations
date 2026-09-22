@@ -1,17 +1,8 @@
 import { defineEval } from "eve/evals";
 import { includes } from "eve/evals/expect";
 
-/**
- * The check that separates memory from conversation history: a fact stated in
- * one session has to survive into a different session.
- *
- * `t.newSession()` discards the transcript entirely, so anything the agent
- * still knows afterwards came out of NAMS.
- *
- * The recall query reuses the user's own noun ("coverage area"). Retrieval
- * on the hosted NAMS API is lexical, so a paraphrase can miss a memory that is
- * definitely stored.
- */
+// A new session has no chat history, so the answer must come from NAMS.
+// The question reuses the same words, since NAMS matches keywords.
 const COVERAGE_AREA = "undersea cable operators";
 
 export default defineEval({

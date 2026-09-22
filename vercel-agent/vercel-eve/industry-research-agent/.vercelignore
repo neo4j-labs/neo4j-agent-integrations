@@ -5,3 +5,7 @@ node_modules
 .output
 .nitro
 dist
+
+# Local-only
+mcp-server
+scripts

@@ -1,6 +1,3 @@
-/**
- * Entity extraction — how a stored memory becomes a graph.
- */
 import { generateText, Output, zodSchema } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
@@ -31,11 +28,6 @@ const graphSchema = z.object({
     .describe("May be empty."),
 });
 
-/**
- * What the extractor is told to ignore.
- *
- * Extraction runs on raw turn text, which includes turns *about the agent*. 
- */
 const PROMPT_RULES = [
   "Extract entities and the relationships between them from the memory below.",
   "Rules:",
@@ -47,22 +39,8 @@ const PROMPT_RULES = [
   "- Return empty arrays rather than inventing anything.",
 ].join("\n");
 
-/**
- * The last line of defence, applied after the model has answered.
- *
- * The prompt rules ask for domain entities only, and the model still returns the
- * agent's own machinery: a live workspace inspection turned up
- * `user -[:USES]-> get_schema`, `user -[:USES]-> search_news tool`, and
- * `user -[:RELATED_TO]-> final` sitting in the Entity Explorer next to Neo4j
- * and ArangoDB. A prompt cannot be relied on to hold a boundary; a filter can.
- * NAMS has no entity delete, so this has to be right going in.
- *
- * Deliberately not the provider's default `skipEntity`, which drops any
- * all-lowercase name as a common noun. That rule also drops
- * "undersea cable operators" and "document database" — a research analyst's
- * coverage areas are lowercase by nature, and they are exactly what this agent
- * is supposed to remember.
- */
+// Generic words about the agent itself. Dropped before saving, since NAMS
+// can't delete entities later. Unlike the default filter, lowercase names stay.
 const NOT_DOMAIN_ENTITIES = new Set([
   "user", "users", "the user", "assistant", "the assistant", "agent", "the agent", "model",
   "tool", "tools", "skill", "skills", "memory", "conversation", "session", "channel",
@@ -77,20 +55,7 @@ function isNotDomainEntity(name: string): boolean {
   return normalized.endsWith(" tool") || normalized.endsWith(" tools");
 }
 
-/**
- * Whether this deployment's NAMS transport can store relationships at all.
- *
- * The hosted REST API cannot: `addRelationship` answers
- *   NotSupportedError: Method 'add_relationship' has no equivalent in the
- *   hosted Neo4j Agent Memory REST API. It is supported by BridgeTransport only.
- * That is a property of the transport, not of the call, so the first refusal
- * settles it for the life of the instance — otherwise every promoted turn
- * spends round trips to be told the same thing and logs one warning per edge.
- *
- * Entities still land, which is what the Entity Explorer shows. Point NAMS at
- * our own Neo4j (BridgeTransport) and the edges start being written with no
- * change here.
- */
+// The hosted API can't save relationships; stop trying after the first refusal.
 let relationshipsSupported = true;
 
 function isNotSupported(error: unknown): boolean {

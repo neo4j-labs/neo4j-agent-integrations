@@ -1,16 +1,4 @@
-/**
- * The base model.
- *
- * Two routes, because the direct-provider path needs a resolved
- * `LanguageModelV4` instance and not a model-id string:
- *
- *   gateway — Vercel AI Gateway. No provider key on a Vercel deployment
- *             (project OIDC authenticates it); `AI_GATEWAY_API_KEY` locally.
- *   openai  — a direct provider, for running without a Vercel account.
- *
- * A gateway id can stay a plain string, which is what `agent.ts` prefers; the
- * direct route has to be resolved here.
- */
+// Picks how to reach the model: Vercel AI Gateway, or OpenAI directly.
 import { gateway } from "ai";
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { openai } from "@ai-sdk/openai";
@@ -34,9 +22,6 @@ export function baseModel(id: string = MODEL_ID): LanguageModelV4 {
   return gateway(id) as LanguageModelV4;
 }
 
-/**
- * The model that extracts entities and relationships out of a stored memory.
- */
 export function extractionModel(): LanguageModelV4 {
   return baseModel(process.env.NAMS_EXTRACTION_MODEL?.trim() || MODEL_ID);
 }

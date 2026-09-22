@@ -1,11 +1,4 @@
-/**
- * Recall — the read half of memory.
- *
- * Resolves on `turn.started` (not `session.started`) so a fact stored on turn 1
- * is already in the prompt on turn 2 of the same session, and retrieves against
- * what the user actually just said: NAMS search is lexical, so their own nouns
- * match stored text far better than a paraphrase of them would.
- */
+// Each turn, search memory with the user's own words (NAMS matches keywords).
 import { defineDynamic, defineInstructions } from "eve/instructions";
 import { memory } from "../lib/memory-gateway";
 import { MAX_MEMORIES, memoryScope, renderMemories } from "../lib/nams";
@@ -27,7 +20,7 @@ export default defineDynamic({
   },
 });
 
-/** Best-effort read of the message that started this turn. */
+/** The user's message for this turn, if there is one. */
 function latestUserText(event: unknown): string | undefined {
   const message = (event as { data?: { message?: unknown } })?.data?.message;
   if (typeof message === "string" && message.trim()) return message.trim().slice(0, 500);

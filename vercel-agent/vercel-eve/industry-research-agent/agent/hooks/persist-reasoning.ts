@@ -1,6 +1,4 @@
-/**
- * Reasoning memory — the agent's own decision trail.
- */
+// Saves each turn's reasoning steps and tool calls to NAMS.
 import { defineState } from "eve/context";
 import { defineHook } from "eve/hooks";
 import { memory } from "../lib/memory-gateway";
