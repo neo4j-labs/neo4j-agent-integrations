@@ -1,57 +1,63 @@
-# Haystack + Neo4j Integration
+# Haystack + Neo4j MCP Integration
 
-## Overview
+## What this example is
 
-**Haystack** is an NLP framework for search and QA with component-based architecture and Neo4j document store integration.
+This folder shows a simple way to let a Haystack agent talk to a Neo4j graph database through the Neo4j MCP server.
 
-**Official Resources:**
-- Website: https://haystack.deepset.ai
-- Documentation: https://docs.haystack.deepset.ai/
-- Neo4j Integration: https://haystack.deepset.ai/integrations/neo4j-document-store
+In plain terms:
+- Haystack is the "assistant brain" that decides what to do.
+- Neo4j MCP server is the "safe gateway" to the graph.
+- The agent calls named tools like `get-schema` and `read-cypher` instead of opening a raw database connection itself.
 
-## Extension Points
+Main notebook: `neo4j_mcp_haystack.ipynb`
 
-### Neo4j Document Store
+## Why use MCP here
 
-```python
-from haystack.document_stores import Neo4jDocumentStore
-from haystack.nodes import DensePassageRetriever
-from haystack.pipelines import DocumentSearchPipeline
+Instead of writing custom retriever code, this setup uses MCP tools directly.
 
-# Document store
-document_store = Neo4jDocumentStore(
-    url="neo4j+s://demo.neo4jlabs.com:7687",
-    username="companies",
-    password="companies",
-    database="companies"
-)
+Benefits:
+- Less custom code to maintain.
+- Clear tool boundary between agent and database.
+- Easy to run in read-only mode.
 
-# Retriever
-retriever = DensePassageRetriever(
-    document_store=document_store,
-    query_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    passage_embedding_model="sentence-transformers/all-MiniLM-L6-v2"
-)
+## What the notebook does
 
-# Pipeline
-pipeline = DocumentSearchPipeline(retriever)
-results = pipeline.run(query="Companies in technology")
-```
+1. Installs Haystack, `mcp-haystack`, and Neo4j MCP packages.
+2. Starts Neo4j MCP server in HTTP mode.
+3. Sends Neo4j credentials in request headers (not fixed into server env vars).
+4. Verifies available tools before using an LLM.
+5. Builds a Haystack `Agent` with MCP tools.
+6. Runs example user questions.
+7. Adds a custom Haystack tool (`get_investments`) alongside MCP tools.
+8. Shuts down cleanly.
 
-## MCP Authentication
+## Security and safety choices in this example
 
-⚠️ **Bespoke components** - No native MCP support
+- Uses `NEO4J_READ_ONLY=true` so write tools are not exposed.
+- Uses a tool allow-list in Haystack: only `get-schema` and `read-cypher`.
+- Encourages schema-first behavior so the model does not guess labels or properties.
+
+## Quick start
+
+1. Open `neo4j_mcp_haystack.ipynb`.
+2. Set your `OPENAI_API_KEY` in environment or `.env`.
+3. Run cells top to bottom.
+4. Ask graph questions through the provided helper function.
+
+The notebook is already configured for the public Neo4j demo database:
+- URI: `neo4j+s://demo.neo4jlabs.com`
+- Database: `companies`
+- Username/Password: `companies` / `companies`
 
 ## Resources
 
-- **Haystack**: https://haystack.deepset.ai/
-- **Neo4j Store**: https://haystack.deepset.ai/integrations/neo4j-document-store
-- **Neo4j Developer Guide**: https://neo4j.com/developer/genai-ecosystem/haystack/
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
+- Haystack: https://haystack.deepset.ai/
+- Haystack docs: https://docs.haystack.deepset.ai/
+- Neo4j MCP docs: https://neo4j.com/docs/mcp/current/
+- Neo4j + Haystack developer page: https://neo4j.com/developer/genai-ecosystem/haystack/
 
-## Status
+## Current status
 
-- ✅ Neo4j document store
-- ⚠️ No native MCP
-- **Effort Score**: 5.7/10
-- **Impact Score**: 1.7/10
+- MCP-based Haystack integration: available in notebook.
+- Read-only graph querying pattern: implemented.
+- Custom tool + MCP tool mix: implemented.
