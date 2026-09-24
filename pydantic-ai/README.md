@@ -16,8 +16,6 @@ pip install pydantic-ai neo4j
 - Dependency injection for clean, testable code
 - Human-in-the-loop approval for tool calls that need review
 
-> **Note:** These notebooks target **Pydantic AI v2**, which replaced `MCPServerStreamableHTTP` with the FastMCP-based `MCPToolset`. Code written against v0/v1 will not import.
-
 ## Examples
 
 | Notebook | Description |
