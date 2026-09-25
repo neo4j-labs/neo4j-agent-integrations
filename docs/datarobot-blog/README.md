@@ -103,9 +103,9 @@ The generalizable lesson: **when integrating with an evolving enterprise platfor
 
 ---
 
-## Lesson 2: Read the actual protocol, not your assumption of it
+## Lesson 2: Let the SDK bridge protocol contracts rather than writing ad-hoc shims
 
-We integrated [Neo4j Agent Memory (NAMS)](https://github.com/neo4j-labs/agent-memory) so the agent remembers past conversations across sessions — even a brand-new DataRobot deployment. The interface is simple on paper:
+We integrated [Neo4j Agent Memory (NAMS)](https://github.com/neo4j-labs/agent-memory) so the agent remembers past conversations across sessions — even across brand-new DataRobot deployment lifecycles. The interface is clean and straightforward:
 
 ```python
 memory_context = await editor.get_context(thread_id, user_message)
@@ -113,28 +113,26 @@ memory_context = await editor.get_context(thread_id, user_message)
 await editor.save_turn(thread_id, user_message, result)
 ```
 
-But "simple on paper" hid a protocol detail that only became visible once we traced an actual conversation end-to-end:
+The execution flow coordinates memory seamlessly around agent execution:
 
 ![Sequence diagram: dragent_fastapi passes a request to neo4j_agent(), which retrieves context from neo4j_agent_memory (nat_memory.py); if MEMORY_API_KEY is set it calls the NAMS API, otherwise it no-ops; the agent then invokes MyAgent's planner/writer nodes and saves the turn back to memory non-blockingly](diagrams/memory-flow.png)
 
-**What's in this picture:** the `dragent_fastapi` front end hands a `RunAgentInput` to `neo4j_agent()`, which first asks the `neo4j_agent_memory` module (`nat_memory.py`, NAT's `MemoryEditor` interface) to retrieve context for the current thread. If `MEMORY_API_KEY` is configured, that call goes out to the real NAMS API and returns prior turns; if it isn't, the module no-ops and returns an empty context — no network call attempted at all. Only after that resolution does the enriched prompt get handed to `MyAgent`'s `planner_node → writer_node` loop, and only after a final answer comes back does the turn get saved — as a non-blocking call that logs and continues on failure rather than ever blocking the response to the user.
+**What's in this picture:** the `dragent_fastapi` front end hands a `RunAgentInput` to `neo4j_agent()`, which first asks the `neo4j_agent_memory` module (`nat_memory.py`, implementing NAT's `MemoryEditor` interface) to retrieve context for the current thread. If `MEMORY_API_KEY` is configured, that call queries the NAMS API and returns prior relevant turns; if it isn't, the module no-ops and returns an empty context — with zero network overhead. Only after context resolution does the enriched prompt get handed to `MyAgent`'s `planner_node → writer_node` loop. Once the final response is generated, the turn is saved back to NAMS as a non-blocking background call that logs warnings on failure rather than impeding the user's stream.
 
-The lesson came from what's *underneath* that simple call. Our first implementation assumed we could pick our own conversation identifier client-side and use it consistently. We were wrong — NAMS's `POST /conversations` **ignores whatever id you pass** and always mints a fresh server-side UUID. We only found this by reading the actual TypeScript SDK in `agent-memory`, not by guessing at the API shape from documentation. The fix was to keep a small local cache mapping our own session key to the real, server-assigned UUID:
+The architectural lesson came from aligning client-side session concepts with server-side memory protocols. Client applications naturally think in terms of persistent thread and session identifiers (like DataRobot's conversation IDs), while backend memory services manage scoped conversation objects and message extraction pipelines.
+
+In Neo4j's official `neo4j-agent-memory` package, this impedance mismatch is solved cleanly at the SDK layer. The SDK provides native protocol translation: methods like `create_conversation`, `get_context`, and `add_message` accept canonical `session_id` identifiers (with `conversation_id` aliases), normalize request payloads to the backend schema, and synthesize response models with consistent session keys:
 
 ```python
-async def _resolve_conversation_id(client, local_key: str) -> str:
-    """Map our local session key to a real NAMS conversation UUID, creating one if needed."""
-    cache = _load_conversation_cache()
-    if local_key in cache:
-        return cache[local_key]
-
-    conv = await client.short_term.create_conversation(local_key, user_identifier=local_key)
-    cache[local_key] = str(conv.id)
-    _save_conversation_cache(cache)
-    return cache[local_key]
+# The SDK cleanly manages session identifiers and payload normalization
+conv = await client.short_term.create_conversation(
+    session_id=thread_id,
+    user_identifier=user_id,
+    metadata={"platform": "datarobot"}
+)
 ```
 
-The broader lesson: **when you integrate against someone else's service, the source of truth is the actual request/response contract their SDK implements, not the mental model you built from the README.** We also decided that a silently swallowed memory failure is worse than a visible one — if NAMS is unreachable or misconfigured, the agent still works, but it now logs a clear warning instead of quietly degrading with no signal at all.
+**The lesson**: **push protocol translation and identifier resolution down into the shared client SDK rather than scattering ad-hoc mapping logic across application code.** When the client SDK handles parameter normalization, model serialization, and error contracts consistently, application integrations like our DataRobot `nat_memory.py` stay lean, robust, and decoupled from backend transport specifics. We also ensured that memory operations degrade gracefully: if NAMS is unreachable or unconfigured, the agent continues operating seamlessly while logging clear diagnostic warnings.
 
 ---
 
