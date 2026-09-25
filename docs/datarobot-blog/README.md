@@ -10,6 +10,8 @@ DataRobot lets you deploy agentic workflows as production-grade endpoints with a
 
 Put those two together and you get something genuinely useful: an LLM agent that can reason over live graph data, running on infrastructure an enterprise already trusts. That's what this integration delivers — a **Neo4j-backed research agent that runs inside DataRobot's `dragent` runtime**, built on DataRobot's own official [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) template, with tool-calling, cross-session memory, and pluggable external tools via MCP.
 
+Under the hood, DataRobot's modern GenAI agent framework is powered by **NAT (NeMo Agent Toolkit)** — a modular orchestration runtime that manages agent lifecycles, streaming frontends (`dragent`), LLM gateways, and safety middleware. In DataRobot, agents are deployed as modular NAT plugins configured through a declarative `workflow.yaml`.
+
 ![High-level architecture: a request enters via DataRobot's dragent runtime, is registered through NAT's register.py, and flows into a single LangGraph agent (myagent.py) that binds Neo4j tools and optional MCP tools before returning a DRAgentEventResponse](diagrams/architecture.png)
 
 **What's in this picture:** a request authenticated by `datarobot_api_key` hits the `dragent_fastapi` front end, passes through DataRobot's own moderation and OpenTelemetry middleware, and lands on `neo4j_agent()` — the single function NAT's registration system routes to. From there it instantiates `MyAgent`, whose `planner_node` binds seven Neo4j tools *and* any configured MCP tools (including a hosted Neo4j Aura MCP server) to the LLM in one native tool-calling loop, before a `writer_node` formats the final Markdown report and NAT wraps it back into a `DRAgentEventResponse`. Memory sits off to the side deliberately — a `neo4j_agent_memory` module wrapping NAMS, consulted but never required, which is the point of Lesson 3 below.
@@ -34,18 +36,70 @@ Register the agent → the planner node binds tools (Neo4j + optional MCP) → t
 
 Early on, this integration grew three parallel ways to plug into DataRobot: a DRUM-based custom model, a LangGraph agent that wasn't wired into anything, and a declarative NAT workflow definition. Each looked reasonable in isolation, and each had been built to survive a different phase of DataRobot's own evolving deployment story. In practice, that meant a fresh reader had no reliable way to tell which of the three was actually live versus which were partially-finished experiments — and that ambiguity is a worse outcome than any one of the three implementations being imperfect on its own.
 
-The fix was to stop maintaining parallel integration paths and consolidate everything onto DataRobot's own official [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) template, scaffolded via `copier` (`agent_template_framework: base`), with the Neo4j-specific pieces — tools, memory, the MCP client — layered on top of that scaffold instead of built as their own competing structure:
+The fix was to stop maintaining parallel integration paths and consolidate everything onto DataRobot's own official [`af-component-agent`](https://github.com/datarobot-community/af-component-agent) template, scaffolded via `copier` (`agent_template_framework: base`). In this architecture, components are wired together using two complementary pieces:
+
+### 1. Python Plugin Registration (`agent/register.py`)
+Declares custom agent functions and memory editors into NAT's runtime registry:
 
 ```python
 # agent/register.py — the one true entry point, wired into DataRobot's dragent runtime
 @register_per_user_function
 def neo4j_agent() -> Neo4jAgentConfig:
-    return Neo4jAgentConfig(name="neo4j_agent", description="...")
+    return Neo4jAgentConfig(
+        name="neo4j_agent",
+        description="Neo4j knowledge-graph research agent with memory and MCP tools",
+    )
 ```
+
+### 2. Declarative Workflow Orchestration (`agent/workflow.yaml`)
+Connects the front end, registered agent functions, LLM gateways, memory, and safety middleware into a single cohesive pipeline:
+
+```yaml
+# agent/workflow.yaml — declarative NAT configuration
+general:
+  front_end:
+    _type: dragent_fastapi        # Serves DataRobot's native streaming AG-UI interface
+  telemetry:
+    tracing:
+      otelcollector:
+        _type: datarobot_otelcollector
+        project: "agent"
+
+functions:
+  neo4j_agent:
+    _type: neo4j_agent            # Registered via register.py's @register_per_user_function
+    llm_name: datarobot_llm
+    description: >
+      Neo4j company-research agent: plans research using the knowledge graph
+      (and any hosted MCP tools), then writes a concise Markdown report.
+
+llms:
+  datarobot_llm:
+    _type: datarobot-llm-component  # Uses DataRobot's managed LLM Gateway
+
+memory:
+  neo4j_memory:
+    _type: neo4j_agent_memory     # Plugin backed by NAMS (agent/nat_memory.py)
+
+workflow:
+  _type: streaming_memory_agent   # Top-level orchestration pipeline
+  inner_agent_name: neo4j_agent
+  memory_name: neo4j_memory
+  llm_name: datarobot_llm
+  middleware:
+    - datarobot_moderation        # Built-in guardrails & safety checks
+    - datarobot_otel_conventions  # OpenTelemetry instrumentation
+```
+
+**How NAT orchestrates this workflow in production:**
+- **Front-end (`dragent_fastapi`)**: Receives streaming user requests, performs DataRobot authentication (`datarobot_api_key`), and manages client event streams.
+- **Middleware pipeline**: Automatically runs safety guardrails (`datarobot_moderation`) and emits OpenTelemetry traces (`datarobot_otel_conventions`) before and after invocation.
+- **Memory plugin (`neo4j_memory`)**: Injects prior conversation context from NAMS into the prompt and records completed turns non-blockingly.
+- **Agent execution (`neo4j_agent`)**: Executes the LangGraph `planner_node`/`writer_node` cycle with seven Neo4j tools and any dynamically discovered MCP endpoints.
 
 Everything downstream — the LangGraph `planner_node`/`writer_node` loop, the seven Neo4j tools, the NAMS-backed memory editor, the OAuth-aware MCP client — now hangs off this single registration point instead of being spread across multiple, only-one-of-which-is-real implementations. `workflow.yaml` declares `general.front_end._type: dragent_fastapi`, so the NAT-native workflow is actually served through DataRobot's `dragent` frontend rather than sitting disconnected from it.
 
-The generalizable lesson: **when the platform owner publishes an official scaffold, that scaffold is a stronger signal about "how this platform actually wants to be integrated with" than anything you can infer from documentation or your own working code.** Multiple plausible-looking implementations that can't be told apart is a worse deliverable than one implementation that's obviously the only one — even if the alternatives represent real engineering effort. Designing the core agent logic (tools, memory, prompt construction) so it doesn't care about its transport is still the right instinct; the mistake was building multiple transports ourselves instead of adopting the one the platform already provides.
+The generalizable lesson: **when integrating with an evolving enterprise platform, coupling the official platform documentation with their published reference templates (like DataRobot's `af-component-agent`) provides the clearest, most authoritative blueprint for how components actually fit together.** Multiple plausible-looking implementations that can't be told apart is a worse deliverable than one implementation that's obviously the only one — even if the alternatives represent real engineering effort. Designing the core agent logic (tools, memory, prompt construction) so it doesn't care about its transport is still the right instinct; the key is anchoring that logic directly into the official declarative scaffold the platform provides.
 
 ---
 
