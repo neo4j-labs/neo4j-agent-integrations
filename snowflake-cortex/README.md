@@ -2,154 +2,124 @@
 
 ## Overview
 
-**Snowflake Cortex Agents** (GA November 2025) provides agent capabilities within Snowflake, optimized for Claude 3.5. It processes both structured data (via Cortex Analyst) and unstructured data (via Cortex Search).
+**Snowflake Cortex Agents** provides agent capabilities within Snowflake, processing both structured data (via Cortex
+Analyst) and unstructured data (via Cortex Search).
 
-**Key Features:**
-- Cortex Search for unstructured data
-- Cortex Analyst for structured data (SQL generation)
-- Data Science Agent
-- Multi-step orchestration
-- Governance built-in
-- REST API + MCP Server support
+This project provisions a Cortex agent that can research companies against the
+Neo4j [companies demo graph](neo4j+s://demo.neo4jlabs.com:7687) through a set
+of Python UDFs and SQL wrapper functions, all managed by Terraform.
 
-**Official Resources:**
+**Official resources:**
 - Website: https://www.snowflake.com/en/data-cloud/cortex
 - Documentation: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents
 
-## Extension Points
+## Architecture
 
-### 1. MCP Server Support
-
-Deploy Neo4j MCP server and connect from Cortex Agents:
-
-```python
-from snowflake.cortex import Agent
-
-agent = Agent(
-    name="investment_researcher",
-    tools=[
-        {
-            "type": "mcp",
-            "url": "https://your-neo4j-mcp-server.com/mcp",
-            "auth": {"type": "bearer", "token": "your-token"}
-        }
-    ]
-)
+```
+Cortex Agent (NEO4J_RESEARCH_AGENT)
+    └── SQL wrapper functions (agent tools)
+          ├── GET_ORGANIZATION_INVESTORS(company)
+          ├── ANALYZE_RELATIONSHIPS(company, limit, max_depth)
+          └── SEARCH_NEWS_ARTICLES(company, query, limit)
+                └── Python UDFs
+                      ├── QUERY_NEO4J(cypher, params)   -> Neo4j bolt driver
+                      └── GENERATE_EMBEDDINGS(text)     -> all-MiniLM-L6-v2
 ```
 
-### 2. Direct Integration via UDF
+- `QUERY_NEO4J` connects to Neo4j using credentials stored in a Snowflake
+  secret and reached via an external access integration.
+- `GENERATE_EMBEDDINGS` loads `all-MiniLM-L6-v2` from an internal stage and
+  returns a vector used by the Cypher `db.index.vector.queryNodes` call in
+  `SEARCH_NEWS_ARTICLES`.
+- The agent spec (`terraform/templates/agent_spec.yaml.tftpl`) exposes the
+  three SQL functions as tools.
+
+## Repository layout
+
+```
+snowflake-cortex/
+├── functions/                       # Python UDF handlers
+│   ├── query_neo4j.py
+│   └── generate_embeddings.py
+├── terraform/
+│   ├── main.tf                      # provider, database, schema
+│   ├── iam.tf                       # role, user grant, database/schema grants
+│   ├── neo4j_access.tf              # secret, network rule, external access integration
+│   ├── functions.tf                 # model stage, Python UDFs, SQL wrappers, grants
+│   ├── agent.tf                     # Cortex agent wiring
+│   ├── variables.tf
+│   ├── terraform.tfvars.example
+│   ├── sql/                         # bodies of the SQL wrapper functions
+│   ├── templates/                   # agent spec YAML
+│   ├── scripts/                     # stage upload script
+│   └── minilm/                      # downloaded SentenceTransformer files (gitignored)
+├── setup-terraform.sql              # bootstrap for the TERRAFORM_SVC service role/user
+└── README.md
+```
+
+## Prerequisites
+
+- Snowflake account with `ACCOUNTADMIN` privileges for initial setup
+- Terraform >= 1.0
+- `snowsql` CLI on `PATH` (used to upload the embedding model to the stage;
+  override with `SNOWSQL=/path/to/snowsql`)
+- Python 3 with `sentence-transformers` if `terraform/minilm/` needs to be
+  populated on first apply
+
+## Setup
+
+1. **Bootstrap the service user.** Edit `setup-terraform.sql` with a public
+   key and run it as `ACCOUNTADMIN` to create the `TERRAFORM_SVC` role and
+   matching service user.
+
+2. **Configure Terraform variables.**
+
+   ```bash
+   cd terraform
+   cp terraform.tfvars.example terraform.tfvars
+   # fill in organization, account, user, private key path, neo4j password
+   ```
+
+3. **Apply.**
+
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+   The first apply downloads `all-MiniLM-L6-v2` into `terraform/minilm/` and
+   uploads it to the `MODEL_STAGE` internal stage. Subsequent applies skip
+   the upload unless the model files change.
+
+## Running the agent
+
+Once `terraform apply` finishes, the agent is available as
+`NEO4J_AGENT.NEO4J_AGENT_SCHEMA.NEO4J_RESEARCH_AGENT` and can be invoked
+through Snowsight or the Cortex Agents REST API. The underlying tools can
+also be called directly as SQL functions, e.g.:
 
 ```sql
-CREATE OR REPLACE FUNCTION query_neo4j(company_name VARCHAR)
-RETURNS VARIANT
-LANGUAGE PYTHON
-RUNTIME_VERSION = '3.8'
-PACKAGES = ('neo4j')
-HANDLER = 'query_company'
-AS
-$$
-from neo4j import GraphDatabase
+SELECT NEO4J_AGENT.NEO4J_AGENT_SCHEMA.GET_ORGANIZATION_INVESTORS('Uniphore');
 
-def query_company(company_name):
-    driver = GraphDatabase.driver(
-        "neo4j+s://demo.neo4jlabs.com:7687",
-        auth=("companies", "companies")
-    )
-    query = """
-        MATCH (o:Organization {name: $company})
-        RETURN o.name as name,
-               [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
-        LIMIT 1
-    """
-    records, summary, keys = driver.execute_query(
-        query,
-        company=company_name,
-        database_="companies"
-    )
-    return records[0].data() if records else {}
-$$;
+SELECT NEO4J_AGENT.NEO4J_AGENT_SCHEMA.ANALYZE_RELATIONSHIPS('Uniphore', 2);
+
+SELECT NEO4J_AGENT.NEO4J_AGENT_SCHEMA.SEARCH_NEWS_ARTICLES('Uniphore', 'Roberto Pieraccini', 3);
 ```
 
-### 3. External Functions
+## Implementation notes
 
-Call Neo4j via Snowflake external function (AWS Lambda, Azure Functions).
+- The external access integration is created through `snowflake_execute`
+  because the provider does not yet expose it as a first-class resource.
+- Python UDFs share a runtime config (Python 3.13, `neo4j` +
+  `sentence-transformers`, the Neo4j external access integration, and the
+  model stage import) so a single warehouse runtime can be reused across
+  `QUERY_NEO4J` and `GENERATE_EMBEDDINGS`.
+- SQL function bodies live in `terraform/sql/*.sql` and are rendered with
+  `templatefile()`; the `${query_neo4j}` and `${generate_embeddings}`
+  placeholders are substituted with fully qualified UDF identifiers at
+  apply time.
+- Neo4j credentials are stored in a `snowflake_secret_with_basic_authentication`
+  resource and read inside the Python UDF via
+  `_snowflake.get_username_password('cred')`.
 
-## MCP Authentication
-
-✅ **API Keys** - Snowflake API keys
-
-✅ **OAuth** - Client credentials flow
-
-✅ **OAuth 2.0** - M2M flows
-
-**Other:**
-- Snowflake native authentication
-- Unity Catalog-style governance
-
-
-## Industry Research Agent Example
-
-```python
-from snowflake.cortex import Agent, Tool
-from neo4j import GraphDatabase
-
-# Define Neo4j tools
-class Neo4jTools:
-    def __init__(self):
-        self.driver = GraphDatabase.driver(
-            "neo4j+s://demo.neo4jlabs.com:7687",
-            auth=("companies", "companies")
-        )
-    
-    @Tool(description="Query company information")
-    def query_company(self, name: str) -> dict:
-        query = """
-            MATCH (o:Organization {name: $company})
-            RETURN o.name as company_name,
-                   [(o)-[:LOCATED_IN]->(loc:Location) | loc.name] as locations
-            LIMIT 1
-        """
-        records, summary, keys = self.driver.execute_query(
-            query,
-            company=name,
-            database_="companies"
-        )
-        return records[0].data() if records else {}
-
-# Create agent
-agent = Agent(
-    name="research_agent",
-    model="claude-3-5-sonnet",
-    tools=[Neo4jTools().query_company],
-    instructions="Research companies using Neo4j data"
-)
-
-# Execute
-result = agent.run("Research Google")
-```
-
-## Challenges and Gaps
-
-1. **MCP support is recent (GA Nov 2025)**
-2. **Python UDF limitations** - package versions, execution environment
-3. **External function overhead** - network latency
-
-## Additional Integration Opportunities
-
-- Combine Snowflake data warehouse with Neo4j graph
-- Use Cortex Search with Neo4j vector embeddings
-- Hybrid queries across Snowflake and Neo4j
-
-## Resources
-
-- **Snowflake Cortex Agents**: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents
-- **Cortex Agents Tutorials**: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-tutorials
-- **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)
-
-## Status
-
-- ✅ MCP Server support (GA Nov 2025)
-- ✅ Claude 3.5 optimized
-- ✅ OAuth 2.0
-- **Effort Score**: 6/10
-- **Impact Score**: 7/10

@@ -1,0 +1,17 @@
+# Copy this file to terraform.tfvars and fill in your values.
+
+# Snowflake connection
+snowflake_organization_name = ""
+snowflake_account_name      = ""
+snowflake_service_user      = "TERRAFORM_SVC"
+snowflake_private_key_path  = ""
+warehouse                   = "COMPUTE_WH"
+
+# Snowflake resources
+snowflake_user = "YOUR_SNOWFLAKE_USER"
+database_name  = "NEO4J_AGENT"
+
+# Neo4j connection
+neo4j_host     = "demo.neo4jlabs.com:7687"
+neo4j_username = "companies"
+neo4j_password = "companies"
