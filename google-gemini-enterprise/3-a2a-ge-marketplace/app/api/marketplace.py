@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -97,6 +98,7 @@ def get_account_from_entitlement(entitlement_id: str) -> str:
 async def pubsub_handler(request: Request):
     """
     Receives push notifications from Google Cloud Pub/Sub about Marketplace events.
+    Acknowledges quickly with 200 OK so messages do not accumulate or trigger redelivery storms.
     """
     try:
         body = await request.json()
@@ -116,8 +118,9 @@ async def pubsub_handler(request: Request):
         if not event_type:
             return JSONResponse({"status": "ignored", "reason": "Missing eventType"}, status_code=200)
 
+        # Fallback query if account_id is omitted by Google for an entitlement event
         if not account_id and entitlement_id:
-            account_id = get_account_from_entitlement(entitlement_id)
+            account_id = await asyncio.to_thread(get_account_from_entitlement, entitlement_id)
             if account_id:
                 logging.info(f"[marketplace] Successfully retrieved missing account_id: {account_id}")
             else:
@@ -128,38 +131,17 @@ async def pubsub_handler(request: Request):
 
         logging.info(f"[marketplace] Received Event: {event_type} | Account: {account_id} | Entitlement: {entitlement_id}")
 
-        if event_type in ["ACCOUNT_CREATION_REQUESTED", "ACCOUNT_ACTIVE"]:
-            if not approve_marketplace_account(account_id):
-                logging.error(
-                    f"[marketplace] Account approval failed for {account_id}; "
-                    "returning error so Pub/Sub redelivers this event."
-                )
-                return JSONResponse({"status": "error", "reason": "account_approval_failed"}, status_code=500)
-
-        if event_type in ["ENTITLEMENT_CREATION_REQUESTED", "ENTITLEMENT_OFFER_ACCEPTED"] and entitlement_id:
-            if account_id:
-                logging.info(f"[marketplace] Ensuring Account {account_id} is approved BEFORE Entitlement.")
-                if not approve_marketplace_account(account_id):
-                    logging.error(
-                        f"[marketplace] Account approval failed for {account_id}; "
-                        "returning error so Pub/Sub redelivers this event."
-                    )
-                    return JSONResponse({"status": "error", "reason": "account_approval_failed"}, status_code=500)
-
-            if not approve_marketplace_entitlement(entitlement_id):
-                logging.error(
-                    f"[marketplace] Entitlement approval failed for {entitlement_id}; "
-                    "returning error so Pub/Sub redelivers this event."
-                )
-                return JSONResponse({"status": "error", "reason": "entitlement_approval_failed"}, status_code=500)
-
+        # Record and update the internal Neo4j tracking state only.
+        # Approvals are intentionally deferred until the admin completes the setup form.
         token_manager.handle_marketplace_event(event_type, account_id, entitlement_id)
 
+        # Always return 200 to acknowledge the message and drain the Pub/Sub queue
         return JSONResponse({"status": "success"}, status_code=200)
 
     except Exception as e:
         logging.error(f"[marketplace] Error handling Pub/Sub message: {e}")
-        return JSONResponse({"error": "Internal Server Error"}, status_code=500)
+        # Return 200 to prevent poisoned or malformed payloads from entering an infinite retry loop
+        return JSONResponse({"status": "error_handled", "error": str(e)}, status_code=200)
     
 async def setup_page_handler(request: Request):
     """
@@ -203,7 +185,8 @@ async def setup_page_handler(request: Request):
 
 async def setup_save_handler(request: Request):
     """
-    Receives the submitted form and activates the user.
+    Receives submitted credentials, updates the internal database, and
+    triggers Google Procurement approvals off the main event loop.
     """
     try:
         form = await request.form()
@@ -217,9 +200,26 @@ async def setup_save_handler(request: Request):
         if not all([order_id, email, uri, user, password]):
             return HTMLResponse("<h2>Error: Missing required fields. Please go back.</h2>", status_code=400)
 
+        # 1. Activate credentials in tracking database
         token_manager.activate_user_credentials(
             order_id, uri, user, password, database, email
         )
+
+        # 2. Retrieve the mapped account and entitlement IDs for this Order
+        account_id = token_manager.get_account_id(order_id)
+        entitlement_id = token_manager.get_entitlement_id(order_id)
+
+        # 3. Offload synchronous HTTP requests + backoff sleep to a worker thread
+        # so Starlette's asyncio event loop never blocks
+        if account_id:
+            account_approved = await asyncio.to_thread(approve_marketplace_account, account_id)
+            if not account_approved:
+                logging.error(f"[setup] Account approval failed for {account_id}")
+
+        if entitlement_id:
+            entitlement_approved = await asyncio.to_thread(approve_marketplace_entitlement, entitlement_id)
+            if not entitlement_approved:
+                logging.error(f"[setup] Entitlement approval failed for {entitlement_id}")
 
         return templates.TemplateResponse(request, "success.html")
 
