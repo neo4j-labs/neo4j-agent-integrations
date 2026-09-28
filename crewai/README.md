@@ -7,6 +7,10 @@
 
 This integration provides both a self-contained walkthrough notebook and reusable CrewAI agent modules. Both paths combine CrewAI orchestration, a local Neo4j MCP server, optional Neo4j Agent Memory Server (NAMS), and reusable graph tools. It does not require a web service or browser application.
 
+For a detailed implementation narrative with architecture, lifecycle, security,
+and tool-routing diagrams, read
+[Building a Grounded CrewAI + Neo4j Integration](INTEGRATION_BLOG.md).
+
 ## Execution Paths
 
 ### Self-contained notebook
