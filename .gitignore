@@ -30,3 +30,6 @@ microsoft-foundry/infra/infra/main.json
 datarobot/dist/
 datarobot/.nams_conversation_cache.json
 .worktrees
+
+# root npm install
+/node_modules/
