@@ -276,11 +276,16 @@ integrations:
   - folder: snowflake-cortex
     slug: snowflake-cortex
     title: "Snowflake Cortex Agents + Neo4j Integration"
-    tags: "snowflake, cortex, agents, neo4j, mcp, sql"
+    tags: "snowflake, cortex, agents, neo4j, terraform, sql"
     product: "Snowflake Cortex"
     category: "Cloud & Enterprise Platforms"
     nav_label: "Snowflake Cortex"
-    thin: true
+    thin: false
+    sub_pages:
+      - src: samples/1-terraform/README.md
+        slug: snowflake-cortex-terraform
+        title: "Snowflake Cortex - Terraform"
+        nav_label: "Terraform"
 
   - folder: n8n
     slug: n8n
