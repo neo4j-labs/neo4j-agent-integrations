@@ -31,18 +31,26 @@ Cortex Agent (NEO4J_RESEARCH_AGENT)
 | Sample | What |
 | --- | --- |
 | [1-terraform](samples/1-terraform/README.md) | Provisions the whole stack with Terraform |
+| [2-snowsight](samples/2-snowsight/README.md) | Builds the same stack by hand in Snowsight |
+
+Both use the same Python handlers, SQL bodies and agent tools from `shared/`.
+
+Sample 2 as a video:
+
+[![Watch the video](https://img.youtube.com/vi/QWc3SBc5sUE/maxresdefault.jpg)](https://youtu.be/QWc3SBc5sUE)
 
 ## Repository layout
 
 ```
 snowflake-cortex/
-├── shared/                  # used by the samples
+├── shared/                  # used by all samples
 │   ├── functions/           # Python UDF handlers
 │   ├── sql/                 # SQL wrapper bodies (agent tools)
 │   ├── agent/               # agent spec template
 │   └── model/minilm/        # all-MiniLM-L6-v2 files (downloaded, gitignored)
 └── samples/
-    └── 1-terraform/         # Terraform config, bootstrap SQL
+    ├── 1-terraform/         # Terraform config, bootstrap SQL
+    └── 2-snowsight/         # Snowsight guide, screenshots
 ```
 
 ## Running the agent

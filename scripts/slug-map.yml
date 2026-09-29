@@ -286,6 +286,10 @@ integrations:
         slug: snowflake-cortex-terraform
         title: "Snowflake Cortex - Terraform"
         nav_label: "Terraform"
+      - src: samples/2-snowsight/README.md
+        slug: snowflake-cortex-snowsight
+        title: "Snowflake Cortex - Snowsight"
+        nav_label: "Snowsight"
 
   - folder: n8n
     slug: n8n
