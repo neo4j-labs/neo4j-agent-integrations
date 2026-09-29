@@ -9,7 +9,7 @@ This integration provides both a self-contained walkthrough notebook and reusabl
 
 For a detailed implementation narrative with architecture, lifecycle, security,
 and tool-routing diagrams, read
-[Building a Grounded CrewAI + Neo4j Integration](INTEGRATION_BLOG.md).
+[From Prompts to Proof: Building Grounded CrewAI Agents with Neo4j](INTEGRATION_BLOG.md).
 
 ## Execution Paths
 

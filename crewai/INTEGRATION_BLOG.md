@@ -1,4 +1,4 @@
-# Building a Grounded CrewAI + Neo4j Integration with Local MCP and NAMS
+# From Prompts to Proof: Building Grounded CrewAI Agents with Neo4j
 
 ## Introduction
 
