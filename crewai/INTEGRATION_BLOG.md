@@ -43,40 +43,7 @@ NAMS adds optional durable memory beyond the current run.
 
 ## Architecture at a Glance
 
-```mermaid
-flowchart LR
-    User["User or calling application"]
-    Notebook["Self-contained notebook"]
-    Modules["Reusable Python modules"]
-    Crew["CrewAI crew"]
-    Query["Query agent"]
-    Researcher["Researcher"]
-    Analyst["Analyst"]
-    Writer["Writer"]
-    MCPClient["Local MCP adapter"]
-    MCPServer["neo4j-mcp-server\nlocal stdio subprocess"]
-    DirectTools["Direct read-only Neo4j tools\nfallback"]
-    Custom["Shared custom tools"]
-    Graph[("Neo4j graph")]
-    NAMS[("Optional NAMS memory")]
-
-    User --> Notebook
-    User --> Modules
-    Notebook --> Crew
-    Modules --> Crew
-    Crew --> Query
-    Crew --> Researcher --> Analyst --> Writer
-    Query --> MCPClient
-    Researcher --> MCPClient
-    Analyst --> MCPClient
-    Query -. "MCP unavailable" .-> DirectTools
-    Researcher --> Custom
-    MCPClient --> MCPServer
-    MCPServer <-->|"read-oriented Cypher"| Graph
-    DirectTools <-->|"read-only Cypher"| Graph
-    Custom --> MCPServer
-    Writer <-->|"optional recall and save"| NAMS
-```
+![CrewAI, Neo4j, MCP, and NAMS architecture](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-1.png)
 
 The important routing decision is the MCP-first path. When
 `MCP_SERVER_COMMAND` is configured, the reusable crew uses discovered MCP
@@ -105,26 +72,7 @@ task boundaries constrain how the workflow obtains and uses data.
 The integration starts the official `neo4j-mcp-server` as a local stdio
 subprocess. No hosted MCP URL and no OAuth client are required.
 
-```mermaid
-sequenceDiagram
-    participant Crew as CrewAI agent
-    participant Adapter as agent/mcp.py
-    participant Server as neo4j-mcp-server
-    participant Graph as Neo4j
-
-    Crew->>Adapter: Request available tools
-    Adapter->>Server: Start local stdio process
-    Adapter->>Server: MCP initialize and tools/list
-    Server-->>Adapter: Tool metadata plus JSON input schemas
-    Adapter-->>Crew: Typed CrewAI BaseTool instances
-
-    Crew->>Adapter: Invoke get-schema or read-cypher
-    Adapter->>Server: MCP tools/call with typed arguments
-    Server->>Graph: Read-oriented graph operation
-    Graph-->>Server: Records or schema
-    Server-->>Adapter: MCP tool result
-    Adapter-->>Crew: Tool output for grounded response
-```
+![Local MCP discovery and invocation sequence](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-2.png)
 
 [`agent/mcp.py`](agent/mcp.py) forwards the regular `NEO4J_*` settings to
 their `NEO4J_MCP_*` equivalents when explicit MCP values are absent. It also
@@ -140,15 +88,7 @@ tool without the required argument.
 
 The integration uses this selection rule:
 
-```mermaid
-flowchart TD
-    Start["Crew needs graph tools"] --> Enabled{"MCP_SERVER_COMMAND set?"}
-    Enabled -->|Yes| Discover["Discover local MCP tools"]
-    Discover --> MCP["Use discovered MCP tools"]
-    Enabled -->|No| Direct["Use direct read-only Neo4j tools"]
-    MCP --> Answer["Return graph-grounded output"]
-    Direct --> Answer
-```
+![MCP-first graph tool routing decision](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-3.png)
 
 This preserves a direct-driver fallback for environments that do not use MCP,
 while preferring the transport that has been validated for the configured
@@ -238,20 +178,7 @@ when the graph lacks the requested entity or relationship.
 
 `build_company_intelligence_crew()` creates a sequential three-agent crew.
 
-```mermaid
-flowchart LR
-    Request["Company briefing request"]
-    Research["Research task\nfacts and profile"]
-    Analysis["Analysis task\nrelationships and risks"]
-    Report["Report task\nexecutive Markdown"]
-    Memory["Optional NAMS preferences\nand verified findings"]
-
-    Request --> Research --> Analysis --> Report
-    Memory -. "recall" .-> Research
-    Memory -. "recall" .-> Analysis
-    Memory -. "format guidance" .-> Report
-    Report -. "save verified finding" .-> Memory
-```
+![Sequential multi-agent company briefing flow](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-4.png)
 
 1. The **Lead Knowledge Graph Researcher** retrieves company facts and relevant
    graph structure.
@@ -341,17 +268,7 @@ uv pip install --system-certs -r requirements.txt
 
 The design uses several layered controls:
 
-```mermaid
-flowchart TD
-    Secrets["Environment or ignored .env"]
-    MCPEnv["Forward selected Neo4j settings"]
-    ReadOnly["Read-only MCP configuration"]
-    Schema["Typed MCP input schemas"]
-    Tools["Narrow CrewAI tool surface"]
-    Evidence["Grounded responses"]
-
-    Secrets --> MCPEnv --> ReadOnly --> Schema --> Tools --> Evidence
-```
+![Layered security and operational boundaries](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-5.png)
 
 - **No credentials in source or notebook outputs.** Credentials stay in the
   environment or ignored `.env` file.
