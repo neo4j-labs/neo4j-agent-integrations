@@ -59,7 +59,7 @@ COMPANIES_DATABASE = "companies"
 MAX_ROWS = 20
 
 # --- LLM ---------------------------------------------------------------------
-LLM_MODEL = "gpt-4o-mini"
+LLM_MODEL = "gpt-5.4-mini"
 
 SYSTEM_PROMPT = (
     "You are an assistant with two Neo4j-backed capabilities:\n"
