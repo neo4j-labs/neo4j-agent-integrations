@@ -1,10 +1,12 @@
 # OpenAI Agents SDK + Neo4j Integration
 
-This folder demonstrates three approaches for integrating **Neo4j** with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/). Each approach builds on the previous one, adding more capability.
+This folder demonstrates five approaches for integrating **Neo4j** with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/). The first three build on each other, adding more capability; the last two cover retrieval over unstructured content and delegating to a hosted Neo4j agent.
 
 | Notebook | Description |
 |----------|-------------|
-| [openai_agents.ipynb](openai_agents.ipynb) | End-to-end walkthrough of all three approaches with working examples |
+| [openai_agents.ipynb](openai_agents.ipynb) | End-to-end walkthrough of the MCP, custom tools, and memory approaches with working examples |
+| [openai_graphrag.ipynb](openai_graphrag.ipynb) | GraphRAG retrieval with `neo4j-graphrag`: pairing embedding models with vector indexes, vector, hybrid and graph-traversal retrievers, exposed as function tools and as specialist agents with handoffs |
+| [openai_aura_agent.ipynb](openai_aura_agent.ipynb) | Connect a hosted Neo4j Aura Agent over MCP as a sub-agent: machine-to-machine authentication, token caching, and `as_tool()` orchestration alongside local tools |
 
 ## Overview
 
@@ -29,6 +31,12 @@ pip install --upgrade openai-agents "neo4j-agent-memory[openai-agents]"
 pip install --ignore-requires-python neo4j-mcp-server
 ```
 
+For the GraphRAG retrieval examples:
+
+```bash
+pip install --upgrade openai-agents neo4j-graphrag neo4j
+```
+
 ## Configuration
 
 Set the following environment variables before running the notebook:
@@ -51,6 +59,11 @@ export MEMORY_NEO4J_URI="neo4j+s://your-instance.databases.neo4j.io"
 export MEMORY_NEO4J_USERNAME="neo4j"
 export MEMORY_NEO4J_PASSWORD="your-password"
 export MEMORY_NEO4J_DATABASE="neo4j"
+
+# Aura Agent MCP — only required for Approach 5
+export AURA_MCP_CLIENT_ID="..."
+export AURA_MCP_CLIENT_SECRET="..."
+export AURA_AGENT_MCP_URL="https://mcp.neo4j.io/agent?project_id=...&agent_id=..."
 ```
 
 > **Security:** Never hardcode credentials in notebook cells or commit them to source control. Use environment variables or a secrets manager.
@@ -208,6 +221,130 @@ await record_agent_trace(memory=memory, messages=conversation, task="...", succe
 
 ---
 
+## Approach 4 — GraphRAG Retrieval
+
+Give the agent semantic search over unstructured content in the graph using [`neo4j-graphrag`](https://neo4j.com/docs/neo4j-graphrag-python/current/). Its retrievers combine vector similarity with graph traversal, so retrieved text arrives with its source article, dates, and related entities rather than as a bare passage.
+
+**Key APIs:** `VectorRetriever`, `VectorCypherRetriever`, `HybridCypherRetriever`, `@function_tool`, `Agent(handoffs=[...])`
+
+```python
+from agents import Agent, Runner, function_tool
+from neo4j_graphrag.embeddings import OpenAIEmbeddings
+from neo4j_graphrag.retrievers import HybridCypherRetriever
+
+# `node` and `score` are in scope: continue into the graph from each vector hit.
+RETRIEVAL_QUERY = """
+WITH node AS chunk, score
+MATCH (article:Article)-[:HAS_CHUNK]->(chunk)
+OPTIONAL MATCH (article)-[:MENTIONS]->(org:Organization)
+RETURN chunk.text AS text, article.id AS article_id, article.title AS title,
+       collect(DISTINCT org.name)[..5] AS companies, score
+"""
+
+retriever = HybridCypherRetriever(
+    driver=driver,
+    vector_index_name="news",
+    fulltext_index_name="news_fulltext",
+    retrieval_query=RETRIEVAL_QUERY,
+    embedder=OpenAIEmbeddings(),
+)
+
+@function_tool
+async def search_news_with_context(question: str) -> str:
+    """Search news by meaning and return the source article and companies mentioned."""
+    result = retriever.search(query_text=question, top_k=5)
+    return json.dumps([item.content for item in result.items])
+
+agent = Agent(
+    name="news_analyst",
+    instructions="Answer questions about companies using the news graph ...",
+    tools=[search_news_with_context],
+    model="gpt-5.4",
+)
+```
+
+The notebook also shows the same retrievers behind **specialist agents with handoffs** — a triage agent routes the question and transfers control, so each specialist carries only the prompt and the single retriever it needs:
+
+```python
+triage_agent = Agent(
+    name="retrieval_triage",
+    instructions="Route news questions to the right specialist. Do not answer yourself.",
+    handoffs=[theme_specialist, analysis_specialist, entity_specialist],
+    model="gpt-5.4",
+)
+
+result = await Runner.run(triage_agent, query)
+print(result.last_agent.name)   # which specialist finished the turn
+```
+
+> The embedding model must match the model that built the vector index. A mismatch does not raise an error — it silently returns meaningless results. Re-embed a stored chunk and compare against its saved vector to confirm the pairing.
+
+**When to use:** Your graph holds unstructured text (articles, documents, notes) and answers need both semantic recall and the structured relationships around each match. Use tools when one agent should stay in charge; use handoffs when the specialists need materially different instructions.
+
+---
+
+## Approach 5 — Hosted Aura Agent
+
+An [Aura Agent](https://neo4j.com/docs/aura/aura-agent/) is a managed agent configured and hosted in the Aura Console. It reasons over the graph using its own ontology and tools, and returns an answer rather than rows. Exposed over MCP, it becomes a sub-agent your orchestrator can call — so graph logic stays with the graph and changes in the Console take effect without a code change.
+
+**Key APIs:** `MCPServerStreamableHttp`, `Agent.as_tool()`, `client_credentials` grant
+
+```python
+import requests
+from agents import Agent, Runner
+from agents.mcp import MCPServerStreamableHttp
+
+# Machine-to-machine token. Cache it: the endpoint allows 15 requests/hour per client.
+token = requests.post(
+    "https://mcp.neo4j.io/oauth/token",
+    headers={"Content-Type": "application/x-www-form-urlencoded"},
+    data={
+        "grant_type": "client_credentials",
+        "client_id": os.environ["AURA_MCP_CLIENT_ID"],
+        "client_secret": os.environ["AURA_MCP_CLIENT_SECRET"],
+        "audience": "https://agent-mcp.neo4j.io",
+    },
+).json()["access_token"]
+
+aura_mcp = MCPServerStreamableHttp(
+    params={
+        "url": os.environ["AURA_AGENT_MCP_URL"],
+        "headers": {"Authorization": f"Bearer {token}"},
+        "timeout": 120,          # hosted agents reason before answering
+    },
+    name="aura-agent",
+    cache_tools_list=True,
+)
+await aura_mcp.connect()
+
+# The hosted agent, wrapped as a local specialist the orchestrator can call.
+graph_specialist = Agent(
+    name="graph_specialist",
+    instructions="Answer questions about companies using the Aura Agent's tools ...",
+    mcp_servers=[aura_mcp],
+    model="gpt-5.4",
+)
+
+orchestrator = Agent(
+    name="research_assistant",
+    instructions="Use ask_knowledge_graph for graph questions, local tools for calculations.",
+    tools=[
+        graph_specialist.as_tool(
+            tool_name="ask_knowledge_graph",
+            tool_description="Ask the hosted Neo4j knowledge graph agent about companies and relationships.",
+        ),
+        portfolio_weight,
+    ],
+    model="gpt-5.4",
+)
+```
+
+> **Credentials:** These come from **Account settings → Client credentials → Aura Agent & MCP** in the Aura Console. They are not Aura API keys — those authenticate against `api.neo4j.io` and belong to the agent's REST endpoint rather than its MCP endpoint.
+
+**When to use:** The graph reasoning is already built and maintained in Aura, and your application needs to consult it alongside its own tools without duplicating schema knowledge or Cypher in your codebase.
+
+---
+
 ## Implementation Notes
 
 | Topic | Detail |
@@ -216,12 +353,19 @@ await record_agent_trace(memory=memory, messages=conversation, task="...", succe
 | **`PatchedMCPServerStreamableHttp`** | Works around a v1.5.x `neo4j-mcp-server` bug where `get-schema` incorrectly declares `required: ["properties"]`. Can be removed once fixed upstream. |
 | **`create_memory_tools()`** | Produces four OpenAI function-calling tools: `search_memory`, `save_preference`, `recall_preferences`, `search_entities`. |
 | **`record_agent_trace()`** | Persists the full reasoning trace to Neo4j so the agent can learn from past interactions via `get_similar_traces()`. |
+| **Index pairing** | The embedding model must match the model that built the vector index. A mismatch returns meaningless results without raising an error — re-embed a stored chunk and compare against its saved vector to confirm. |
+| **Cypher 25** | `neo4j-graphrag` emits the Cypher 25 `SEARCH` clause. Databases that still default to Cypher 5 need the generated queries prefixed with `CYPHER 25`. |
+| **Aura Agent token quota** | `https://mcp.neo4j.io/oauth/token` is rate-limited to 15 requests per hour per client ID. Cache each token for its full `expires_in` window. |
+| **Token expiry** | `MCPServerStreamableHttp` captures its headers at construction, so tokens do not refresh themselves. Rebuild the connection on refresh, or front the endpoint with a proxy that injects a current token per request. |
 
 ## Resources
 
 - [OpenAI Agents SDK Documentation](https://openai.github.io/openai-agents-python/)
 - [OpenAI Agents SDK — MCP Support](https://openai.github.io/openai-agents-python/mcp/)
+- [OpenAI Agents SDK — Handoffs](https://openai.github.io/openai-agents-python/handoffs/)
 - [Neo4j Agent Memory — OpenAI Integration](https://neo4j.com/labs/agent-memory/how-to/integrations/openai-agents/)
+- [neo4j-graphrag for Python](https://neo4j.com/docs/neo4j-graphrag-python/current/)
+- [Neo4j Aura Agent](https://neo4j.com/docs/aura/aura-agent/)
 - [neo4j-mcp-server on PyPI](https://pypi.org/project/neo4j-mcp-server/)
 - [neo4j-agent-memory on PyPI](https://pypi.org/project/neo4j-agent-memory/)
 - [Neo4j Python Driver Documentation](https://neo4j.com/docs/python-manual/current/)

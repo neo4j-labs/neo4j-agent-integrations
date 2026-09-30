@@ -64,12 +64,12 @@ This provides a consistent pattern for comparing integration approaches across p
 - **[salesforce-agentforce](./salesforce-agentforce/)** - Salesforce Agentforce
 
 ### Agent Frameworks
-- **[langgraph](./langgraph/)** - LangGraph (MCP adapters)
-- **[langchain](./langchain/)** - LangChain (MCP adapters)
+- **[langgraph](./langgraph/)** - LangGraph (MCP adapters + GraphRAG retrievers)
+- **[langchain](./langchain/)** - LangChain (MCP adapters + GraphRAG retrievers)
 - **[microsoft-agent-framework](./microsoft-agent-framework/)** - Microsoft Agent Framework (AutoGen + Semantic Kernel)
-- **[openai-agents-sdk](./openai-agents-sdk/)** - OpenAI Agents SDK
+- **[openai-agents-sdk](./openai-agents-sdk/)** - OpenAI Agents SDK (MCP + GraphRAG retrievers)
 - **[strands-agents](./aws-strands-agents/)** - AWS Strands
-- **[google-adk](./google-adk/)** - Google ADK
+- **[google-adk](./google-adk/)** - Google ADK (MCP + graph workflows + GraphRAG retrievers)
 - **[crewai](./crewai/)** - CrewAI
 - **[flue](./flue/)** - Flue 
 - **[pydantic-ai](./pydantic-ai/)** - Pydantic AI
@@ -129,7 +129,34 @@ def query_company(company_name: str):
     return records[0].data() if records else {}
 ```
 
-### 3. Custom Integrations
+### 3. GraphRAG Retrieval
+
+Use [`neo4j-graphrag`](https://neo4j.com/docs/neo4j-graphrag-python/current/), Neo4j's official retrieval library, when answers need semantic search over unstructured text in the graph. Its retrievers combine vector or full-text search with graph traversal, so a match comes back with the surrounding context rather than as a bare passage:
+
+```python
+from neo4j_graphrag.retrievers import VectorCypherRetriever
+
+retriever = VectorCypherRetriever(
+    driver=driver,
+    index_name="news",
+    # `node` and `score` are in scope - continue into the graph from each match
+    retrieval_query="""
+    WITH node AS chunk, score
+    MATCH (article:Article)-[:HAS_CHUNK]->(chunk)
+    OPTIONAL MATCH (article)-[:MENTIONS]->(org:Organization)
+    RETURN chunk.text AS text, article.title AS title,
+           collect(DISTINCT org.name)[..5] AS companies, score
+    """,
+    embedder=embedder,
+)
+
+results = retriever.search(query_text="renewable energy investment", top_k=5)
+```
+
+Retrievers available: `VectorRetriever` (semantic), `HybridRetriever` (semantic + full-text, for exact names and tickers), and the `*CypherRetriever` variants that add graph traversal. Each is a plain Python object with a `search()` method, so it wraps as a tool in any framework.
+
+
+### 4. Custom Integrations
 
 Use dedicated extension points of the agent framework to implement a specific integration.
 
@@ -201,5 +228,6 @@ When adding a new integration:
 
 - **Neo4j MCP Server**: https://github.com/neo4j/mcp
 - **MCP Specification**: https://modelcontextprotocol.io/
+- **Neo4j GraphRAG for Python**: https://neo4j.com/docs/neo4j-graphrag-python/current/
 - **Neo4j Driver Docs**: https://neo4j.com/docs/
 - **Demo Database**: neo4j+s://demo.neo4jlabs.com:7687 (companies/companies)

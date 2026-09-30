@@ -70,6 +70,18 @@ npm run chat                           # starts the local MCP server + a termina
 
 Setup and how it works: [`vercel-eve/README.md`](./vercel-eve/README.md).
 
+### eve Agent — [`vercel-eve/`](./vercel-eve/)
+
+Persistent, graph-backed memory for [eve](https://vercel.com/docs/eve), Vercel's open-source framework for durable backend agents. The working project, [`vercel-eve/industry-research-agent/`](./vercel-eve/industry-research-agent/), implements the repo's reference agent on eve: recall via dynamic instructions on `turn.started`, retention via hooks on `turn.completed`, three MCP servers mounted as read-only connections — Neo4j's hosted one, NAMS's own, and a local one you can edit in `mcp-server/` — and cross-session recall covered by an eval that discards the transcript between sessions.
+
+```bash
+cd vercel-eve/industry-research-agent
+npm install && cp .env.example .env    # add NAMS_API_KEY + OPENAI_API_KEY
+npm run chat                           # local MCP server + terminal chat UI
+```
+
+See [`vercel-eve/README.md`](./vercel-eve/README.md) for setup, how to add tools and MCP connections, authentication as the memory boundary, and the known NAMS limits.
+
 ## Extension Points
 
 ### 1. MCP Integration

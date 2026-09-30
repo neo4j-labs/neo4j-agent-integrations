@@ -9,6 +9,7 @@
 **2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.  
 **3. Managed Agent Memory (via NAMS):** Offloads memory infrastructure entirely using the cloud-managed [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs), accessible via REST API or directly as an MCP tool.  
 **4. Semantic Retrieval (via neo4j-graphrag):** Gives the agent vector, full-text, and hybrid search over unstructured content in the graph using [`neo4j-graphrag`](https://neo4j.com/docs/neo4j-graphrag-python/current/), with retrievers exposed as ADK tools.  
+**5. Hosted Agents (via Aura Agent MCP):** Connects to a managed [Aura Agent](https://neo4j.com/docs/aura/aura-agent/) — configured and hosted in the Aura Console — as an MCP tool, so ADK orchestrates an agent that does its own reasoning over the graph.  
 
 Examples target **ADK 2.0**, which introduces graph-based workflows alongside the conversational agent model.
 
@@ -19,6 +20,7 @@ Examples target **ADK 2.0**, which introduces graph-based workflows alongside th
 **Graph Introspection:** Allow agents to autonomously discover graph schemas and execute Cypher queries.  
 **Deterministic Workflows:** Use ADK 2.0 `Workflow` graphs to put generated Cypher through validation and routing that the model cannot skip.  
 **GraphRAG Retrieval:** Combine vector similarity with graph traversal so retrieved text arrives with the surrounding relationships, dates, and verifiable source IDs.  
+**Hosted Agent Delegation:** Call a managed Aura Agent over MCP so graph reasoning stays with the graph, and updating its ontology in the Console changes behaviour with no code change
 **Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."  
 **Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.  
 
@@ -259,6 +261,7 @@ agent = Agent(model="gemini-3-flash", name="news_analyst",
 |----------|-------------|
 | [google_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/google_adk.ipynb) | Walkthrough of using Google ADK with Neo4j MCP: agent setup, Cypher query execution, deterministic workflows, and utilising persistent graph memory for agent |
 | [neo4j_graphrag_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/neo4j_graphrag_adk.ipynb) | Walkthrough of using `neo4j-graphrag` with Google ADK: pairing embedding models with vector indexes, vector, hybrid and graph-traversal retrievers, and exposing them as agent tools |
+| [aura_agent_adk.ipynb](https://github.com/neo4j-labs/neo4j-agent-integrations/blob/main/google-adk/aura_agent_adk.ipynb) | Walkthrough of connecting a hosted Neo4j Aura Agent to Google ADK over MCP: machine-to-machine authentication, token caching and refresh, and combining the hosted agent with local ADK tools |  
 
 ## Resources  
 • [Neo4j MCP Server Documentation](https://neo4j.com/docs/mcp/current/)
