@@ -19,7 +19,6 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
   const messagesEndRef    = useRef<HTMLDivElement>(null);
   const submittedAtRef    = useRef<number | null>(null);
   const prevStepCountRef  = useRef<number>(0);
-  const resolvedConvIdRef = useRef<string | undefined>(undefined);
   const baselineRef       = useRef<Promise<void> | null>(null);
 
   const sessionId = useRef('');
@@ -39,8 +38,14 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
 
   const { messages, sendMessage, regenerate, stop, status, error } = useChat({
     transport: new DefaultChatTransport({
-      api:  '/api/chat',
-      body: () => ({ sessionId: sessionId.current, conversationId: resolvedConvIdRef.current }),
+      api: '/api/chat',
+      prepareSendMessagesRequest: ({ messages, trigger }) => ({
+        body: {
+          message: messages[messages.length - 1],
+          trigger,
+          sessionId: sessionId.current,
+        },
+      }),
     }),
     onFinish: ({ message }) => {
       if (message.role !== 'assistant') return;
@@ -51,7 +56,6 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
       }
       const msgId  = message.id;
       const params = new URLSearchParams({ userId: sessionId.current });
-      if (resolvedConvIdRef.current) params.set('conversationId', resolvedConvIdRef.current);
       Promise.resolve(baselineRef.current)
         .then(() => fetch(`/api/reasoning?${params}`))
         .then(r => r.ok ? r.json() : null)
@@ -62,12 +66,6 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
           if (newSteps.length > 0) setMsgReasoningSteps(prev => ({ ...prev, [msgId]: newSteps }));
         })
         .catch(() => {});
-    },
-    onData: (part) => {
-      if ((part as { type: string }).type === 'data-conversation-id') {
-        const convId = (part as { data: string }).data;
-        if (convId) resolvedConvIdRef.current = convId;
-      }
     },
   });
 

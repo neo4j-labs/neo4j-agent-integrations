@@ -2,7 +2,7 @@ import { defineMcpClientConnection } from "eve/connections";
 import type { ConnectionToolCallDefinition } from "eve/connections";
 import { memoryScope, workspaceIdFor } from "../lib/nams";
 
-const getWorkspace: ConnectionToolCallDefinition | undefined = process.env.NAMS_WORKSPACE_ID
+const getWorkspace: ConnectionToolCallDefinition | undefined = process.env.WORKSPACE_ID
   ? {
     providedArguments: {
       workspace_id: (ctx) => workspaceIdFor(memoryScope(ctx).userId) ?? "",

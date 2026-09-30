@@ -21,8 +21,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.36",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@neo4j-labs/agent-memory": "^0.4.1",
-    "@neo4j-labs/nams-ai-provider": "^0.2.1",
+    "@neo4j-labs/agent-memory": "file:../../vercel_Nams_demo/vendor/nams-packages/packages/neo4j-labs-agent-memory-0.5.0.tgz",
+    "@neo4j-labs/nams-ai-provider": "file:../../vercel_Nams_demo/vendor/nams-packages/packages/neo4j-labs-nams-ai-provider-0.3.0.tgz",
     "ai": "^7.0.38",
     "eve": "^0.31.3",
     "neo4j-driver": "^6.2.0",

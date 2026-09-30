@@ -36,6 +36,70 @@ underneath both.
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart TB
+    user(["User<br/>npm run chat · eve invoke · HTTP"])
+
+    subgraph agent["eve agent · industry-research-agent/agent/"]
+        channel["channels/eve.ts<br/>verifies the caller"]
+        recall["instructions/memory.ts<br/>recall · before every turn"]
+        loop["Model loop<br/>instructions.md · lib/model.ts"]
+        hooks["hooks/persist-turn.ts<br/>hooks/persist-reasoning.ts<br/>store · after every turn"]
+        gateway["lib/memory-gateway.ts<br/>only NAMS SDK caller"]
+
+        subgraph surfaces["Tools the model can call · all read-only"]
+            cGraph["connections/<br/>neo4j-graph.ts"]
+            cInv["connections/<br/>neo4j-investments.ts"]
+            news["tools/<br/>search_news.ts"]
+            cMem["connections/<br/>memory-graph.ts"]
+        end
+    end
+
+    local["mcp-server/<br/>local · get_investments"]
+
+    subgraph neo["Neo4j"]
+        neoMcp["Neo4j MCP server<br/>hosted"]
+        db[("Companies graph<br/>demo.neo4jlabs.com")]
+    end
+
+    subgraph nams["NAMS · memory.neo4jlabs.com"]
+        namsMcp["NAMS MCP server"]
+        namsDb[("Memory graph<br/>short-term · long-term · reasoning")]
+    end
+
+    user <-- "message in · answer streamed out" --> channel
+    channel -- "user id = memory scope" --> recall
+    recall -- "memories added to the prompt" --> loop
+    loop -. "turn completed" .-> hooks
+    recall -- "search" --> gateway
+    hooks -- "write" --> gateway
+    gateway -- "SDK" --> namsDb
+
+    loop --> surfaces
+    cGraph --> neoMcp -- "Cypher" --> db
+    cInv --> local -- "Bolt" --> db
+    news -- "Bolt · full-text" --> db
+    cMem --> namsMcp --> namsDb
+```
+
+Read it top to bottom as one turn:
+
+1. The message arrives through `channels/eve.ts`, which decides who the caller
+   is. That user id scopes every memory read and write that follows.
+2. Before the model runs, `instructions/memory.ts` searches NAMS and adds what
+   it finds to the prompt.
+3. The model answers, calling tools as it chooses. Every tool reads from Neo4j
+   or NAMS. None of them can write.
+4. When the turn ends, the hooks write the exchange and the reasoning trace to
+   NAMS.
+
+Recall and store run on every turn, whatever the model decides. Both go through
+`lib/memory-gateway.ts`. [How memory works](#how-memory-works) explains why.
+
+---
+
 ## Why bother? A session is not memory
 
 eve keeps a conversation alive for a long time, but that is still just one
@@ -240,7 +304,7 @@ Three things to know if you copy this pattern:
 
 ### One memory client per user
 
-`memory.for(userId)` hands back a cached client rather than building a new one.
+`memory.for(scope)` hands back a cached client per user id rather than building a new one.
 Two reasons, both worth knowing before you refactor it away:
 
 1. The SDK caches the user's conversation id on the client object. A fresh
@@ -271,9 +335,9 @@ the model's view.
 
 Three habits worth copying from `agent/connections/`:
 
-- **Use `tools.allow`, not `tools.block`.** NAMS's MCP server publishes over 40
-  tools, including ones that delete a whole workspace. An allow-list stays safe
-  when the server adds new tools. A block-list doesn't.
+- **Use `tools.allow`, not `tools.block`.** NAMS's MCP server publishes about 40
+  tools, including writes and `skill_*` tools that edit the agent's own skills.
+  An allow-list stays safe when the server adds new tools. A block-list doesn't.
 - **No write tools from MCP.** Storing is the hook's job. A second, optional
   path to store would bring back the coin-flip the hook exists to remove.
 - **Inject `workspace_id` from the app, not the model.** Declaring it in
@@ -291,7 +355,7 @@ npm run mcp     # http://localhost:8100/mcp
 ```
 
 `npm run chat` starts it for you. `agent/connections/neo4j-investments.ts` is
-the agent's side of it — 20 lines, no auth, one allowed tool.
+the agent's side of it — a short file with no auth and one allowed tool.
 
 The server is optional on purpose. If nothing is listening, eve logs that the
 connection published no tools and the agent answers with the other three
@@ -428,10 +492,14 @@ document ask for someone else's memory. An id taken from verified auth cannot be
 talked into that. No tool in this project takes a `userId`.
 
 ```ts
-export default eveChannel({ auth: [appSession(), vercelOidc(), localDev()] });
+// agent/channels/eve.ts
+export default eveChannel({
+  auth: [vercelOidc(), localDev(), placeholderAuth()],
+});
 ```
 
-Each authenticator can accept, skip, or reject. Put your app's own first.
+Each authenticator can accept, skip, or reject. When you add your app's own
+authenticator, put it first and remove `placeholderAuth()`.
 
 | Mechanism | Supported | Notes |
 |---|---|---|
@@ -598,7 +666,7 @@ Things to plan around, found while building this:
 
 | Symptom | Cause |
 |---|---|
-| Answers stream but nothing is remembered | Wrong `NAMS_WORKSPACE_ID`. It 403s every memory call silently. Blank it out to use the workspace your key is bound to. |
+| Answers stream but nothing is remembered | Wrong `WORKSPACE_ID`. It 403s every memory call silently. Blank it out to use the workspace your key is bound to. |
 | `get_investments` never gets called | The local MCP server isn't running. `npm run mcp`, or use `npm run chat`. |
 | Every caller shares one memory | The auth walk isn't producing a user principal. Check `channels/eve.ts`. |
 | `NAMS_API_KEY is not set` at startup | No `.env`, or you copied `.env.example` without filling it in. |
