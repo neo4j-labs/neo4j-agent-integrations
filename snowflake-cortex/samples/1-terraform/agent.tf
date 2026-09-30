@@ -5,6 +5,10 @@ locals {
     get_organization_investors = snowflake_function_sql.get_organization_investors.name
     analyze_relationships      = snowflake_function_sql.analyze_relationships.name
     search_news_articles       = snowflake_function_sql.search_news_articles.name
+    warehouse                  = var.warehouse
+    customer_accounts          = snowflake_semantic_view.customer_accounts.name
+    find_organizations         = snowflake_function_sql.find_organizations.name
+    query_neo4j                = snowflake_function_python.query_neo4j.name
   })
 }
 

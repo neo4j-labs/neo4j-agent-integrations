@@ -1,31 +1,66 @@
 models:
   orchestration: auto
+instructions:
+  orchestration: |
+    Customer accounts are in Snowflake (customer_accounts). Company knowledge is in Neo4j (all other tools).
+    Join them on ORGANIZATION_ID, which is Organization.id in the graph. Never join on names, because names are not unique.
+    For a company that is not an account, get its organization_id from find_organizations.
+    Prefer the dedicated Neo4j tools. Use query_neo4j only when none of them fits the question.
+    Answer in the chat only. Never write files or create skills.
 tools:
+  - tool_spec:
+      name: customer_accounts
+      type: cortex_analyst_text_to_sql
+      description: |
+        Our customer accounts in Snowflake: account ID, organization ID, name, segment, annual recurring revenue,
+        renewal date and account health (Green, Amber, Red).
+        ORGANIZATION_ID is Organization.id in the Neo4j graph: select it and pass it to the Neo4j tools.
+        ACCOUNT_NAME is for display only.
+
+        USAGE SCENARIOS:
+        - Questions about our customers, renewals, revenue or account health
+        - The organization IDs to pass to the Neo4j tools
+  - tool_spec:
+      name: find_organizations
+      type: generic
+      description: |
+        Finds organizations in the Neo4j graph by name (case-insensitive, partial match) and returns their
+        organization_id, name, a short summary and their number of relationships, most connected first.
+        Names are not unique: pick by summary and relationships.
+
+        USAGE SCENARIOS:
+        - Getting the organization_id of a company named in the question, for the other Neo4j tools
+      input_schema:
+        type: object
+        properties:
+          name:
+            description: The company name, or part of it
+            type: string
+        required:
+          - name
   - tool_spec:
       name: get_organization_investors
       type: generic
       description: |
-        Returns the investors for a given company name from the Neo4j database. Accepts a company name and returns the
-        company and its investors as an array.
+        Returns an organization's investors from the Neo4j graph: people and organizations, each with id, name and type.
 
         USAGE SCENARIOS:
         - Retrieving investor information for company profile pages or reports
         - Performing due diligence research on company ownership and investment relationships
-        - Supporting automated investor relationship mapping and analysis workflows
       input_schema:
         type: object
         properties:
-          company:
-            description: The name of the company
+          organization_id:
+            description: Organization.id in the graph
             type: string
         required:
-          - company
+          - organization_id
   - tool_spec:
       name: analyze_relationships
       type: generic
       description: |
-        Analyzes relationship paths between organizations in the Neo4j database.
-        Accepts a company name, limit, and max_depth, and returns related organizations, relationship types, and path distances.
+        Analyzes relationship paths from an organization in the Neo4j graph.
+        Returns related organizations with their organization_id, relationship types and path distance.
 
         USAGE SCENARIOS:
         - Mapping organizational networks
@@ -34,8 +69,8 @@ tools:
       input_schema:
         type: object
         properties:
-          company:
-            description: The name of the company
+          organization_id:
+            description: Organization.id in the graph
             type: string
           limit:
             description: Maximum number of results to return
@@ -46,12 +81,12 @@ tools:
             type: integer
             default: 2
         required:
-          - company
+          - organization_id
   - tool_spec:
       name: search_news_articles
       type: generic
       description: |
-        Finds news articles about a given company that are relevant to a provided query, using semantic search over article content.
+        Finds news articles about an organization that are relevant to a topic, using semantic search over article content.
 
         USAGE SCENARIOS:
         - Retrieving news coverage for a company filtered by topic
@@ -59,20 +94,67 @@ tools:
       input_schema:
         type: object
         properties:
-          company:
-            description: The name of the company
+          organization_id:
+            description: Organization.id in the graph
             type: string
-          query:
-            description: The search query or topic
+          topic:
+            description: What the articles should be about, in plain words
             type: string
           limit:
             description: Maximum number of articles to return
             type: integer
             default: 20
         required:
-          - company
-          - query
+          - organization_id
+          - topic
+  - tool_spec:
+      name: query_neo4j
+      type: generic
+      description: |
+        Runs a read-only Cypher query against the Neo4j companies graph and returns the records.
+        Write queries, LOAD CSV, dbms.* and most APOC procedures are rejected with an error: read it and fix the query.
+        Always add a LIMIT (at most 50) or aggregate.
+
+        GRAPH SCHEMA:
+        - (:Organization {id, name, summary, isPublic: boolean, nbrEmployees: integer, revenue: float, isDissolved: boolean})
+        - (:Person {id, name, summary}), (:IndustryCategory {name}), (:City {name}), (:Country {name})
+        - (:Article {title, date: DATE_TIME, author, siteName, sentiment: float, summary}), (:Chunk {text})
+        - (Organization)-[:HAS_INVESTOR]->(Person|Organization)
+        - (Organization)-[:HAS_CEO|HAS_BOARD_MEMBER]->(Person)
+        - (Organization)-[:HAS_COMPETITOR|HAS_SUBSIDIARY|HAS_SUPPLIER]->(Organization)
+        - (Organization)-[:HAS_CATEGORY]->(IndustryCategory)
+        - (Organization)-[:IN_CITY]->(City)-[:IN_COUNTRY]->(Country)
+        - (Article)-[:MENTIONS]->(Organization), (Article)-[:HAS_CHUNK]->(Chunk)
+        Properties without a type are strings; relationships have no properties.
+        Organization.id is unique and indexed: match organizations on id, and return ids with names.
+        Article.sentiment ranges from -1 (negative) to 1 (positive) and can be NaN.
+        Compare dates with datetime(), e.g. a.date >= datetime('2023-01-01').
+
+        USAGE SCENARIOS:
+        - Questions the other Neo4j tools don't cover, e.g. competitors, CEOs, board members, subsidiaries, locations
+        - Combining several graph lookups into one query, e.g. for a list of companies
+      input_schema:
+        type: object
+        properties:
+          cypher:
+            description: The read-only Cypher query; inline all values
+            type: string
+        required:
+          - cypher
 tool_resources:
+  customer_accounts:
+    semantic_view: ${database}.${schema}.${customer_accounts}
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+      warehouse: ${warehouse}
+  find_organizations:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${database}.${schema}.${find_organizations}
+    name: ${find_organizations}
+    type: function
   get_organization_investors:
     execution_environment:
       query_timeout: 60
@@ -93,4 +175,11 @@ tool_resources:
       type: warehouse
     identifier: ${database}.${schema}.${search_news_articles}
     name: ${search_news_articles}
+    type: function
+  query_neo4j:
+    execution_environment:
+      query_timeout: 60
+      type: warehouse
+    identifier: ${database}.${schema}.${query_neo4j}
+    name: ${query_neo4j}
     type: function

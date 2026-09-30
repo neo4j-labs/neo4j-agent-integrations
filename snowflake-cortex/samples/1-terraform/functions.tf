@@ -1,4 +1,4 @@
-# --- Model stage (SentenceTransformer files imported by the UDFs) ---
+# --- Model stage: the embedding model the UDFs import ---
 
 resource "snowflake_stage_internal" "model_stage" {
   name     = "MODEL_STAGE"
@@ -40,7 +40,7 @@ resource "terraform_data" "upload_model" {
 # --- Python UDFs ---
 
 locals {
-  # Both UDFs get identical settings (incl. imports and secrets below) so the warehouse can reuse one Python runtime.
+  # Identical settings (with the imports and secrets below) let both UDFs share one Python runtime.
   python_udf_common = {
     runtime_version              = "3.13"
     packages                     = ["neo4j", "sentence-transformers"]
@@ -54,12 +54,14 @@ resource "snowflake_function_python" "query_neo4j" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "cypher"
+    arg_name      = "CYPHER"
     arg_data_type = "VARCHAR"
   }
+  # Optional, because custom tools cannot pass OBJECT arguments. The query_neo4j tool passes only the Cypher.
   arguments {
-    arg_name      = "params"
-    arg_data_type = "OBJECT"
+    arg_name          = "PARAMS"
+    arg_data_type     = "OBJECT"
+    arg_default_value = "{}"
   }
 
   return_type                  = "VARIANT"
@@ -78,7 +80,7 @@ resource "snowflake_function_python" "query_neo4j" {
 
   handler             = "query_neo4j"
   function_definition = file("${path.module}/../../shared/functions/query_neo4j.py")
-  comment             = "Executes a cypher query against the Neo4j database"
+  comment             = "Executes a read-only Cypher query against the Neo4j database"
 
   depends_on = [terraform_data.upload_model]
 }
@@ -89,7 +91,7 @@ resource "snowflake_function_python" "generate_embeddings" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "query"
+    arg_name      = "INPUT_TEXT"
     arg_data_type = "VARCHAR"
   }
 
@@ -114,11 +116,29 @@ resource "snowflake_function_python" "generate_embeddings" {
   depends_on = [terraform_data.upload_model]
 }
 
-# --- SQL wrapper functions (agent tools) ---
+# --- SQL functions: the agent's fixed Neo4j tools ---
 
 locals {
   query_neo4j_fqn         = "\"${snowflake_function_python.query_neo4j.database}\".\"${snowflake_function_python.query_neo4j.schema}\".\"${snowflake_function_python.query_neo4j.name}\""
   generate_embeddings_fqn = "\"${snowflake_function_python.generate_embeddings.database}\".\"${snowflake_function_python.generate_embeddings.schema}\".\"${snowflake_function_python.generate_embeddings.name}\""
+}
+
+resource "snowflake_function_sql" "find_organizations" {
+  name     = "FIND_ORGANIZATIONS"
+  database = snowflake_schema.schema.database
+  schema   = snowflake_schema.schema.name
+
+  arguments {
+    arg_name      = "NAME"
+    arg_data_type = "VARCHAR"
+  }
+
+  return_type = "VARIANT"
+  comment     = "Finds organizations by name; returns their ids"
+
+  function_definition = templatefile("${path.module}/../../shared/sql/find_organizations.sql", {
+    query_neo4j = local.query_neo4j_fqn
+  })
 }
 
 resource "snowflake_function_sql" "get_organization_investors" {
@@ -127,7 +147,7 @@ resource "snowflake_function_sql" "get_organization_investors" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "COMPANY"
+    arg_name      = "ORGANIZATION_ID"
     arg_data_type = "VARCHAR"
   }
 
@@ -145,7 +165,7 @@ resource "snowflake_function_sql" "analyze_relationships" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "COMPANY"
+    arg_name      = "ORGANIZATION_ID"
     arg_data_type = "VARCHAR"
   }
   arguments {
@@ -173,11 +193,11 @@ resource "snowflake_function_sql" "search_news_articles" {
   schema   = snowflake_schema.schema.name
 
   arguments {
-    arg_name      = "COMPANY"
+    arg_name      = "ORGANIZATION_ID"
     arg_data_type = "VARCHAR"
   }
   arguments {
-    arg_name      = "QUERY"
+    arg_name      = "TOPIC"
     arg_data_type = "VARCHAR"
   }
   arguments {
@@ -187,7 +207,7 @@ resource "snowflake_function_sql" "search_news_articles" {
   }
 
   return_type = "VARIANT"
-  comment     = "Find news about the given <company> that has content about the given <query>"
+  comment     = "Finds news about an organization that has content about the given topic"
 
   function_definition = templatefile("${path.module}/../../shared/sql/search_news_articles.sql", {
     query_neo4j         = local.query_neo4j_fqn
@@ -197,9 +217,12 @@ resource "snowflake_function_sql" "search_news_articles" {
 
 resource "snowflake_grant_privileges_to_account_role" "grant_function_permissions" {
   for_each = {
+    find_organizations         = snowflake_function_sql.find_organizations.fully_qualified_name
     get_organization_investors = snowflake_function_sql.get_organization_investors.fully_qualified_name
     analyze_relationships      = snowflake_function_sql.analyze_relationships.fully_qualified_name
     search_news_articles       = snowflake_function_sql.search_news_articles.fully_qualified_name
+    # The query_neo4j tool calls this UDF directly. The embedding UDF needs no grant.
+    query_neo4j = snowflake_function_python.query_neo4j.fully_qualified_name
   }
   account_role_name = snowflake_account_role.user.name
   privileges        = ["USAGE"]

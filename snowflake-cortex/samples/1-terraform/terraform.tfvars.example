@@ -8,7 +8,7 @@ snowflake_private_key_path  = ""
 warehouse                   = "COMPUTE_WH"
 
 # Snowflake resources
-snowflake_user = "YOUR_SNOWFLAKE_USER" # end user that gets the USER role
+snowflake_user = "YOUR_SNOWFLAKE_USER" # the user who gets the USER role
 database_name  = "NEO4J_AGENT"
 
 # Neo4j connection

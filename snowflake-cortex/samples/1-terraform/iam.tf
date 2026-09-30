@@ -26,7 +26,7 @@ resource "snowflake_grant_privileges_to_account_role" "schema_grant" {
   }
 }
 
-# Agent tools run on the user's default warehouse, which the role must be able to use.
+# Agent tools run on the user's default warehouse.
 resource "snowflake_grant_privileges_to_account_role" "warehouse_grant" {
   account_role_name = snowflake_account_role.user.name
   privileges        = ["USAGE"]

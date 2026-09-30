@@ -1,7 +1,7 @@
 import os
 import sys
 
-# Snowflake reuses the UDF process across calls; load the model once.
+# Snowflake reuses the UDF's process across calls, so the model loads only once.
 _model = None
 
 

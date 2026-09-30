@@ -11,7 +11,7 @@ variable "snowflake_account_name" {
 }
 
 variable "snowflake_service_user" {
-  description = "Service user that runs Terraform (must have the TERRAFORM_SVC role)"
+  description = "Service user that runs Terraform. It needs the TERRAFORM_SVC role"
   type        = string
   default     = "TERRAFORM_SVC"
 }
@@ -22,7 +22,7 @@ variable "snowflake_private_key_path" {
 }
 
 variable "warehouse" {
-  description = "Warehouse for Terraform, and granted to the USER role for the agent's tools"
+  description = "Warehouse that Terraform uses. The USER role gets it too, for the agent's tools"
   type        = string
   default     = "COMPUTE_WH"
 }
@@ -36,7 +36,7 @@ variable "database_name" {
 }
 
 variable "snowflake_user" {
-  description = "End-user to grant the USER role to"
+  description = "User who gets the USER role"
   type        = string
 }
 

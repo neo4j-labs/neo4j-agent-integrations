@@ -22,6 +22,7 @@ provider "snowflake" {
     "snowflake_external_access_integration_resource",
     "snowflake_function_python_resource",
     "snowflake_function_sql_resource",
+    "snowflake_semantic_view_resource",
   ]
 }
 
