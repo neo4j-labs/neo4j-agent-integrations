@@ -10,16 +10,16 @@ You can also watch this guide step by step [on YouTube](https://youtu.be/5w1wxf3
 
 | Step | Object | What it is |
 | --- | --- | --- |
-| [1](#1-database-and-schema) | `NEO4J_AGENT`, `NEO4J_AGENT_SCHEMA` | The database and schema. All other objects live in them. |
-| [2](#2-role) | `USER` | The role for people who chat with the agent. |
-| [4](#4-secret) | `NEO4J_CREDENTIALS` | A secret that holds the Neo4j login. |
-| [5](#5-network-rule) | `NEO4J_ACCESS_RULE` | A network rule that allows traffic to Neo4j. |
-| [6](#6-external-access-integration) | `NEO4J_ACCESS_INTEGRATION` | An account-level integration. It gives UDFs the network rule and the secret. |
-| [7](#7-model-stage) | `MODEL_STAGE` | A stage with the `all-MiniLM-L6-v2` model files. |
-| [8](#8-python-udfs) | `QUERY_NEO4J`, `GENERATE_EMBEDDINGS` | Python UDFs. One runs read-only Cypher, the other turns text into a vector. |
-| [9](#9-tool-functions) | `FIND_ORGANIZATIONS`, `GET_ORGANIZATION_INVESTORS`, `ANALYZE_RELATIONSHIPS`, `SEARCH_NEWS_ARTICLES` | SQL functions. They are the agent's fixed Neo4j tools. |
-| [9](#customer-accounts) | `CUSTOMER_ACCOUNTS`, `CUSTOMER_ACCOUNTS_SV` | A view with sample CRM data, and a semantic view on it. The agent's Snowflake tool reads them. |
-| [10](#10-agent) | `NEO4J_RESEARCH_AGENT` | The Cortex agent. |
+| [1. Database and schema](#1-database-and-schema) | `NEO4J_AGENT`, `NEO4J_AGENT_SCHEMA` | All other objects live in them. |
+| [2. Role](#2-role) | `USER` | For people who chat with the agent. |
+| [4. Secret](#4-secret) | `NEO4J_CREDENTIALS` | Holds the Neo4j login. |
+| [5. Network rule](#5-network-rule) | `NEO4J_ACCESS_RULE` | Allows traffic to Neo4j. |
+| [6. External access integration](#6-external-access-integration) | `NEO4J_ACCESS_INTEGRATION` | Gives UDFs the network rule and the secret. |
+| [7. Model stage](#7-model-stage) | `MODEL_STAGE` | Holds the `all-MiniLM-L6-v2` model files. |
+| [8. Python UDFs](#8-python-udfs) | `QUERY_NEO4J`, `GENERATE_EMBEDDINGS` | One runs read-only Cypher, the other turns text into a vector. |
+| [9. Tool functions](#9-tool-functions) | `FIND_ORGANIZATIONS`, `GET_ORGANIZATION_INVESTORS`, `ANALYZE_RELATIONSHIPS`, `SEARCH_NEWS_ARTICLES` | SQL functions. They are the agent's fixed Neo4j tools. |
+| [10. Customer accounts](#10-customer-accounts) | `CUSTOMER_ACCOUNTS`, `CUSTOMER_ACCOUNTS_SV` | Sample CRM data and a semantic view on it. The agent's Snowflake tool reads them. |
+| [11. Agent](#11-agent) | `NEO4J_RESEARCH_AGENT` | The Cortex agent. |
 
 ## Before you start
 
@@ -319,7 +319,7 @@ SELECT ARRAY_SIZE(NEO4J_AGENT.NEO4J_AGENT_SCHEMA.GENERATE_EMBEDDINGS('graph data
 
 ## 9. Tool functions
 
-Each of these functions runs one fixed Cypher query. The agent can only fill in the parameters, so it can ask only what you planned for. This keeps answers predictable. For all other questions, the agent gets `QUERY_NEO4J` itself as a tool in step 11.
+Each of these functions runs one fixed Cypher query. The agent can only fill in the parameters, so it can ask only what you planned for. This keeps answers predictable. For all other questions, the agent gets `QUERY_NEO4J` itself as a tool in step 12.
 
 The functions identify organizations by `Organization.id`. Names are not unique in the graph: there are 8 `Red Hat` nodes, and only one has investors. The `id` also has a unique index. The functions take an `organization_id` and return IDs with the names, so the agent can pass the IDs on.
 
@@ -440,7 +440,7 @@ SELECT NEO4J_AGENT.NEO4J_AGENT_SCHEMA.QUERY_NEO4J('CREATE (x:Test)');
 -- {"error": "Rejected: only read-only queries are allowed, this one is of type 'w'."}
 ```
 
-### Customer accounts
+## 10. Customer accounts
 
 The sample CRM data is a view over `VALUES`. `ORGANIZATION_ID` is the company's `Organization.id` in the graph, and the agent joins on it. `ACCOUNT_NAME` is for display only.
 
@@ -500,7 +500,7 @@ GRANT SELECT ON SEMANTIC VIEW NEO4J_AGENT.NEO4J_AGENT_SCHEMA.CUSTOMER_ACCOUNTS_S
 ```
 <!-- /code -->
 
-- The comments tell Analyst what each column means. The semantic view says nothing about Neo4j. The agent's tool description in step 11 explains how the IDs map to the graph.
+- The comments tell Analyst what each column means. The semantic view says nothing about Neo4j. The agent's tool description in step 12 explains how the IDs map to the graph.
 - The `USER` role needs `SELECT` on the semantic view only. It needs no grant on the view underneath.
 
 Check the result:
@@ -512,7 +512,7 @@ SELECT * FROM SEMANTIC_VIEW(NEO4J_AGENT.NEO4J_AGENT_SCHEMA.CUSTOMER_ACCOUNTS_SV
 -- Uniphore     | Es6d5vh20OoKzKwm8upOW-Q | Green ...
 ```
 
-## 10. Agent
+## 11. Agent
 
 1. Go to **AI & ML > Agents** and click **Create agent**.
 2. Pick the database and schema `NEO4J_AGENT.NEO4J_AGENT_SCHEMA`. Enter the object name `NEO4J_RESEARCH_AGENT`, which becomes part of the REST URL, and the display name `Neo4j research agent`. Click **Create agent**.
@@ -529,9 +529,9 @@ Answer in the chat only. Never write files or create skills.
 ```
 <!-- /code -->
 
-Creating the agent commits `VERSION$1`, which has no tools. The steps below edit the live version. Snowsight marks it as **Draft** until you publish it in step 12.
+Creating the agent commits `VERSION$1`, which has no tools. The steps below edit the live version. Snowsight marks it as **Draft** until you publish it in step 13.
 
-## 11. Tools
+## 12. Tools
 
 The agent picks a tool by its description alone, so enter the texts below exactly. All tools are on **Configuration > Tools**. Click **Save** after you have added all six.
 
@@ -678,7 +678,7 @@ USAGE SCENARIOS:
 - `cypher`: The read-only Cypher query; inline all values
 <!-- /text -->
 
-## 12. Publish
+## 13. Publish
 
 1. Click **Publish** and confirm. This commits the live version as `VERSION$2`. Apps and the REST API use the latest committed version. The clock icon at the top right lists all versions.
 2. Let the `USER` role use the agent, on the agent's **Access** tab or in SQL:
@@ -688,7 +688,7 @@ GRANT USAGE ON AGENT NEO4J_AGENT.NEO4J_AGENT_SCHEMA.NEO4J_RESEARCH_AGENT TO ROLE
 SHOW AGENTS IN SCHEMA NEO4J_AGENT.NEO4J_AGENT_SCHEMA;
 ```
 
-## 13. Try it
+## 14. Try it
 
 ### Snowflake and Neo4j combined
 
