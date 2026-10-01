@@ -180,6 +180,11 @@ def _make_inline(folder: str, path_xref: dict, anchors: set = None):
             lambda m: _EMOJI.get(m.group(1), ''),
             line
         )
+        # Linked image [![alt](src)](url) → image macro with link attribute
+        line = re.sub(
+            r'\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)',
+            lambda m: f'image::{_image_target(m.group(2))}["{m.group(1)}",link="{m.group(3)}"]',
+            line)
         # Images before links
         line = re.sub(
             r'!\[([^\]]*)\]\(([^)]+)\)',
@@ -318,6 +323,24 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             i += 1
             continue
 
+        # ── Markdown video thumbnail link → AsciiDoc image macro ────────────
+        # "[![alt](thumb.jpg)](url)" (the GitHub-friendly YouTube embed) is
+        # neither a plain link nor an <img> tag, so without this rule it passes
+        # through as invalid adoc. Convert to an image macro with link= so the
+        # thumbnail stays clickable on the published page.
+        video_link = re.match(
+            r'^\s*\[\s*!\s*\[([^\]]*)\]\s*\(([^)]+)\)\s*\]\s*\(([^)]+)\)\s*$',
+            line)
+        if video_link:
+            alt, thumb, url = video_link.groups()
+            if in_table:
+                flush_table()
+            out.append(
+                f'image::{_image_target(thumb)}[{alt or "Watch the video"},link={url}]')
+            out.append('')
+            i += 1
+            continue
+
         # ── Standalone <img> tag → AsciiDoc image macro ──────────────────────
         # Raw HTML passthrough would keep a relative src (e.g. "images/x.png"),
         # which resolves against the page URL instead of Antora's imagesdir and
@@ -337,7 +360,10 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             if src:
                 if in_table:
                     flush_table()
-                macro_attrs = [_attr('alt') or 'Screenshot']
+                # Quote alt text: an unquoted comma would start a new
+                # positional attribute and push width out of place.
+                alt = (_attr('alt') or 'Screenshot').replace('"', '&quot;')
+                macro_attrs = [f'"{alt}"']
                 width = _attr('width')
                 if width.isdigit():
                     macro_attrs.append(width)
