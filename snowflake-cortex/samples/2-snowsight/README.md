@@ -2,6 +2,8 @@
 
 This guide builds the [overview](../../README.md) stack by hand in Snowsight. The result is a Cortex agent that combines customer accounts in Snowflake with the Neo4j `companies` demo graph. [Sample 1](../1-terraform/README.md) creates the same stack with Terraform.
 
+You can also watch this guide step by step [on YouTube](https://youtu.be/5w1wxf3WfYQ).
+
 [![Watch the video](https://img.youtube.com/vi/5w1wxf3WfYQ/maxresdefault.jpg)](https://youtu.be/5w1wxf3WfYQ)
 
 ## What you build
@@ -67,7 +69,7 @@ GRANT ROLE "USER" TO USER <your_user>;  -- SELECT CURRENT_USER();
 2. On the **Overview** tab, open `NEO4J_AGENT_SCHEMA` and its **Access** tab. Click **+ Privilege**, pick role `USER` and the privileges `USAGE` and `USAGE - FUTURE FUNCTION`, and click **Grant privileges**. Type in the list to filter it.
 3. Grant `USAGE` on your warehouse as well, because the agent's tools run on the user's default warehouse. Use the warehouse's privileges page or the SQL below.
 
-![Grant dialog: role USER with USAGE and USAGE - FUTURE FUNCTION](images/grant-dialog.png)
+<img src="images/grant-dialog.png" alt="Grant dialog: role USER with USAGE and USAGE - FUTURE FUNCTION" width="480">
 
 The future grant covers every function that you create in the schema later. That includes `QUERY_NEO4J`, which the agent calls directly, and the helper `GENERATE_EMBEDDINGS`. The Terraform sample grants only the functions that the agent calls.
 
@@ -109,7 +111,7 @@ Snowflake blocks outbound traffic by default. The network rule allows one host a
 3. Enter `demo.neo4jlabs.com:7687` under **Host:port** and click **+**. The host must then appear in the list below.
 4. Click **Create**.
 
-![New network rule dialog with demo.neo4jlabs.com:7687 in the host list](images/network-rule.png)
+<img src="images/network-rule.png" alt="New network rule dialog with demo.neo4jlabs.com:7687 in the host list" width="480">
 
 Or use SQL:
 
@@ -144,9 +146,9 @@ The article chunks in the graph have `embedding_sbert` vectors with 384 dimensio
 3. Click **Upload Files**, add the files directly in `minilm/`, enter the path `minilm` and click **Upload**. The files are about 90 MB.
 4. Upload `minilm/1_Pooling/config.json` the same way, with the path `minilm/1_Pooling`. The dialog takes one folder per upload. You can skip `2_Normalize/`, because it is empty.
 
-![Create Stage dialog: MODEL_STAGE, directory table on, client-side encryption](images/create-stage.png)
+<img src="images/create-stage.png" alt="Create Stage dialog: MODEL_STAGE, directory table on, client-side encryption" width="480">
 
-![Upload dialog with the model files and the path minilm](images/upload-files.png)
+<img src="images/upload-files.png" alt="Upload dialog with the model files and the path minilm" width="480">
 
 Or use SQL. The upload uses the [Snowflake CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/installation/installation); run it in the folder that contains `minilm/`:
 
@@ -565,7 +567,7 @@ Add each custom tool with **Custom tools > + Add**:
 4. Enter a description for each parameter. Untick **Required** where the section says so; the SQL defaults then apply.
 5. Click **Add**.
 
-![Add custom tool dialog: resource type function, database, schema and identifier](images/custom-tool.png)
+<img src="images/custom-tool.png" alt="Add custom tool dialog: resource type function, database, schema and identifier" width="480">
 
 #### `find_organizations` (identifier `FIND_ORGANIZATIONS`)
 
@@ -695,7 +697,7 @@ SHOW AGENTS IN SCHEMA NEO4J_AGENT.NEO4J_AGENT_SCHEMA;
    - **SQL Execution** shows the SQL that Cortex Analyst wrote from the semantic view. Its result has the `ORGANIZATION_ID` of each Red account.
    - **Custom Tool** shows one `get_organization_investors` call per Red account. **Input > Arguments** has the `organization_id` from the Snowflake result. **Output > Results** has the record from Neo4j. **Open in fullscreen** shows the whole record.
 
-![Trace of a Custom Tool span: tool name, arguments and raw result](images/trace.png)
+<img src="images/trace.png" alt="Trace of a Custom Tool span: tool name, arguments and raw result" width="480">
 
 Neither source can answer this alone. Account health is only in Snowflake, and investors are only in the graph.
 
