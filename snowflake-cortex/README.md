@@ -88,7 +88,7 @@ Both samples use the same Python handlers, SQL bodies and agent tools from `shar
 
 Sample 2 is also available as a video:
 
-[![Watch the video](https://img.youtube.com/vi/QWc3SBc5sUE/maxresdefault.jpg)](https://youtu.be/QWc3SBc5sUE)
+[![Watch the video](https://img.youtube.com/vi/5w1wxf3WfYQ/maxresdefault.jpg)](https://youtu.be/5w1wxf3WfYQ)
 
 ## Repository layout
 
