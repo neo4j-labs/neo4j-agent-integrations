@@ -1,475 +1,185 @@
-# NAMS Chat — Vercel AI SDK + Neo4j Agent Memory System
+# NAMS Chat — a chat app that remembers you
 
-A production-ready Next.js chat application demonstrating **NAMS (Neo4j Agent Memory System)** integrated with the **Vercel AI SDK**. Serves as both a working example and a reference client for the [`@neo4j-labs/nams-ai-provider`](https://www.npmjs.com/package/@neo4j-labs/nams-ai-provider) package — persistent memory backed by Neo4j with zero infrastructure to manage.
+A small Next.js chat app built with the [Vercel AI SDK](https://ai-sdk.dev). It remembers what you tell it, even after you reload the page or restart the server. The memory lives in **NAMS** (Neo4j Agent Memory System), a hosted service that stores memory in a Neo4j graph.
 
-**Key features:**
-- **Three memory integration modes** — provider middleware, model-instance middleware, or explicit model-driven tools
-- **Live database access** — optional Neo4j MCP server integration for real-time graph queries, available in every mode
-- **Persistent cross-session memory** — facts, preferences, and interaction history recalled across page reloads
-- **Reasoning trace** — per-step tool-call record stored in NAMS and surfaced in the UI
-- **Portable** — all NAMS memory logic lives in `@neo4j-labs/nams-ai-provider` (installed from npm); drop it into any Vercel AI SDK project
+All the memory code comes from one npm package, [`@neo4j-labs/nams-ai-provider`](https://www.npmjs.com/package/@neo4j-labs/nams-ai-provider). This app shows the four ways to use it.
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
-git clone https://github.com/neo4j-labs/neo4j-agent-integrations.git
-cd neo4j-agent-integrations/vercel-agent/vercel_Nams_demo
-
-npm install                       # no flags needed — strict peer resolution passes
-
-cp .env.local.example .env.local  # set MEMORY_API_KEY and OPENAI_API_KEY at minimum
-
-npm run dev                       # http://localhost:3000
-```
-
-`@neo4j-labs/nams-ai-provider` is a normal npm dependency (`^0.2.1` in `package.json`) — nothing to build or link locally. Its peer dependencies target **Vercel AI SDK v7** (`ai@^7.0.0`, `@ai-sdk/mcp@^2.0.0`, `@ai-sdk/provider@^4.0.0`), and this demo pins matching `ai`/`@ai-sdk/*` versions — the same set the [`notebook/`](../notebook/) scripts use, so both samples resolve to identical dependency versions.
-
-Plain `npm install` works out of the box — no `--legacy-peer-deps`, no `.npmrc`. The demo runs **React 19 on Next.js 16**, which satisfies every peer range in the tree, including `@neo4j-ndl/react`'s `react >=19.0.0`.
-
-It previously pinned React 18 on Next.js 14 and suppressed the resulting NDL peer conflict with a `legacy-peer-deps=true` `.npmrc`. React 19 removes the conflict at its source, so the escape hatch is gone. Note that bumping React alone would not have been enough: `next@14` peers `react@^18.2.0`, so React 19 there just trades the NDL conflict for a Next one.
-
----
-
-## Integration Modes
-
-All three modes talk to the same NAMS backend through the same package. Pick based on where you want memory to live in your control flow.
-
-```env
-NAMS_MODE=provider     # (default) transparent memory, wraps a provider
-NAMS_MODE=middleware   # transparent memory, wraps a model instance
-NAMS_MODE=tools        # model calls query_memory / store_memory explicitly
-```
-
-| Mode | Call | Memory handling | Tool calls visible in UI |
-|------|------|-----------------|--------------------------|
-| **provider** | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | `LanguageModelV4Middleware` injected by the provider | No |
-| **middleware** | `createNams().wrap(model, scope)` | Same middleware, applied to an already-resolved model | No |
-| **tools** | `createNams().toolsWithMcp(scope, mcpConfig?)` | `query_memory` + `store_memory` tools the model drives | Yes |
-
-Choose **provider** when you construct models from a provider and want a drop-in replacement. Choose **middleware** when the base model is already resolved (e.g. it isn't always `openai`). Choose **tools** when you want the memory cycle to be explicit and inspectable.
-
----
-
-### Mode 1 — Provider (transparent)
-
-`createNamsProvider()` returns a `ProviderV4`-compatible provider. Every `languageModel(id)` call resolves through the base provider and wraps the result with a `LanguageModelV4Middleware`: memories are retrieved and injected into the prompt before the call, and the turn is persisted after it.
-
-```typescript
-// app/api/chat/route.ts
-import { createNamsProvider } from '@neo4j-labs/nams-ai-provider';
-import { openai } from '@ai-sdk/openai';
-
-const model = createNamsProvider({
-  apiKey:       process.env.MEMORY_API_KEY!,
-  workspaceId:  process.env.MEMORY_WORKSPACE_ID,
-  baseProvider: openai,
-  scope:        { userId, conversationId },
-}).languageModel('gpt-5.4-mini');
-```
-
-Options worth knowing: `maxMemories` (default 6) caps how many memories are injected per turn, `persistInteractions` (default true) toggles write-back, and `extractionModel` builds a real entity graph per stored turn at the cost of one extra model call.
-
-### Mode 2 — Middleware (transparent)
-
-Identical memory behaviour, applied to a model instance instead of a provider:
-
-```typescript
-import { createNams } from '@neo4j-labs/nams-ai-provider';
-import { openai } from '@ai-sdk/openai';
-
-const nams  = createNams({ apiKey: process.env.MEMORY_API_KEY! });
-const model = nams.wrap(openai('gpt-5.4-mini'), { userId, conversationId });
-```
-
-### Mode 3 — Tools (model-driven)
-
-`createNams().toolsWithMcp()` returns `{ query_memory, store_memory }` merged with any Neo4j MCP tools in a single object, plus one `close()` covering both connections. The model decides when to call each tool; [`SYSTEM_PROMPT`](lib/constants.ts) enforces the cycle.
-
-```typescript
-import { createNams, enforceQueryMemory } from '@neo4j-labs/nams-ai-provider';
-import { getNamsMcpConfig } from '@/lib/neo4j-mcp';
-import { SYSTEM_PROMPT } from '@/lib/constants';
-import { openai } from '@ai-sdk/openai';
-import { ToolLoopAgent, stepCountIs } from 'ai';
-
-const { tools, close } = await createNams({ apiKey })
-  .toolsWithMcp({ userId, conversationId }, getNamsMcpConfig());
-
-const agent = new ToolLoopAgent({
-  model:        openai('gpt-5.4-mini'),
-  instructions: SYSTEM_PROMPT,
-  tools,
-  prepareStep:  enforceQueryMemory({ graceSteps: 2 }),
-  stopWhen:     stepCountIs(10),
-  onFinish:     async () => { await close(); },
-});
-```
-
-`enforceQueryMemory({ graceSteps: 2 })` is a `prepareStep` guard: if the model hasn't called `query_memory` within the first two steps, the loop forces it. Without it, smaller models regularly answer from conversation history alone and skip memory entirely. It is applied in tools mode only — the other two modes have no memory tools to enforce.
-
-Calling `toolsWithMcp(scope)` with no second argument returns NAMS memory tools only, and `close()` is a no-op.
-
-**Write-side counterpart:** `enforceQueryMemory` can guarantee the *read* because there is always a later step to force. The *write* has no such hook — the loop ends the moment the model emits final text, so a turn where it says "I'll remember that" without calling `store_memory` persists nothing. [`ensureStored()`](lib/nams-enrich.ts) closes that gap from `onFinish`: it inspects the finished turn and stores it if the model didn't. Failures are swallowed, since memory must never break a response.
-
-**MCP in provider / middleware mode:** `toolsWithMcp()` also emits `query_memory`/`store_memory`, which would double-handle memory alongside the middleware. So those modes call [`getNeo4jMcpTools()`](lib/neo4j-mcp.ts) directly and pass only the MCP tools to the agent.
-
----
-
-## Architecture
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│  Browser (Next.js / React)                                        │
-│                                                                   │
-│  ChatComponent (useChat + DefaultChatTransport)                   │
-│    • sessionId from localStorage (key: nams-session-id)           │
-│    • POST /api/chat  { messages, sessionId, conversationId? }     │
-│    • GET  /api/reasoning?userId=&conversationId=                  │
-│                                                                   │
-│  ┌──────────────────────┐  ┌──────────────────────────────────┐   │
-│  │  Memory Panel        │  │  Reasoning Trace Panel           │   │
-│  │  recent / observ. /  │  │  step 1 → step 2 → … → step N    │   │
-│  │  reasoning tabs      │  │  reasoning / action / result     │   │
-│  └──────────────────────┘  └──────────────────────────────────┘   │
-└───────────────────────┬───────────────────────────────────────────┘
-                        │  HTTP streaming (UI message stream)
-                        ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  Next.js API Routes (Node.js runtime)                              │
-│                                                                    │
-│  POST /api/chat                      GET /api/reasoning            │
-│  ───────────────────────────────     ─────────────────────────     │
-│  1. Parse UIMessages + sessionId     1. findExistingConversation   │
-│  2. Resolve model by NAMS_MODE       2. client.reasoning.listSteps │
-│  3. Connect MCP (mode-dependent)     3. Return step array as JSON  │
-│  4. Build DATABASE ACCESS prompt        (no conversation → [])     │
-│  5. ToolLoopAgent streams response                                 │
-│  6. onFinish → recordStep → close()                                │
-│                                                                    │
-└───────────────────────┬────────────────────────────────────────────┘
-                        │  HTTPS REST
-                        ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  NAMS  —  https://memory.neo4jlabs.com                             │
-│  (@neo4j-labs/agent-memory SDK, backed by Neo4j AuraDB)            │
-│                                                                    │
-│  ┌──────────────────┐  ┌───────────────────┐  ┌────────────────┐   │
-│  │  Short-Term      │  │  Long-Term        │  │  Reasoning     │   │
-│  │  (conversation)  │  │  (graph entities) │  │  (step records)│   │
-│  │  • search        │  │  • facts          │  │  • reasoning   │   │
-│  │  • per convId    │  │  • user_pref      │  │  • actionTaken │   │
-│  │  • cross-session │  │  • patterns       │  │  • result      │   │
-│  └──────────────────┘  └───────────────────┘  └────────────────┘   │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-### Memory flow per turn (tools mode)
-
-```
-User sends message
-      │
-      ▼
-[tool] query_memory ──────────────────────────────────────────────┐
-      │  searches:                                                 │
-      │  • current conversation  (short-term)                      │
-      │  • past conversations    (cross-session, same userId)      │
-      │  • long-term graph       (entities, facts, preferences)    │
-      │  • prior reasoning steps                                   │
-      │◄── returns ranked MemoryHit[] ─────────────────────────────┘
-      │      (forced by enforceQueryMemory if skipped for 2 steps)
-      │
-[tool] MCP database tools (if configured)
-      │  schema lookup → Cypher read → results
-      │
-      ▼
-LLM composes personalised answer
-      │
-      ▼
-[tool] store_memory
-      │  routes by type:
-      │  interaction      → short-term conversation thread
-      │  fact             → long-term graph entity
-      │  user_preference  → long-term graph entity
-      │  pattern          → long-term graph entity
-      ▼
-onFinish → recordStep (one per agent step) → close()
-      │
-      ▼
-Response streams to browser
-```
-
-In provider and middleware modes the two `[tool]` memory steps disappear — retrieval and persistence happen inside the model wrapper — and the agent runs a single step unless MCP tools are attached.
-
----
-
-## Project Structure
-
-```
-vercel_Nams_demo/
-│
-├── app/
-│   ├── api/
-│   │   ├── chat/route.ts          ← POST /api/chat — mode switching, ToolLoopAgent
-│   │   └── reasoning/route.ts     ← GET  /api/reasoning — fetch stored reasoning steps
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx                   ← dark/light shell + AppHeader + ChatComponent
-│
-├── components/
-│   ├── AppHeader.tsx
-│   └── chat/
-│       ├── ChatComponent.tsx      ← useChat, streaming, session id, reasoning fetch
-│       ├── MemoryPanel.tsx        ← retrieved memories (recent / observations / reasoning)
-│       ├── ReasoningPanel.tsx     ← per-step reasoning trace
-│       └── styles.ts
-│
-├── lib/
-│   ├── constants.ts               ← SYSTEM_PROMPT + buildDbToolsPrompt()
-│   ├── nams-enrich.ts             ← ensureStored() — persists a turn the model didn't store
-│   └── neo4j-mcp.ts               ← MCP client, auth resolution, explainMcpError()
-│
-├── test/
-│   ├── chat-route.test.ts         ← mode wiring + error paths for /api/chat
-│   └── reasoning-route.test.ts    ← trace lookup + error paths for /api/reasoning
-│
-├── types/index.ts                 ← MemoryHit, QueryOutput, ReasoningStep, ParsedMemory
-├── utils/message.ts               ← getMsgText, parseMemory, formatErrorMessage
-├── constants.ts                   ← DEFAULT_SUGGESTIONS, SESSION_STORAGE_KEY
-├── declarations.d.ts              ← `declare module '*.css'`
-├── .env.local.example
-├── package.json
-├── vitest.config.mts
-└── next.config.js
-```
-
-**NAMS integration lives entirely in `@neo4j-labs/nams-ai-provider`** — a published npm package, not vendored source. The demo only wires it up.
-
----
-
-## Setup
-
-### 1. Install
-
-```bash
+cd vercel-agent/vercel_Nams_demo
 npm install
+cp .env.local.example .env.local   # add MEMORY_API_KEY and OPENAI_API_KEY
+npm run dev                        # open http://localhost:3000
 ```
 
-No flags required — the dependency tree resolves cleanly under npm's strict peer checking.
-
-### 2. Configure
-
-```bash
-cp .env.local.example .env.local
-```
-
-Minimum viable config:
-
-```env
-MEMORY_API_KEY=nams_...        # free key from https://memory.neo4jlabs.com
-OPENAI_API_KEY=sk-proj-...
-NAMS_MODE=tools                # start here — the memory cycle is visible in the UI
-```
-
-### 3. Run
-
-```bash
-npm run dev
-# http://localhost:3000
-```
+- Get a free `MEMORY_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
+- Needs Node 22 or newer. A plain `npm install` works, no extra flags.
 
 ---
 
-## Environment Variables
+## The four memory modes
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MEMORY_API_KEY` | Yes | — | API key from [memory.neo4jlabs.com](https://memory.neo4jlabs.com). Missing → every `/api/chat` request returns **503** |
-| `OPENAI_API_KEY` | Yes | — | OpenAI API key, read by `@ai-sdk/openai` |
-| `NAMS_MODE` | No | `provider` | `provider`, `middleware`, or `tools` |
-| `MEMORY_WORKSPACE_ID` | No | _(key default)_ | Pin to a specific NAMS workspace |
-| `OPENAI_MODEL` | No | `gpt-5.4-mini` | LLM model ID |
-| `NAMS_EXTRACTION_MODEL` | No | _(off)_ | When set, builds a real entity graph per stored memory (one extra model call). Applies in all three modes |
-| `MCP_URL` | No | — | Neo4j MCP server URL (enables live graph access) |
-| `MCP_PORT` | No | — | Used as `http://localhost:{PORT}/mcp` when `MCP_URL` is unset |
-| `MCP_BEARER_TOKEN` | No | — | `Authorization: Bearer` — takes precedence over Basic |
-| `MCP_NEO4J_USERNAME` | No | — | Basic auth username |
-| `MCP_NEO4J_PASSWORD` | No | — | Basic auth password |
-| `NEXT_ALLOWED_DEV_ORIGINS` | No | — | Comma-separated extra hosts allowed to load `next dev` internal assets. `localhost`, `127.0.0.1`, `[::1]` and `**.app.github.dev` are already allowed in [`next.config.js`](next.config.js); add a LAN IP or remote devcontainer domain here if you reach the dev server another way |
+Set `NAMS_MODE` in `.env.local` and restart the server. All four modes save to the same place, so you can switch between them without losing anything.
 
-MCP stays disabled unless `MCP_URL` (or `MCP_PORT`) is set **and** one auth pair is supplied: either `MCP_BEARER_TOKEN`, or both `MCP_NEO4J_USERNAME` and `MCP_NEO4J_PASSWORD`.
+| `NAMS_MODE` | Who takes care of memory | Memory calls shown in the chat? |
+|---|---|---|
+| `provider` (default) | A wrapper around the AI model. It adds memories before each answer and saves the turn after. | No |
+| `middleware` | The same wrapper, placed on a model you already have. | No |
+| `tools` | The AI model itself, by calling two tools: `query_memory` and `store_memory`. | Yes |
+| `hooks` | This app's own code. It loads the saved chat before each answer and saves every turn after. | No |
 
-Not sure which your server wants? `curl -i -X POST $MCP_URL` and read the `WWW-Authenticate` header: `Bearer …` means a token, `Basic …` means user/password.
+**Which one should I pick?**
 
----
+- Just want memory to work? Use **provider**.
+- Already have a model object? Use **middleware**.
+- Want to *see* the memory reads and writes? Use **tools**.
+- Want every turn saved, whatever the model decides? Use **hooks**.
 
-## Testing the Integration Paths
+Any other value makes the chat return an error, so a typo can't quietly turn memory off.
 
-The demo is the reference client for the provider, so each supported wiring has a manual path worth walking after an upgrade.
+### What each mode looks like in code
 
-**Path A — tools mode, no MCP** (`NAMS_MODE=tools`, MCP vars unset)
-
-Exercises `createNams().toolsWithMcp(scope)` — memory tools only.
-
-```
-Send: "My name is Alex and I like TypeScript"
-→ Memory + Reasoning panels appear above the answer
-→ Reasoning trace: query_memory → answer → store_memory
-→ Send: "What language do I like?"
-→ query_memory returns found=true; the model answers from memory
-```
-
-**Path B — tools mode + MCP** (add `MCP_URL` plus `MCP_BEARER_TOKEN` *or* `MCP_NEO4J_USERNAME`/`MCP_NEO4J_PASSWORD`)
-
-Exercises `createNams().toolsWithMcp(scope, mcpConfig)` — memory + database tools merged.
-
-```
-Send: "What nodes are in my Neo4j database?"
-→ [chat] model=gpt-5.4-mini  maxSteps=10  tools=5  db=[get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher]
-→ Agent calls the schema tool, then the read tool, then offers to store findings
-```
-
-Exact tool names vary by server. `buildDbToolsPrompt()` builds the DATABASE ACCESS block from whatever the server reported at connect time, so the prompt never advertises a tool the model can't call.
-
-**Path C — provider mode** (`NAMS_MODE=provider`)
-
-Exercises `createNamsProvider()` — transparent middleware, no visible tool calls.
-
-```
-Send: "My favourite colour is blue"
-→ No query_memory / store_memory in the logs — memory is middleware-driven
-→ Refresh the page (same localStorage session id); send: "What's my favourite colour?"
-→ Model answers "blue" — retrieved before the model call
-```
-
-**Path D — middleware mode** (`NAMS_MODE=middleware`)
-
-Same observable behaviour as Path C, via `createNams().wrap()` instead of a provider.
-
-### Inspect reasoning steps directly
-
-```bash
-curl "http://localhost:3000/api/reasoning?userId=<your-session-id>"
-```
-
-The session id is in `localStorage` under `nams-session-id`.
-
-### Server log reference
-
-Every request opens with a banner and closes with a summary:
-
-| Log line | Meaning |
-|---|---|
-| `[chat] POST /api/chat  mode=… mcp=…` | Mode resolved; whether MCP env vars are complete |
-| `[chat]   userId=… conv=… query="…"` | Scope and truncated user message for this turn |
-| `[neo4j-mcp] Connected — tools: …` | MCP connected; the names it reported |
-| `[chat]   model=… maxSteps=… tools=N  db=[…]` | Tool count registered with the agent; `db=[…]` only when database tools attached |
-| `[chat]   Neo4j MCP is configured but NOT connected` | Env vars set but the connection failed — database questions will fail |
-| `[chat] Done \| steps=N queries=N stores=N elapsed=Xms` | Turn summary (`queries`/`stores` are 0 outside tools mode) |
-| `[chat]   tokens in=… out=…` | Usage for the turn |
-| `[chat] Empty answer (finishReason=…)` | Agent produced no text; fallback message emitted to the UI |
-| `[reasoning/GET] Returning N steps` | Reasoning trace served to the panel |
-| `[nams] …` | Non-fatal warning from the provider package itself |
-
-### Automated tests
-
-`test/` unit-tests both API routes against a **mocked** `@neo4j-labs/nams-ai-provider` — no live NAMS or OpenAI credentials needed.
-
-```bash
-npm test          # single run — 18 tests
-npm run test:watch
-```
-
-| File | Covers |
-|---|---|
-| `test/chat-route.test.ts` | provider mode wraps via `createNamsProvider(...).languageModel()`; middleware mode wraps via `createNams().wrap()`; tools mode leaves the base model unwrapped and sources tools from `toolsWithMcp()`; MCP failure falls back to NAMS-only tools; DATABASE ACCESS prompt built from returned tool names only; `enforceQueryMemory` applied in tools mode only; fallback text on an empty answer; `onFinish` persists the trace via `makeClient()`/`resolveConversation()`; 400/503 paths |
-| `test/reasoning-route.test.ts` | `makeClient()`/`findExistingConversation()` called with the right config; no conversation yet returns `{ steps: [] }` rather than an error; 400/503/500 paths |
-
-Run these after any provider upgrade to confirm the demo still speaks the package's current API before clicking through the UI.
-
----
-
-## Using NAMS in Your Own Project
-
-```bash
-npm install @neo4j-labs/nams-ai-provider @neo4j-labs/agent-memory ai zod
-```
-
-```typescript
-import { createNamsProvider, createNams } from '@neo4j-labs/nams-ai-provider';
+```ts
+import { createNams, createNamsProvider } from '@neo4j-labs/nams-ai-provider';
 import { openai } from '@ai-sdk/openai';
 
-// Provider mode — transparent
+// provider: build the model through NAMS
 const model = createNamsProvider({ apiKey, baseProvider: openai, scope: { userId } })
   .languageModel('gpt-5.4-mini');
 
-// Middleware mode — transparent, wraps an existing model
+// middleware: wrap a model you already have
 const wrapped = createNams({ apiKey }).wrap(openai('gpt-5.4-mini'), { userId });
 
-// Tools mode — model-driven, tool calls visible in the UI
+// tools: give the model memory tools (plus any database tools)
 const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
+
+// hooks: load the chat yourself, then save the turn yourself
+const session  = createNams({ apiKey }).hooks({ userId });
+const messages = [...(await session.loadSession()), { role: 'user', content: userText }];
+// ...run the model with `messages`, then in onFinish:
+await session.onFinish({ prompt: userText })(event);
+```
+
+The real version is in [`app/api/chat/route.ts`](app/api/chat/route.ts).
+
+A few details:
+
+- **Every mode:** the browser sends only its newest message. The route loads the earlier turns from NAMS with `session.loadSession()`.
+- **tools mode:** small models sometimes skip memory. `enforceQueryMemory()` makes the model read memory first. The route saves each turn's text itself, so the chat doesn't depend on the model calling `store_memory`.
+- **hooks mode:** saves the conversation only, not separate long-term facts.
+- Each mode has its own system prompt in [`lib/constants.ts`](lib/constants.ts), so the model is never told about tools it doesn't have.
+- **Reasoning panel:** after each answer the route saves one reasoning step per agent step, in order, before the reply finishes. The panel reads them right after.
+
+---
+
+## Optional: let the agent query your Neo4j database
+
+Point the app at a Neo4j MCP server and the agent can look things up in your graph, in any mode:
+
+```env
+MCP_URL=https://your-server/mcp
+MCP_BEARER_TOKEN=...                           # or:
+MCP_NEO4J_USERNAME=neo4j
+MCP_NEO4J_PASSWORD=...
+```
+
+Each database call is stopped after 30 seconds, and results over 50,000 characters are cut short. The model gets a note telling it to write a smaller query. Without this, one heavy query could hang the reply for minutes.
+
+Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-Authenticate: Bearer` reply means a token; `Basic` means username and password.
+
+---
+
+## Settings (`.env.local`)
+
+| Variable | Needed? | What it does |
+|---|---|---|
+| `MEMORY_API_KEY` | Yes | Your NAMS key. Without it, every chat request fails. |
+| `OPENAI_API_KEY` | Yes | Your OpenAI key. |
+| `NAMS_MODE` | No | `provider` (default), `middleware`, `tools` or `hooks`. |
+| `MEMORY_WORKSPACE_ID` | No | Use a specific NAMS workspace. |
+| `OPENAI_MODEL` | No | Model to use. Default `gpt-5.4-mini`. |
+| `NAMS_EXTRACTION_MODEL` | No | Tools mode only: also turns each saved fact into graph entities. Costs one extra model call. |
+| `MCP_URL` / `MCP_PORT` | No | Neo4j MCP server (see above). |
+| `MCP_BEARER_TOKEN` or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | No | Login for the MCP server. |
+| `NEXT_ALLOWED_DEV_ORIGINS` | No | Extra hostnames allowed to open the dev server, e.g. a LAN IP. |
+
+---
+
+## Try it
+
+For each mode, set `NAMS_MODE`, restart `npm run dev`, then:
+
+1. Send: *"My favourite colour is blue."*
+2. Reload the page (the chat window empties).
+3. Send: *"What's my favourite colour?"* The answer should be **blue**.
+
+What you'll see in the terminal:
+
+| Mode | Log line to look for |
+|---|---|
+| any | `[chat]   restored N earlier turns from NAMS` |
+| `provider` / `middleware` | `[chat] Done \| steps=1 queries=0 stores=0` |
+| `tools` | `queries=1 stores=1`, and the steps show up in the Reasoning panel |
+
+To see the saved reasoning steps: `curl "http://localhost:3000/api/reasoning?userId=<id>"`. The id is in your browser's `localStorage` under `nams-session-id`.
+
+### Automated tests
+
+```bash
+npm test     # 32 tests, no real keys needed
+```
+
+They check each mode's wiring against a fake version of the package.
+
+---
+
+## Project layout
+
+```
+app/api/chat/route.ts        the chat endpoint: picks the mode and runs the agent
+app/api/reasoning/route.ts   returns saved reasoning steps for the side panel
+components/chat/             the chat UI, memory panel and reasoning panel
+lib/constants.ts             system prompts, one per mode
+lib/neo4j-mcp.ts             connects to the Neo4j MCP server
+test/                        route tests (vitest)
 ```
 
 ---
 
 ## Troubleshooting
 
-**Memory not persisting across sessions**
-- Check that the session id is stable — the app reads `localStorage.getItem('nams-session-id')` and sends it as `sessionId`; clearing site data starts a new user
-- Verify `MEMORY_API_KEY` is set and restart the dev server after editing `.env.local`
-- In tools mode, confirm the reasoning trace shows a `store_memory` step
+**It doesn't remember me.**
+- Did you restart the server after editing `.env.local`?
+- Clearing your browser's site data makes you a new user.
+- In tools mode, check that the Reasoning panel shows a `store_memory` step.
 
-**Model never calls memory tools (tools mode)**
-- Confirm `NAMS_MODE=tools` and that the server restarted
-- `enforceQueryMemory` forces `query_memory` after 2 steps, so a total absence usually means the tools weren't attached — check `[chat] … tools=N` shows N ≥ 2
-- Try a larger model, e.g. `OPENAI_MODEL=gpt-5.4` — smaller models are less reliable with multi-tool cycles
+**The model never uses memory tools (tools mode).** Check the log says `tools=2` or more. If it does, try a bigger model: `OPENAI_MODEL=gpt-5.4`.
 
-**MCP connection fails**
-- Verify a URL and one complete auth pair are set (see the env table)
-- **HTTP 401** is usually the wrong auth *scheme*, not wrong credentials. `explainMcpError()` re-probes the endpoint on a 401 and logs the server's `WWW-Authenticate` challenge, e.g. `server requires bearer auth, but the MCP_* env vars produced basic`. Hosted Aura / NeoCompanion endpoints are OAuth 2.1 — mint a token and set `MCP_BEARER_TOKEN`
-- Tools mode falls back to NAMS-only tools when MCP is unavailable; provider/middleware modes continue with no tools at all
+**The MCP connection fails.** An `HTTP 401` usually means the wrong *kind* of login (token vs. username/password). The log names the kind the server wants.
 
-**Model answers from memory instead of querying the database**
-- Check for `db=[…]` in the `[chat] model=…` line. No `db=[…]` means no database tools were attached, so the model *cannot* query — fix the connection first
-- The DATABASE ACCESS prompt block is generated from the tool names the server reports at connect time, so it always matches what the model can actually call
+**"I ran out of steps…"** The agent used all 10 steps without answering. Try a clearer question or a bigger model.
 
-**"I ran out of steps…" in the chat**
-- The tool loop hit `maxSteps=10` without producing text. Usually a model looping on `query_memory` with reworded keywords — try a larger model, or check whether the question actually needs database tools that aren't connected
+**"read-cypher took longer than 30s".** The model wrote a query that was too heavy for the server. It usually retries with a smaller one. If it keeps happening, ask a narrower question.
 
-**HTTP 503 / `MEMORY_API_KEY is not set`**
-- Generate a free key at [memory.neo4jlabs.com](https://memory.neo4jlabs.com) and restart `npm run dev`
-
-**`400 string_above_max_length` from OpenAI, or a vague "I was not able to produce an answer"**
-- A `read-cypher` call without a `LIMIT` clause can return a very large result set, exceeding OpenAI's per-request size limit and failing the whole turn. `lib/neo4j-mcp.ts`'s `capToolOutputs()` truncates any tool result over 50,000 characters and nudges the model to add a `LIMIT` clause — if you still hit this, ask a narrower question or add `LIMIT 25` yourself
-
-### Known limitation (upstream package)
-
-During end-to-end testing with two different `userId`s sharing one NAMS workspace, a brand-new user's very first turn occasionally surfaced a fact stored under a *different* user minutes earlier. `route.ts` passes a correctly-scoped `{ userId, conversationId }` to both `createNamsProvider(...)` and `createNams(...).wrap(...)`, so this behavior appears to originate inside `@neo4j-labs/nams-ai-provider`/`@neo4j-labs/agent-memory`'s conversation/entity retrieval rather than in this demo's code. If you see unexpected cross-user recall, pass an explicit `conversationId` per user/session and report the observation upstream at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory).
+**`MEMORY_API_KEY is not set`.** Add the key to `.env.local` and restart.
 
 ---
 
-## Dependencies
+## Known limits of hosted NAMS
 
-| Package | Role |
-|---------|------|
-| `@neo4j-labs/nams-ai-provider` | NAMS integration — `createNams()`, `createNamsProvider()`, `enforceQueryMemory()` |
-| `@neo4j-labs/agent-memory` | NAMS REST client used by the provider |
-| `ai` (Vercel AI SDK v7) | `ToolLoopAgent`, `createUIMessageStream`, `result.toUIMessageStream()`, `DefaultChatTransport` |
-| `@ai-sdk/openai` | OpenAI model provider |
-| `@ai-sdk/react` | `useChat` React hook |
-| `@ai-sdk/mcp` | MCP client used by `lib/neo4j-mcp.ts` |
-| `@neo4j-ndl/react`, `@neo4j-ndl/base` | Neo4j Design Language UI components |
-| `zod` | Tool input schemas |
-| `next` (16), `react`, `react-dom` (19) | App framework and UI runtime |
-| `vitest` 4 (dev) | Route-level tests (`npm test`) |
+These come from the NAMS service and the package, not from this app:
+
+- **Users can see each other's long-term facts in a shared workspace.** Long-term facts belong to the workspace, not the user. For a clean demo, use a fresh workspace (`MEMORY_WORKSPACE_ID`).
+
+Please report problems at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory).
 
 ---
 
-## Resources
+## Links
 
-- [Neo4j Agent Memory Service](https://memory.neo4jlabs.com)
-- [`@neo4j-labs/nams-ai-provider` on npm](https://www.npmjs.com/package/@neo4j-labs/nams-ai-provider) — [source](https://github.com/neo4j-labs/agent-memory/tree/main/typescript/packages/vercel-ai-provider)
-- [`@neo4j-labs/agent-memory` on npm](https://www.npmjs.com/package/@neo4j-labs/agent-memory)
+- [NAMS](https://memory.neo4jlabs.com)
+- [`@neo4j-labs/nams-ai-provider`](https://www.npmjs.com/package/@neo4j-labs/nams-ai-provider) ([source](https://github.com/neo4j-labs/agent-memory/tree/main/typescript/packages/vercel-ai-provider))
 - [Vercel AI SDK docs](https://ai-sdk.dev/docs)
-- [Source code — neo4j-agent-integrations](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/vercel-agent)

@@ -10,12 +10,12 @@
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.34",
     "@ai-sdk/openai": "^4.0.44",
-    "@neo4j-labs/agent-memory": "^0.4.1",
-    "@neo4j-labs/nams-ai-provider": "^0.2.1",
+    "@neo4j-labs/agent-memory": "0.5.0",
+    "@neo4j-labs/nams-ai-provider": "0.3.0",
     "ai": "^7.0.70",
     "dotenv": "^16.6.1",
     "neo4j-driver": "^6.2.0",
-    "zod": "^3.25.76"
+    "zod": "^4.0.0"
   },
   "optionalDependencies": {
     "@ai-sdk/anthropic": "^4.0.40",

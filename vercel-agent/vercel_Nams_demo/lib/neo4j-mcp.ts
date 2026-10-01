@@ -1,11 +1,5 @@
-/**
- * neo4j-mcp.ts — Neo4j MCP client helper for just the demo.
- *
- * Auth: set MCP_BEARER_TOKEN for servers behind OAuth 2.1 (hosted Aura /
- * NeoCompanion endpoints advertise `WWW-Authenticate: Bearer`), or
- * MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD for a self-hosted mcp-neo4j-cypher
- * behind Basic auth. Bearer wins when both are present.
- */
+// Connects to a Neo4j MCP server.
+// Auth: MCP_BEARER_TOKEN, or MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD. The token wins if both are set.
 
 import { createMCPClient } from '@ai-sdk/mcp';
 import type { McpConfig } from '@neo4j-labs/nams-ai-provider';
@@ -58,24 +52,14 @@ export async function getNeo4jMcpTools(): Promise<{
   };
 }
 
-/**
- * Returns the McpConfig format expected by createNams().toolsWithMcp().
- * Use this in tools mode; for provider mode use getNeo4jMcpTools() directly.
- */
+/** The same server, in the shape `createNams().toolsWithMcp()` takes. */
 export function getNamsMcpConfig(): McpConfig | undefined {
   const config = getMcpConfig();
   if (!config) return undefined;
   return { url: config.url, headers: config.headers };
 }
 
-/**
- * Turns an opaque MCP transport error into something actionable.
- *
- * `@ai-sdk/mcp` surfaces the failure as a bare message string ("MCP HTTP
- * Transport Error: POSTing to endpoint (HTTP 401):") with no status or headers
- * attached, so on a 401 we re-probe the endpoint to read its `WWW-Authenticate`
- * challenge and report the scheme mismatch outright.
- */
+/** Makes an MCP error readable. On a 401 it asks the server which auth it wants. */
 export async function explainMcpError(err: unknown): Promise<string> {
   const message = err instanceof Error ? err.message : String(err);
   const config = getMcpConfig();
@@ -98,7 +82,7 @@ export async function explainMcpError(err: unknown): Promise<string> {
     : `${message} ${challenge}`;
 }
 
-/** Returns true if enough MCP env vars are set to attempt a connection. */
+/** True when a URL and one auth pair are set. */
 export function isMcpConfigured(): boolean {
   const hasUrl = Boolean(process.env.MCP_URL?.trim() || process.env.MCP_PORT?.trim());
   const hasAuth = Boolean(
@@ -108,15 +92,10 @@ export function isMcpConfigured(): boolean {
   return hasUrl && hasAuth;
 }
 
-// An unbounded Cypher query (e.g. `MATCH (n) RETURN n` with no LIMIT) can
-// return megabytes of JSON from read-cypher. Fed straight back as a tool
-// result, that alone can exceed the model provider's per-field request-body
-// limit (e.g. OpenAI's 10 MiB `input[].output[].text` cap), which fails the
-// *entire* turn with an opaque 400 — surfacing to the user as a generic
-// "I was not able to produce an answer" with no indication why. Cap tool
-// output size here so a too-broad query degrades to a truncated result the
-// model can react to (and be nudged to add a LIMIT) instead of a hard failure.
+// A query with no LIMIT can return megabytes, and a heavy one can run for minutes.
+// Either one would fail the whole turn, so tool results are cut short in both cases.
 const MAX_TOOL_OUTPUT_CHARS = 50_000;
+const TOOL_TIMEOUT_MS = 30_000;
 
 function truncateText(text: string): string {
   if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text;
@@ -128,8 +107,7 @@ function truncateText(text: string): string {
   );
 }
 
-/** Shrinks any oversized text found in an MCP tool result to a safe size. */
-function capMcpOutput(output: unknown): unknown {
+function capOutput(output: unknown): unknown {
   if (output && typeof output === 'object' && Array.isArray((output as { content?: unknown }).content)) {
     const withContent = output as { content: Array<{ type?: string; text?: string }> };
     return {
@@ -145,19 +123,38 @@ function capMcpOutput(output: unknown): unknown {
   return output;
 }
 
-/**
- * Wraps every tool's `execute` so oversized results get capped before they
- * reach the model. Safe to apply to any ToolSet (MCP tools, NAMS memory
- * tools, or a merge of both) — tools without an `execute` pass through
- * unchanged.
- */
-export function capToolOutputs<T extends Record<string, unknown>>(tools: T): T {
-  const capped: Record<string, unknown> = {};
+const timedOut = (name: string) => ({
+  isError: true,
+  content: [{
+    type: 'text',
+    text: `${name} took longer than ${TOOL_TIMEOUT_MS / 1000}s and was stopped. ` +
+      'Try a smaller query: fewer OPTIONAL MATCHes, count() instead of rows, and a LIMIT.',
+  }],
+});
+
+/** Wraps each tool so a slow call stops after 30s and a huge result is cut short. */
+export function guardTools<T extends Record<string, unknown>>(tools: T): T {
+  const guarded: Record<string, unknown> = {};
   for (const [name, t] of Object.entries(tools)) {
-    const original = (t as { execute?: (...args: unknown[]) => unknown })?.execute;
-    capped[name] = typeof original === 'function'
-      ? { ...(t as object), execute: async (...args: unknown[]) => capMcpOutput(await original(...args)) }
-      : t;
+    const original = (t as { execute?: (input: unknown, opts?: any) => unknown })?.execute;
+    if (typeof original !== 'function') {
+      guarded[name] = t;
+      continue;
+    }
+    guarded[name] = {
+      ...(t as object),
+      execute: async (input: unknown, opts: any = {}) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise(resolve => {
+          timer = setTimeout(() => resolve(timedOut(name)), TOOL_TIMEOUT_MS);
+        });
+        try {
+          return capOutput(await Promise.race([original(input, opts), timeout]));
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    };
   }
-  return capped as T;
+  return guarded as T;
 }

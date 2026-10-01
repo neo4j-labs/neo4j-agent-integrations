@@ -1,22 +1,10 @@
-/**
- * POST /api/chat — wires @neo4j-labs/nams-ai-provider into ToolLoopAgent.
- *
- * Contract points:
- *  - MEMORY_API_KEY is required; invalid JSON bodies are rejected
- *  - NAMS_MODE=provider (default): createNamsProvider(...).languageModel() wraps
- *    the model transparently; no NAMS tools are attached
- *  - NAMS_MODE=middleware: createNams().wrap(model, scope) wraps the base model
- *    the same way; MCP tools (if configured) connect directly, same as provider mode
- *  - NAMS_MODE=tools: the base model is left unwrapped; createNams().toolsWithMcp()
- *    supplies query_memory/store_memory (+ MCP tools) to the agent
- *  - a failed MCP connection in tools mode falls back to NAMS-only tools
- *  - onFinish persists the step trace via makeClient()/resolveConversation()
- */
+/** POST /api/chat — checks how each NAMS_MODE wires memory into the agent, plus error paths. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const holder = vi.hoisted(() => ({
   agentCtorArgs: [] as any[],
+  agents: [] as any[],
   executeFns: [] as any[],
   finalText: 'answer',
   finalFinishReason: 'stop',
@@ -25,6 +13,10 @@ const holder = vi.hoisted(() => ({
   languageModel: vi.fn(),
   wrap: vi.fn(),
   toolsWithMcp: vi.fn(),
+  hooks: vi.fn(),
+  loadSession: vi.fn(),
+  sessionOnFinish: vi.fn(),
+  sessionSave: vi.fn(),
   makeClient: vi.fn(),
   resolveConversation: vi.fn(),
   enforceQueryMemory: vi.fn(() => ({ __prepareStep: true })),
@@ -41,6 +33,7 @@ vi.mock('@ai-sdk/openai', () => ({
 vi.mock('ai', () => ({
   ToolLoopAgent: vi.fn().mockImplementation(function (this: any, args: any) {
     holder.agentCtorArgs.push(args);
+    holder.agents.push(this);
     this.stream = vi.fn().mockResolvedValue({
       stream: new ReadableStream(),
       text: Promise.resolve(holder.finalText),
@@ -69,7 +62,7 @@ vi.mock('@/lib/neo4j-mcp', () => ({
   getNamsMcpConfig: holder.getNamsMcpConfig,
   isMcpConfigured: holder.isMcpConfigured,
   explainMcpError: holder.explainMcpError,
-  capToolOutputs: vi.fn((tools: unknown) => tools),
+  guardTools: vi.fn((tools: unknown) => tools),
 }));
 
 import { POST } from '../app/api/chat/route';
@@ -77,9 +70,12 @@ import { POST } from '../app/api/chat/route';
 const chatRequest = (body: unknown) =>
   new Request('http://localhost/api/chat', { method: 'POST', body: JSON.stringify(body) });
 
+const userMessage = (text: string) => ({ role: 'user', parts: [{ type: 'text', text }] });
+
 beforeEach(() => {
   vi.clearAllMocks();
   holder.agentCtorArgs.length = 0;
+  holder.agents.length = 0;
   holder.executeFns.length = 0;
   holder.finalText = 'answer';
   holder.finalFinishReason = 'stop';
@@ -94,10 +90,14 @@ beforeEach(() => {
   holder.createNamsProvider.mockReturnValue({ languageModel: holder.languageModel });
   holder.toolsWithMcp.mockResolvedValue({
     tools: { query_memory: {}, store_memory: {} },
-    close: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
   });
   holder.wrap.mockImplementation((model: unknown) => ({ __brand: 'middleware-wrapped-model', wraps: model }));
-  holder.createNams.mockReturnValue({ toolsWithMcp: holder.toolsWithMcp, wrap: holder.wrap });
+  holder.loadSession.mockResolvedValue([]);
+  holder.sessionSave.mockResolvedValue(undefined);
+  holder.sessionOnFinish.mockReturnValue(holder.sessionSave);
+  holder.hooks.mockReturnValue({ loadSession: holder.loadSession, onFinish: holder.sessionOnFinish });
+  holder.createNams.mockReturnValue({ toolsWithMcp: holder.toolsWithMcp, wrap: holder.wrap, hooks: holder.hooks });
   holder.makeClient.mockReturnValue({ reasoning: { recordStep: vi.fn().mockResolvedValue(undefined) } });
   holder.resolveConversation.mockResolvedValue('');
 
@@ -115,19 +115,24 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 when the request has no user message', async () => {
+    const res = await POST(chatRequest({ message: { role: 'assistant', parts: [] }, userId: 'u1' }));
+
+    expect(res.status).toBe(400);
+    expect(holder.agentCtorArgs).toHaveLength(0);
+  });
+
   it('returns 503 when MEMORY_API_KEY is not set', async () => {
     delete process.env.MEMORY_API_KEY;
 
-    const res = await POST(chatRequest({ messages: [] }));
+    const res = await POST(chatRequest({ message: userMessage('hi') }));
 
     expect(res.status).toBe(503);
     expect(holder.createNamsProvider).not.toHaveBeenCalled();
   });
 
   it('provider mode (default) wraps the model via createNamsProvider and attaches no NAMS tools', async () => {
-    const res = await POST(
-      chatRequest({ messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }], userId: 'u1' }),
-    );
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(res.status).toBe(200);
     expect(holder.createNamsProvider).toHaveBeenCalledWith(
@@ -138,7 +143,7 @@ describe('POST /api/chat', () => {
       }),
     );
     expect(holder.languageModel).toHaveBeenCalledWith('gpt-5.4-mini');
-    expect(holder.createNams).not.toHaveBeenCalled();
+    expect(holder.wrap).not.toHaveBeenCalled();
 
     const agentArgs = holder.agentCtorArgs[0];
     expect(agentArgs.model).toEqual({ __brand: 'provider-wrapped-model' });
@@ -149,9 +154,7 @@ describe('POST /api/chat', () => {
     process.env.NAMS_MODE = 'tools';
     holder.getNamsMcpConfig.mockReturnValue({ url: 'https://mcp.example.com/mcp', headers: {} });
 
-    const res = await POST(
-      chatRequest({ messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }], userId: 'u1' }),
-    );
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(res.status).toBe(200);
     expect(holder.createNamsProvider).not.toHaveBeenCalled();
@@ -169,9 +172,7 @@ describe('POST /api/chat', () => {
   it('middleware mode wraps the base model via createNams().wrap() and attaches no NAMS tools', async () => {
     process.env.NAMS_MODE = 'middleware';
 
-    const res = await POST(
-      chatRequest({ messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }], userId: 'u1' }),
-    );
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(res.status).toBe(200);
     expect(holder.createNamsProvider).not.toHaveBeenCalled();
@@ -194,7 +195,7 @@ describe('POST /api/chat', () => {
     holder.isMcpConfigured.mockReturnValue(true);
     holder.getNeo4jMcpTools.mockResolvedValue({ tools: { 'read-cypher': {} }, close: vi.fn() });
 
-    const res = await POST(chatRequest({ messages: [], userId: 'u1' }));
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(res.status).toBe(200);
     expect(holder.getNeo4jMcpTools).toHaveBeenCalled();
@@ -203,13 +204,131 @@ describe('POST /api/chat', () => {
     expect(agentArgs.tools).toEqual({ 'read-cypher': {} });
   });
 
+  it('hooks mode leaves the model unwrapped and attaches no NAMS tools', async () => {
+    process.env.NAMS_MODE = 'hooks';
+
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    expect(res.status).toBe(200);
+    expect(holder.createNamsProvider).not.toHaveBeenCalled();
+    expect(holder.wrap).not.toHaveBeenCalled();
+    expect(holder.toolsWithMcp).not.toHaveBeenCalled();
+
+    const agentArgs = holder.agentCtorArgs[0];
+    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.4-mini' });
+    expect(agentArgs.tools).toBeUndefined();
+    expect(agentArgs.prepareStep).toBeUndefined();
+    expect(agentArgs.instructions).toContain('restored from NAMS');
+  });
+
+  it.each(['provider', 'middleware', 'tools', 'hooks'])(
+    '%s mode streams the history restored from NAMS plus the new message',
+    async (mode) => {
+      process.env.NAMS_MODE = mode;
+      holder.loadSession.mockResolvedValue([
+        { role: 'user', content: 'my name is Alex' },
+        { role: 'assistant', content: 'Hi Alex!' },
+      ]);
+
+      await POST(chatRequest({ message: userMessage('what is my name?'), userId: 'u1' }));
+
+      expect(holder.hooks).toHaveBeenCalledWith({ userId: 'u1', conversationId: undefined });
+      await holder.executeFns[0]({ writer: { merge: vi.fn(), write: vi.fn() } });
+      expect(holder.agents[0].stream).toHaveBeenCalledWith({
+        messages: [
+          { role: 'user', content: 'my name is Alex' },
+          { role: 'assistant', content: 'Hi Alex!' },
+          { role: 'user', content: 'what is my name?' },
+        ],
+      });
+    },
+  );
+
+  it('drops the saved question and old answer when the message is re-run', async () => {
+    holder.loadSession.mockResolvedValue([
+      { role: 'user', content: 'my name is Alex' },
+      { role: 'assistant', content: 'Hi Alex!' },
+      { role: 'user', content: 'what is my name?' },
+      { role: 'assistant', content: 'a bad answer' },
+    ]);
+
+    await POST(chatRequest({ message: userMessage('what is my name?'), trigger: 'regenerate-message', userId: 'u1' }));
+
+    await holder.executeFns[0]({ writer: { merge: vi.fn(), write: vi.fn() } });
+    expect(holder.agents[0].stream).toHaveBeenCalledWith({
+      messages: [
+        { role: 'user', content: 'my name is Alex' },
+        { role: 'assistant', content: 'Hi Alex!' },
+        { role: 'user', content: 'what is my name?' },
+      ],
+    });
+  });
+
+  it('hooks mode saves the turn through the session before recording the trace', async () => {
+    process.env.NAMS_MODE = 'hooks';
+    holder.resolveConversation.mockResolvedValue('conv-1');
+    const order: string[] = [];
+    holder.sessionSave.mockImplementation(async () => { order.push('save'); });
+    holder.resolveConversation.mockImplementation(async () => { order.push('trace'); return 'conv-1'; });
+
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    const responseMessages = [{ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
+    await holder.agentCtorArgs[0].onFinish({
+      text: 'hello',
+      steps: [{ text: 'hello', toolCalls: [], toolResults: [] }],
+      usage: undefined,
+      responseMessages,
+    });
+
+    expect(holder.sessionOnFinish).toHaveBeenCalledWith({ prompt: 'hi' });
+    expect(holder.sessionSave).toHaveBeenCalledWith({ text: 'hello', responseMessages });
+    expect(order).toEqual(['save', 'trace']);
+  });
+
+  it('tools mode saves the text of the turn, without its tool calls', async () => {
+    process.env.NAMS_MODE = 'tools';
+
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+    await holder.agentCtorArgs[0].onFinish({
+      text: 'hello',
+      steps: [],
+      usage: undefined,
+      responseMessages: [{ role: 'tool', content: [{ type: 'tool-result', toolName: 'query_memory' }] }],
+    });
+
+    expect(holder.sessionOnFinish).toHaveBeenCalledWith({ prompt: 'hi' });
+    expect(holder.sessionSave).toHaveBeenCalledWith({ text: 'hello' });
+  });
+
+  it('hooks mode connects MCP tools directly, same as provider mode', async () => {
+    process.env.NAMS_MODE = 'hooks';
+    holder.isMcpConfigured.mockReturnValue(true);
+    holder.getNeo4jMcpTools.mockResolvedValue({ tools: { 'read-cypher': {} }, close: vi.fn() });
+
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    expect(holder.getNeo4jMcpTools).toHaveBeenCalled();
+    expect(holder.agentCtorArgs[0].tools).toEqual({ 'read-cypher': {} });
+  });
+
+  it('returns 503 for an unknown NAMS_MODE instead of running without memory', async () => {
+    process.env.NAMS_MODE = 'session';
+
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: expect.stringContaining('Unknown NAMS_MODE "session"') });
+    expect(holder.agentCtorArgs).toHaveLength(0);
+  });
+
   it('falls back to NAMS-only tools when the MCP connection fails in tools mode', async () => {
     process.env.NAMS_MODE = 'tools';
     holder.toolsWithMcp
       .mockRejectedValueOnce(new Error('mcp down'))
       .mockResolvedValueOnce({ tools: { query_memory: {}, store_memory: {} }, close: vi.fn() });
 
-    const res = await POST(chatRequest({ messages: [], userId: 'u1' }));
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(res.status).toBe(200);
     expect(holder.toolsWithMcp).toHaveBeenCalledTimes(2);
@@ -223,7 +342,7 @@ describe('POST /api/chat', () => {
       close: vi.fn(),
     });
 
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const { instructions } = holder.agentCtorArgs[0];
     expect(instructions).toContain('DATABASE ACCESS');
@@ -240,7 +359,7 @@ describe('POST /api/chat', () => {
       .mockRejectedValueOnce(new Error('HTTP 401'))
       .mockResolvedValueOnce({ tools: { query_memory: {}, store_memory: {} }, close: vi.fn() });
 
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(holder.agentCtorArgs[0].instructions).not.toContain('DATABASE ACCESS');
     expect(holder.explainMcpError).toHaveBeenCalled();
@@ -249,13 +368,13 @@ describe('POST /api/chat', () => {
   it('guards the tool loop with enforceQueryMemory in tools mode only', async () => {
     process.env.NAMS_MODE = 'tools';
 
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(holder.enforceQueryMemory).toHaveBeenCalledWith({ graceSteps: 2 });
     expect(holder.agentCtorArgs[0].prepareStep).toEqual({ __prepareStep: true });
 
     process.env.NAMS_MODE = 'provider';
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     expect(holder.agentCtorArgs[1].prepareStep).toBeUndefined();
   });
@@ -264,7 +383,7 @@ describe('POST /api/chat', () => {
     holder.finalText = '';
     holder.finalFinishReason = 'tool-calls';
 
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const writer = { merge: vi.fn(), write: vi.fn() };
     await holder.executeFns[0]({ writer });
@@ -281,7 +400,7 @@ describe('POST /api/chat', () => {
   });
 
   it('does not emit fallback text when the agent produced an answer', async () => {
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const writer = { merge: vi.fn(), write: vi.fn() };
     await holder.executeFns[0]({ writer });
@@ -293,7 +412,7 @@ describe('POST /api/chat', () => {
   it('persists the step trace after the agent finishes via makeClient()/resolveConversation()', async () => {
     holder.resolveConversation.mockResolvedValue('conv-1');
 
-    await POST(chatRequest({ messages: [], userId: 'u1' }));
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const onFinish = holder.agentCtorArgs[0].onFinish;
     await onFinish({

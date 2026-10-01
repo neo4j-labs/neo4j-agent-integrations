@@ -28,7 +28,7 @@ export function namsConfig(): Omit<NamsConfig, "workspaceId"> {
 }
 
 export function workspaceIdFor(_userId: string): string | undefined {
-  return process.env.NAMS_WORKSPACE_ID || undefined;
+  return process.env.WORKSPACE_ID || undefined;
 }
 
 interface ScopeSource {

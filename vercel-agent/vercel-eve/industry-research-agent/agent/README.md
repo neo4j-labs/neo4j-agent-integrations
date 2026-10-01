@@ -25,7 +25,7 @@ This file walks the folders. Start here if you're about to change something.
 | File | What it does |
 |---|---|
 | `agent.ts` | Model id + reasoning effort. Memory is deliberately not here. |
-| `instructions.md` | Identity, the six tools, how to research, how to report. |
+| `instructions.md` | Identity, the six tool surfaces, how to research, how to report. |
 | `instructions/memory.ts` | **Recall.** Searches NAMS before each turn, adds a prompt block. |
 | `hooks/persist-turn.ts` | **Store.** Writes the exchange after each turn. |
 | `hooks/persist-reasoning.ts` | **Why-trail.** Records reasoning steps and tool calls. |
@@ -54,11 +54,17 @@ string is what lets eve work out routing, credentials, and context window at
 build time. The exception is `MODEL_ROUTING=openai`, which has to hand
 `defineAgent` a real model instance.
 
-**Why not memory inside the model?** `@neo4j-labs/nams-ai-provider` can wrap any
-model so memory happens invisibly on every call. This project ran on that and
-went back to hooks. Wrapping the model stores every turn with no filtering,
-hides its own write failures inside the wrapper, and records no reasoning
-memory at all.
+**Why not use one of the `nams-ai-provider` modes?** That package has four ways
+to add memory. None of them fits this agent:
+
+- **provider / middleware** wrap the model. We tried it. It saved every turn
+  unfiltered, hid its own errors, and saved no reasoning.
+- **tools** leaves saving up to the model, which sometimes forgets.
+- **hooks** is the same idea as this folder, but it saves only the chat, and it
+  is built for the AI SDK's agent. Here eve's own turn events do the job.
+
+This project still uses the package's smaller helpers (`makeClient`,
+`retrieveMemories`, `storeMemory`) in `lib/memory-gateway.ts`.
 
 ## `instructions.md` and `instructions/`
 
@@ -153,7 +159,7 @@ through the `headers` callback instead — which is re-resolved per request, so
 rotating the env vars needs no redeploy.
 
 `memory-graph.ts` also injects `workspace_id` through `providedArguments` when
-`NAMS_WORKSPACE_ID` is set, resolved from `ctx`. Same identity seam as
+`WORKSPACE_ID` is set, resolved from `ctx`. Same identity seam as
 everything else: the model never supplies it.
 
 `neo4j-investments.ts` is the one pointing at a server you run yourself, and
