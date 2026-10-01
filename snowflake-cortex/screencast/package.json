@@ -1,0 +1,26 @@
+{
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "interactively-create-test-case": "playwright codegen",
+    "interactively-create-test-case:stateful": "playwright codegen --load-storage=.browser-state.json --save-storage=.browser-state.json",
+    "run-tests": "playwright test",
+    "render": "node render.ts",
+    "readme": "node readme.ts",
+    "readme:check": "node readme.ts --check",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@neo4j-agent-integrations/screencast": "*",
+    "otplib": "^13.4.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  },
+  "name": "@neo4j-agent-integrations/snowflake-cortex-screencast",
+  "private": true
+}

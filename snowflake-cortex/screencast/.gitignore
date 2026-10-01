@@ -1,0 +1,8 @@
+.playwright-output
+.recast-cache
+node_modules
+/.recast-tmp/
+playwright-output
+screencast-output
+.browser-state.json
+*.log

@@ -1,0 +1,19 @@
+{
+  "name": "@neo4j-agent-integrations/screencast",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "playwright-recast": "^0.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

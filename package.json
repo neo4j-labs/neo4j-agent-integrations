@@ -1,0 +1,8 @@
+{
+  "name": "neo4j-agent-integrations",
+  "private": true,
+  "workspaces": [
+    "tools/screencast",
+    "snowflake-cortex/screencast"
+  ]
+}
