@@ -180,6 +180,11 @@ def _make_inline(folder: str, path_xref: dict, anchors: set = None):
             lambda m: _EMOJI.get(m.group(1), ''),
             line
         )
+        # Linked image [![alt](src)](url) → image macro with link attribute
+        line = re.sub(
+            r'\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)',
+            lambda m: f'image::{_image_target(m.group(2))}["{m.group(1)}",link="{m.group(3)}"]',
+            line)
         # Images before links
         line = re.sub(
             r'!\[([^\]]*)\]\(([^)]+)\)',
@@ -355,7 +360,10 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             if src:
                 if in_table:
                     flush_table()
-                macro_attrs = [_attr('alt') or 'Screenshot']
+                # Quote alt text: an unquoted comma would start a new
+                # positional attribute and push width out of place.
+                alt = (_attr('alt') or 'Screenshot').replace('"', '&quot;')
+                macro_attrs = [f'"{alt}"']
                 width = _attr('width')
                 if width.isdigit():
                     macro_attrs.append(width)
