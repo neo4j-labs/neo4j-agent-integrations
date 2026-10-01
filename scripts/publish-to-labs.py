@@ -79,6 +79,19 @@ def _build_path_xref_map(integrations_map: list) -> dict:
     return m
 
 
+def _image_target(target: str) -> str:
+    """Normalise an image target for AsciiDoc.
+
+    A leading './' makes Antora resolve the image relative to the *page* URL
+    instead of through imagesdir, so the file 404s even though the converter
+    copied it into the images directory. Everything else is left alone.
+    """
+    target = target.strip()
+    if re.match(r'^[a-zA-Z][\w+.-]*:', target):  # absolute URL — leave as-is
+        return target
+    return re.sub(r'^(\./)+', '', target)
+
+
 def _heading_slug(text: str) -> str:
     """GitHub-style heading slug, matching the anchors authors write in MD."""
     s = re.sub(r'`|\*|_', '', text.strip().lower())
@@ -168,7 +181,10 @@ def _make_inline(folder: str, path_xref: dict, anchors: set = None):
             line
         )
         # Images before links
-        line = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'image::\2[\1]', line)
+        line = re.sub(
+            r'!\[([^\]]*)\]\(([^)]+)\)',
+            lambda m: f'image::{_image_target(m.group(2))}[{m.group(1)}]',
+            line)
         line = re.sub(r'(?<!!)\[([^\]]+)\]\(([^)]+)\)', _link, line)
         # Bold **text** → *text*
         line = re.sub(r'\*\*([^*\n]+)\*\*', r'*\1*', line)
@@ -325,7 +341,7 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
                 width = _attr('width')
                 if width.isdigit():
                     macro_attrs.append(width)
-                out.append(f'image::{src}[{",".join(macro_attrs)}]')
+                out.append(f'image::{_image_target(src)}[{",".join(macro_attrs)}]')
                 out.append('')
                 i += 1
                 continue
