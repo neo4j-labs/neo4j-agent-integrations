@@ -2,7 +2,7 @@
 
 This guide builds the [overview](../../README.md) stack by hand in Snowsight. The result is a Cortex agent that combines customer accounts in Snowflake with the Neo4j `companies` demo graph. [Sample 1](../1-terraform/README.md) creates the same stack with Terraform.
 
-[![Watch the video](https://img.youtube.com/vi/QWc3SBc5sUE/maxresdefault.jpg)](https://youtu.be/QWc3SBc5sUE)
+[![Watch the video](https://img.youtube.com/vi/5w1wxf3WfYQ/maxresdefault.jpg)](https://youtu.be/5w1wxf3WfYQ)
 
 ## What you build
 
