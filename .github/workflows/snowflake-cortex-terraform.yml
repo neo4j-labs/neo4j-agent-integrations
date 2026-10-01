@@ -1,0 +1,37 @@
+name: Snowflake Cortex Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'snowflake-cortex/samples/1-terraform/**'
+      - 'snowflake-cortex/shared/**'
+      - '.github/workflows/snowflake-cortex-terraform.yml'
+  pull_request:
+    paths:
+      - 'snowflake-cortex/samples/1-terraform/**'
+      - 'snowflake-cortex/shared/**'
+      - '.github/workflows/snowflake-cortex-terraform.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # Needs no Snowflake credentials.
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: snowflake-cortex/samples/1-terraform
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+
+      - name: Format
+        run: terraform fmt -check
+
+      - name: Validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
