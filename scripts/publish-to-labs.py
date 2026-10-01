@@ -318,6 +318,24 @@ def convert_md_to_adoc(md_text, entry, folder='', path_xref=None):
             i += 1
             continue
 
+        # ── Markdown video thumbnail link → AsciiDoc image macro ────────────
+        # "[![alt](thumb.jpg)](url)" (the GitHub-friendly YouTube embed) is
+        # neither a plain link nor an <img> tag, so without this rule it passes
+        # through as invalid adoc. Convert to an image macro with link= so the
+        # thumbnail stays clickable on the published page.
+        video_link = re.match(
+            r'^\s*\[\s*!\s*\[([^\]]*)\]\s*\(([^)]+)\)\s*\]\s*\(([^)]+)\)\s*$',
+            line)
+        if video_link:
+            alt, thumb, url = video_link.groups()
+            if in_table:
+                flush_table()
+            out.append(
+                f'image::{_image_target(thumb)}[{alt or "Watch the video"},link={url}]')
+            out.append('')
+            i += 1
+            continue
+
         # ── Standalone <img> tag → AsciiDoc image macro ──────────────────────
         # Raw HTML passthrough would keep a relative src (e.g. "images/x.png"),
         # which resolves against the page URL instead of Antora's imagesdir and
