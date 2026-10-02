@@ -80,14 +80,7 @@ CREATE EXTERNAL MCP SERVER NEO4J_MCP.PUBLIC.NEO4J_AURA_MCP
 ```
 <!-- /code -->
 
-Agent Studio and CoWork show the server under its display name. Roles other than `ACCOUNTADMIN` need both objects:
-
-<!-- code: GRANT_SQL -->
-```sql
-GRANT USAGE ON INTEGRATION NEO4J_AURA_MCP_INTEGRATION TO ROLE <ROLE>;
-GRANT USAGE ON EXTERNAL MCP SERVER NEO4J_MCP.PUBLIC.NEO4J_AURA_MCP TO ROLE <ROLE>;
-```
-<!-- /code -->
+Agent Studio and CoWork show the server under its display name.
 
 ## 5. Agent
 
@@ -104,6 +97,19 @@ Or use SQL:
 ```sql
 ALTER AGENT NEO4J_MCP.PUBLIC.NEO4J_MOVIES_AGENT ADD MCP_SERVER = 'NEO4J_MCP.PUBLIC.NEO4J_AURA_MCP';
 ```
+
+Roles other than `ACCOUNTADMIN` need these grants to use the agent. Each user of such a role still connects the server once, see [6. Connect](#6-connect).
+
+<!-- code: GRANT_SQL -->
+```sql
+GRANT USAGE ON DATABASE NEO4J_MCP TO ROLE <ROLE>;
+GRANT USAGE ON SCHEMA NEO4J_MCP.PUBLIC TO ROLE <ROLE>;
+GRANT USAGE ON WAREHOUSE <WAREHOUSE> TO ROLE <ROLE>;
+GRANT USAGE ON AGENT NEO4J_MCP.PUBLIC.NEO4J_MOVIES_AGENT TO ROLE <ROLE>;
+GRANT USAGE ON EXTERNAL MCP SERVER NEO4J_MCP.PUBLIC.NEO4J_AURA_MCP TO ROLE <ROLE>;
+GRANT USAGE ON INTEGRATION NEO4J_AURA_MCP_INTEGRATION TO ROLE <ROLE>;
+```
+<!-- /code -->
 
 ## 6. Connect
 
@@ -154,7 +160,7 @@ The Cypher can differ from run to run, but the answer should stay the same.
 | --- | --- |
 | The agent asks you to authenticate the connector | The server is not connected for your user. See [6. Connect](#6-connect). |
 | `Insufficient privileges to operate on schema` on `CREATE EXTERNAL MCP SERVER` | Your role lacks `CREATE EXTERNAL MCP SERVER` on the schema, for example because another role owns it. Grant it, or use your own database as in [2. Database](#2-database). |
-| The MCP server is missing from the agent's **MCP** list | Your role lacks `USAGE` on the MCP server or the integration. See [4. MCP server](#4-mcp-server). |
+| The agent or the MCP server is missing for a role | The role lacks one of the grants. See [5. Agent](#5-agent). |
 
 ## Clean up
 
