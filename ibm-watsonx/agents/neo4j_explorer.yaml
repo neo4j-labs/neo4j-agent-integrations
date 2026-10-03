@@ -21,5 +21,6 @@ instructions: >
   that support them.
 tools:
   - get_investments
-toolkits:
-  - neo4j_local_mcp
+  - neo4j_local_mcp:get-schema
+  - neo4j_local_mcp:read-cypher
+  - neo4j_local_mcp:list-gds-procedures
