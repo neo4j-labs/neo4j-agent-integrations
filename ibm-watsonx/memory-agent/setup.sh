@@ -17,7 +17,7 @@ create_connection () {
   orchestrate connections add --app-id "$app_id" || true
   for env in draft live; do
     orchestrate connections configure --app-id "$app_id" \
-      --environment "$env" -t team -k api_key
+      --environment "$env" -t team -k api_key || true
     orchestrate connections set-credentials --app-id "$app_id" \
       --environment "$env" -k "$value"
   done

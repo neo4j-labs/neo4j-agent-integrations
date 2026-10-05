@@ -290,6 +290,10 @@ integrations:
         slug: snowflake-cortex-snowsight
         title: "Snowflake Cortex - Snowsight"
         nav_label: "Snowsight"
+      - src: samples/3-aura-mcp/README.md
+        slug: snowflake-cortex-aura-mcp
+        title: "Snowflake Cortex - Aura MCP"
+        nav_label: "Aura MCP"
 
   - folder: n8n
     slug: n8n

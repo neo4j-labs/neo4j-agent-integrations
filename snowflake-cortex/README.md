@@ -75,7 +75,7 @@ The tool passes only `cypher`, so the agent writes all values into the query. Cu
 
 - Cortex Agents can call external MCP servers through [MCP connectors](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp-connectors). These connectors support only OAuth.
 - The self-hosted [Neo4j MCP server](https://github.com/neo4j/mcp) has no OAuth, so it does not work with them. The public demo graph is also not on Aura.
-- The [Aura-hosted MCP](https://neo4j.com/docs/mcp/current/mcp-for-aura/) and [Aura Agent](https://neo4j.com/docs/aura/aura-agent/) MCP endpoints support OAuth, so they should work with MCP connectors.
+- The [Aura-hosted MCP](https://neo4j.com/docs/mcp/current/mcp-for-aura/) supports OAuth and works with MCP connectors. [Sample 3](samples/3-aura-mcp/README.md) connects an agent to it. Every user signs in with their own Aura account.
 
 ## Samples
 
@@ -83,8 +83,9 @@ The tool passes only `cypher`, so the agent writes all values into the query. Cu
 | --- | --- |
 | [1-terraform](samples/1-terraform/README.md) | Creates the whole stack with Terraform. |
 | [2-snowsight](samples/2-snowsight/README.md) | Builds the same stack by hand in Snowsight. |
+| [3-aura-mcp](samples/3-aura-mcp/README.md) | Connects an agent to the Aura-hosted MCP server, without UDFs. |
 
-Both samples use the same Python handlers, SQL bodies and agent tools from [`shared/`](shared).
+Samples 1 and 2 use the same Python handlers, SQL bodies and agent tools from [`shared/`](shared).
 
 You can also watch Sample 2 step by step [on YouTube](https://youtu.be/5w1wxf3WfYQ).
 
@@ -94,14 +95,15 @@ You can also watch Sample 2 step by step [on YouTube](https://youtu.be/5w1wxf3Wf
 
 ```
 snowflake-cortex/
-├── shared/                  # used by all samples
+├── shared/                  # used by samples 1 and 2
 │   ├── functions/           # Python UDF handlers
 │   ├── sql/                 # SQL function bodies, accounts view, semantic view
 │   ├── agent/               # agent spec template
 │   └── model/minilm/        # all-MiniLM-L6-v2 files (downloaded, gitignored)
 └── samples/
     ├── 1-terraform/         # Terraform config, bootstrap SQL
-    └── 2-snowsight/         # Snowsight guide, screenshots
+    ├── 2-snowsight/         # Snowsight guide, screenshots
+    └── 3-aura-mcp/          # Aura MCP guide, screenshots
 ```
 
 ## Running the agent
