@@ -1,4 +1,4 @@
-import {test} from '@playwright/test'
+import {test} from '../../tools/screencast/test.ts'
 import {setupRecast} from 'playwright-recast'
 import {blurText} from '../../tools/screencast/blur.ts'
 import path from 'node:path'

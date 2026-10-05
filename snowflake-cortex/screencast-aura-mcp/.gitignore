@@ -1,0 +1,6 @@
+.recast-cache
+/.recast-tmp/
+playwright-output
+screencast-output
+.aura-state.json
+*.log

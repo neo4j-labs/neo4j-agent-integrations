@@ -5,9 +5,19 @@ import {click, pace} from 'playwright-recast'
 import {zoomOnList} from '../../../tools/screencast/narration.ts'
 import {DATABASE, SCHEMA} from '../stack.ts'
 
+/**
+ * A group of the left nav, e.g. 'AI & ML'. Snowsight renders it as a named
+ * `navigation` region or, in newer builds, as a plain link.
+ */
+export function navGroup(page: Page, group: string): Locator {
+    return page.getByRole('navigation', {name: group})
+        .or(page.getByRole('navigation', {name: 'Site'}).getByRole('link', {name: group, exact: true}))
+        .first()
+}
+
 // The left nav opens a flyout on hover whose entries are `option`s, not links.
 export async function openNavItem(page: Page, group: string, item: string | RegExp) {
-    await page.getByRole('navigation', {name: group}).hover()
+    await navGroup(page, group).hover()
     await click(page.getByRole('option', {name: item}))
 }
 
@@ -46,12 +56,12 @@ export async function accountMenuUser(page: Page): Promise<string> {
 
 // Two cascading "Suggestions" listboxes, databases then schemas. The schema
 // name appears in BOTH, so the schema click is scoped to the second.
-export async function pickDatabaseAndSchema(page: Page) {
+export async function pickDatabaseAndSchema(page: Page, database = DATABASE, schema = SCHEMA) {
     const picker = page.getByRole('dialog', {name: /Database schema filter|filter|Location/}).first()
     const databases = picker.getByRole('listbox', {name: 'Suggestions'}).first()
     const schemas = picker.getByRole('listbox', {name: 'Suggestions'}).nth(1)
-    await click(databases.getByRole('option', {name: DATABASE, exact: true}))
-    await click(schemas.getByRole('option', {name: SCHEMA, exact: true}))
+    await click(databases.getByRole('option', {name: database, exact: true}))
+    await click(schemas.getByRole('option', {name: schema, exact: true}))
     await pace(page, 600)
     // Some dialogs leave the picker open, where it swallows the next keystrokes;
     // Escape on a closed picker would close the dialog behind it.

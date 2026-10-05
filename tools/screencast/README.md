@@ -6,7 +6,8 @@ The kit exists only on the `screencasts` branch. See [Branch workflow](#branch-w
 
 | File | What it provides |
 | --- | --- |
-| `config.ts` | `screencastConfig()` returns the Playwright config: viewport, recording scale, trace, `.env` and `HEADLESS=0`. |
+| `config.ts` | `screencastConfig()` returns the Playwright config: viewport, recording scale, trace, video, `.env` and `HEADLESS=0`. |
+| `test.ts` | `test`, Playwright's with playwright-recast's `recastPageVideos` fixture: it records which page each video belongs to, so popups and other tabs reach the video. Specs import it instead of `@playwright/test`'s. |
 | `render.ts` | `renderScreencasts()` renders the narrated video. |
 | `blur.ts` | `blurText()` blurs matching text in the page. You can add patterns at any time, for example after sign-in. |
 | `screenshot.ts` | `createGuideShots()` takes screenshots for a guide, cropped to an element. |
@@ -58,6 +59,7 @@ Do not run other tests in the same directory. Playwright empties `playwright-out
 | `clickSound` | `true`, which is playwright-recast's click. Pass a sound file, or `false` for no sound. |
 | `clickVolume` | `0.2`, a quarter of playwright-recast's default. |
 | `textRules` | Extra rules for the spoken text. |
+| `urlBar` | playwright-recast's URL pill, e.g. `{show: 'host-change', redact: [...]}`. Without it, the pill shows only at `showUrl()` markers. |
 
 CI (`.github/workflows/screencasts.yml`) runs the `typecheck` script of each workspace. It also runs `readme:check` where a workspace defines it.
 

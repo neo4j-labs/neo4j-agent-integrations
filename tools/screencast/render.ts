@@ -1,7 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
-import {QwenTtsProvider, Recast} from 'playwright-recast'
+import {QwenTtsProvider, Recast, type UrlBarConfig} from 'playwright-recast'
 
 type TextRule = {pattern: string, flags?: string, replacement: string}
 
@@ -14,6 +14,8 @@ export interface RenderOptions {
     clickSound?: string | boolean
     /** Click sound volume, 0.0-1.0. Default: 0.2, a quarter of playwright-recast's */
     clickVolume?: number
+    /** URL pill, e.g. on host changes. Default: only at showUrl() markers, so none without them */
+    urlBar?: UrlBarConfig
 }
 
 const DEFAULT_VOICE = {
@@ -65,6 +67,7 @@ export async function renderScreencasts(options: RenderOptions = {}) {
                     ...options.textRules ?? [],
                 ],
             })
+            .urlBar(options.urlBar ?? {show: 'marked'})
             .render({
                 format: 'mp4',
                 resolution: '1440p',

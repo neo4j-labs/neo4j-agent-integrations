@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",
-    "playwright-recast": "^0.22.0"
+    "playwright-recast": "^0.23.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

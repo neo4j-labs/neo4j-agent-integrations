@@ -1,7 +1,7 @@
 // Off camera: sign in, clear one-time announcements, drop a previous run's objects.
 import {generateSync as generateTotp} from 'otplib'
 import {pace} from 'playwright-recast'
-import {accountMenuUser} from '../snowsight/catalog.ts'
+import {accountMenuUser, navGroup} from '../snowsight/catalog.ts'
 import {fillEditor, fitResultsPane, openOrCreateWorksheet} from '../snowsight/workspace.ts'
 import {dismissPopups} from '../snowsight/popups.ts'
 import {CLEANUP_STATEMENTS, WORKSHEET_NAME} from '../stack.ts'
@@ -26,7 +26,8 @@ export async function login(ctx: Ctx) {
         await page.getByTestId('input').first().fill(generateTotp({secret: env('SNOWFLAKE_OTP_SECRET_KEY')}));
         await page.getByRole('button', {name: 'Continue'}).click();
         await page.getByRole('button', {name: 'Hide navigation'}).click();
-        await page.getByTestId('entry-dialog-close-button').click().catch(() => {/* dialog may not appear */
+        // Without a short timeout, a missing dialog costs the full action timeout.
+        await page.getByTestId('entry-dialog-close-button').click({timeout: 10_000}).catch(() => {/* dialog may not appear */
         });
     })
 }
@@ -37,14 +38,14 @@ export async function drainAnnouncements(ctx: Ctx) {
         // "What's new" bubbles show once per account, on a nav flyout's first
         // opening. Opening every flyout here gets them out of the way off camera.
         for (const group of ['Catalog', 'AI & ML', 'Governance & security', 'Projects', 'Admin']) {
-            await page.getByRole('navigation', {name: group}).hover().catch(() => {/* nav may be collapsed */})
+            await navGroup(page, group).hover({timeout: 5_000}).catch(() => {/* nav may be collapsed */})
             await page.waitForTimeout(1200)
             await dismissPopups(page)
         }
         await page.keyboard.press('Escape')
         // The "What's new" bubble leaves the Catalog flyout open after its
         // dismissal; only hovering Catalog again and leaving closes it.
-        await page.getByRole('navigation', {name: 'Catalog'}).hover().catch(() => {/* nav may be collapsed */})
+        await navGroup(page, 'Catalog').hover({timeout: 5_000}).catch(() => {/* nav may be collapsed */})
         await page.waitForTimeout(500)
         await page.mouse.move(960, 540, {steps: 10})
     })

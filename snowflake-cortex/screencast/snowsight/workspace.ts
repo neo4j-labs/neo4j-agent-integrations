@@ -19,13 +19,13 @@ export async function openOrCreateWorksheet(page: Page, ws: FrameLocator, name: 
     if (await existing.count() > 0) {
         await existing.first().click()
     } else {
-        // The new file's rename box has only the basename selected, so typing
-        // "showcase.sql" would produce "showcase.sql.sql".
+        // Typing raced the rename box's focus and went nowhere, so the box is
+        // filled directly, with the full name: fill() replaces its whole value.
         await ws.getByRole('button', {name: 'Add New Menu'}).click()
         await ws.getByRole('menuitem', {name: 'SQL file'}).click()
-        const basename = name.replace(/\.sql$/, '')
-        await page.keyboard.type(basename)
-        await page.keyboard.press('Enter')
+        const rename = ws.locator('input[value$=".sql"]').first()
+        await rename.fill(name, {timeout: 10_000})
+        await rename.press('Enter')
         await ws.getByRole('treeitem', {name}).first().waitFor({timeout: 10_000})
     }
 

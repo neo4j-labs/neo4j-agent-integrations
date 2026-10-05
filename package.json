@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "tools/screencast",
-    "snowflake-cortex/screencast"
+    "snowflake-cortex/screencast",
+    "snowflake-cortex/screencast-aura-mcp"
   ]
 }
