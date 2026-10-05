@@ -1,16 +1,10 @@
-// Off camera: drop a previous run's objects, sign in to CoWork.
+// Off camera: read the user's first name, sign in to CoWork. The cleanup is
+// sample 2's cleanup() with this screencast's worksheet and statements.
 import {test} from '@playwright/test'
 import {generateSync as generateTotp} from 'otplib'
 import {pace} from 'playwright-recast'
-import {fillEditor, fitResultsPane, openOrCreateWorksheet} from '../../screencast/snowsight/workspace.ts'
-import {CLEANUP_STATEMENTS, WORKSHEET_NAME} from '../stack.ts'
+import {env} from '../../screencast/steps/session.ts'
 import type {Ctx} from './context.ts'
-
-const env = (key: string): string => {
-    const val = process.env[key]
-    if (!val) throw new Error(`Environment variable ${key} not set (see .env.example)`)
-    return val
-}
 
 // The home page greets the user by first name, and CoWork shows the full name.
 // The account menu only has the username, so the name is read here.
@@ -18,18 +12,6 @@ export async function readFirstName(ctx: Ctx): Promise<string | undefined> {
     const greeting = await ctx.page.getByText(/^Hi \S+, how can I help/).first()
         .textContent({timeout: 15_000}).catch(() => null)
     return greeting?.match(/^Hi (\S+),/)?.[1]
-}
-
-export async function cleanup(ctx: Ctx) {
-    const {page, ws, editor, step, runStatement} = ctx
-    await step('hidden - cleanup', async () => {
-        await page.getByRole('link', {name: 'Projects', exact: true}).click()
-        await openOrCreateWorksheet(page, ws, WORKSHEET_NAME)
-        for (const statement of CLEANUP_STATEMENTS) await runStatement(statement)
-        await fillEditor(page, editor, ' ')
-        await fitResultsPane(page, ws)
-        await pace(page, 1200)
-    })
 }
 
 /** CoWork's URL for the account Snowsight is signed in to: app.snowflake.com/<org>/<account>/... */

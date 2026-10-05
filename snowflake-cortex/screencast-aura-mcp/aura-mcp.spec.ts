@@ -10,7 +10,8 @@ import {createWorkspace} from '../screencast/snowsight/workspace.ts'
 import * as session from '../screencast/steps/session.ts'
 import {AURA_STATE} from './aura-state.ts'
 import {GUIDE_IMAGES, type Ctx} from './steps/context.ts'
-import {cleanup, readFirstName} from './steps/session.ts'
+import {readFirstName} from './steps/session.ts'
+import {CLEANUP_STATEMENTS, WORKSHEET_NAME} from './stack.ts'
 import {findMcpUrl, intro} from './steps/aura.ts'
 import {createIntegration, createMcpServer} from './steps/snowflake.ts'
 import {createAgent, publishAgent} from './steps/agent.ts'
@@ -58,7 +59,7 @@ test('aura-mcp', async ({page}) => {
     ]
     blur.push(...names)
     await blurText(page, names)
-    await cleanup(ctx)
+    await session.cleanup(ctx, WORKSHEET_NAME, CLEANUP_STATEMENTS)
 
     await intro(ctx)
     await findMcpUrl(ctx)

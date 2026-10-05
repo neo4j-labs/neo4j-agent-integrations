@@ -7,9 +7,9 @@ import {dismissPopups} from '../snowsight/popups.ts'
 import {CLEANUP_STATEMENTS, WORKSHEET_NAME} from '../stack.ts'
 import type {Ctx} from './context.ts'
 
-const env = (key: string): string => {
+export const env = (key: string): string => {
     const val = process.env[key]
-    if (val === undefined) throw new Error(`Environment variable ${key} not set (see .env.example)`)
+    if (!val) throw new Error(`Environment variable ${key} not set (see .env.example)`)
     return val
 }
 
@@ -58,12 +58,13 @@ export async function readUser(ctx: Ctx) {
 }
 
 // Drops a previous run's objects, so every run starts from an empty account.
-export async function cleanup(ctx: Ctx) {
+// The defaults are this screencast's; the Aura MCP screencast passes its own.
+export async function cleanup(ctx: Ctx, worksheet = WORKSHEET_NAME, statements = CLEANUP_STATEMENTS) {
     const {page, ws, editor, step, runStatement} = ctx
     await step("hidden - cleanup", async () => {
         await page.getByRole('link', {name: 'Projects', exact: true}).click();
-        await openOrCreateWorksheet(page, ws, WORKSHEET_NAME);
-        for (const statement of CLEANUP_STATEMENTS) await runStatement(statement)
+        await openOrCreateWorksheet(page, ws, worksheet);
+        for (const statement of statements) await runStatement(statement)
         await fillEditor(page, editor, ' ');
         await fitResultsPane(page, ws)
         await pace(page, 1200)
