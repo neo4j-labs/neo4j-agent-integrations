@@ -25,10 +25,9 @@ custom-tool:
 agent:
 	./scripts/05_agent.sh
 
-all: env connections mcp-toolkit custom-tool
+all: env connections mcp-toolkit custom-tool agent
 	@echo ""
-	@echo "Setup complete. Create the agent in the console:"
-	@echo "  docs/console-agent-setup.md"
+	@echo "Setup complete. Open Agent Builder and chat with neo4j_explorer."
 
 verify:
 	orchestrate toolkits list

@@ -1,27 +1,10 @@
-/**
- * mcp.mjs — Neo4j MCP connection helper
- *
- * Mirrors `lib/neo4j-mcp.ts` in ../vercel_Nams_demo so the scripts and the
- * Next.js demo authenticate against the same servers with the same env vars.
- *
- * Auth precedence:
- *   MCP_BEARER_TOKEN                        → Authorization: Bearer   (OAuth 2.1
- *                                             servers — hosted Aura / NeoCompanion
- *                                             endpoints advertise `WWW-Authenticate: Bearer`)
- *   MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD → Authorization: Basic    (self-hosted
- *                                             mcp-neo4j-cypher behind a proxy)
- *
- * The Basic credentials fall back to NEO4J_USERNAME / NEO4J_PASSWORD, which the
- * direct-driver scripts already use, so a single-database .env keeps working.
- *
- * Endpoint: MCP_URL, or http://localhost:${MCP_PORT}/mcp when only MCP_PORT is set.
- */
+// Connects to a Neo4j MCP server. Same env vars as ../vercel_Nams_demo/lib/neo4j-mcp.ts.
+// Auth: MCP_BEARER_TOKEN, or MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD
+// (falling back to NEO4J_USERNAME / NEO4J_PASSWORD). The token wins if both are set.
+// URL: MCP_URL, or http://localhost:${MCP_PORT}/mcp.
 
 import { createMCPClient } from '@ai-sdk/mcp';
 
-/**
- * @returns {{ url: string, headers: Record<string,string>, authScheme: 'bearer' | 'basic' } | null}
- */
 export function getMcpConfig() {
   const port = process.env.MCP_PORT?.trim();
   const url  = process.env.MCP_URL?.trim() || (port ? `http://localhost:${port}/mcp` : '');
@@ -45,12 +28,7 @@ export function isMcpConfigured() {
   return getMcpConfig() !== null;
 }
 
-/**
- * Connects to the Neo4j MCP server and returns its tools.
- *
- * @returns {Promise<{ tools: Record<string, unknown>, close: () => Promise<void> } | null>}
- *          null when MCP is not configured.
- */
+/** Connects and returns the server's tools, or null when MCP is not configured. */
 export async function getMcpTools() {
   const config = getMcpConfig();
   if (!config) return null;
@@ -66,32 +44,17 @@ export async function getMcpTools() {
   const tools = await client.tools();
   console.log(`[neo4j-mcp] Connected (${config.authScheme} auth) — tools: ${Object.keys(tools).join(', ')}`);
 
-  return { tools, close: () => client.close() };
+  return { tools: guardTools(tools), close: () => client.close() };
 }
 
-/**
- * The McpConfig shape expected by `createNams().toolsWithMcp()`.
- * Use this in tools mode; use getMcpTools() everywhere else.
- *
- * @returns {{ url: string, headers: Record<string,string> } | undefined}
- */
+/** The same server, in the shape `createNams().toolsWithMcp()` takes. */
 export function getNamsMcpConfig() {
   const config = getMcpConfig();
   if (!config) return undefined;
   return { url: config.url, headers: config.headers };
 }
 
-/**
- * Turns an opaque MCP transport error into something actionable.
- *
- * `@ai-sdk/mcp` surfaces the failure as a bare message string ("MCP HTTP
- * Transport Error: POSTing to endpoint (HTTP 401):") with no status or headers
- * attached, so on a 401 we re-probe the endpoint to read its `WWW-Authenticate`
- * challenge and report the scheme mismatch outright.
- *
- * @param {unknown} err
- * @returns {Promise<string>}
- */
+/** Makes an MCP error readable. On a 401 it asks the server which auth it wants. */
 export async function explainMcpError(err) {
   const message = err instanceof Error ? err.message : String(err);
   const config = getMcpConfig();
@@ -112,4 +75,55 @@ export async function explainMcpError(err) {
     ? `${message} server requires ${wanted} auth, but the MCP_* env vars produced ${config.authScheme}. ` +
       `Challenge: ${challenge}`
     : `${message} ${challenge}`;
+}
+
+// A query with no LIMIT can return megabytes, and a heavy one can run for minutes.
+// Either one would fail the whole turn, so tool results are cut short in both cases.
+const MAX_TOOL_OUTPUT_CHARS = 50_000;
+const TOOL_TIMEOUT_MS = 30_000;
+
+function truncateText(text) {
+  if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text;
+  return text.slice(0, MAX_TOOL_OUTPUT_CHARS) +
+    `\n\n[…truncated: result was ${text.length.toLocaleString()} characters. ` +
+    'Add a LIMIT clause to your Cypher query, or ask a more specific question.]';
+}
+
+function capOutput(output) {
+  if (Array.isArray(output?.content)) {
+    return {
+      ...output,
+      content: output.content.map(item =>
+        item?.type === 'text' && typeof item.text === 'string' ? { ...item, text: truncateText(item.text) } : item),
+    };
+  }
+  return typeof output === 'string' ? truncateText(output) : output;
+}
+
+const timedOut = (name) => ({
+  isError: true,
+  content: [{
+    type: 'text',
+    text: `${name} took longer than ${TOOL_TIMEOUT_MS / 1000}s and was stopped. ` +
+      'Try a smaller query: fewer OPTIONAL MATCHes, count() instead of rows, and a LIMIT.',
+  }],
+});
+
+/** Wraps each tool so a slow call stops after 30s and a huge result is cut short. */
+export function guardTools(tools) {
+  return Object.fromEntries(Object.entries(tools).map(([name, t]) => {
+    if (typeof t?.execute !== 'function') return [name, t];
+    return [name, {
+      ...t,
+      execute: async (input, opts = {}) => {
+        let timer;
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(timedOut(name)), TOOL_TIMEOUT_MS); });
+        try {
+          return capOutput(await Promise.race([t.execute(input, opts), timeout]));
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    }];
+  }));
 }

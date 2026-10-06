@@ -1,103 +1,111 @@
-# Vercel AI SDK + Neo4j — Node.js Scripts
+# Vercel AI SDK + Neo4j — step-by-step scripts
 
-Step-by-step agent examples using the [Vercel AI SDK](https://sdk.vercel.ai) with Neo4j.
+Five small Node.js scripts. Each one adds a single idea, from a plain database query up to an agent that remembers you between runs.
 
-## Scripts
+| Script | What it shows |
+|---|---|
+| `0-direct-query.mjs` | Talk to Neo4j directly. No AI. A quick check that your database login works. |
+| `1-mcp-agent.mjs` | An AI agent that queries Neo4j through an MCP server. |
+| `2-custom-tools-agent.mjs` | The same agent plus your own hand-written Cypher tools. |
+| `3-memory-agent.mjs` | Memory done by hand: load memories before the answer, save the turn after. |
+| `4-nams-provider-agent.mjs` | Memory done by the `@neo4j-labs/nams-ai-provider` package, in any of its four modes. |
 
-| File | Description |
-|------|-------------|
-| `0-direct-query.mjs` | Direct Neo4j query — sanity check, no AI |
-| `1-mcp-agent.mjs` | MCP agent — connects to a Neo4j MCP server via `createMCPClient` |
-| `2-custom-tools-agent.mjs` | MCP + custom Cypher tools merged in one agent |
-| `3-memory-agent.mjs` | Memory with the low-level `@neo4j-labs/agent-memory` client — you write the before/after hooks |
-| `4-nams-provider-agent.mjs` | Memory with `@neo4j-labs/nams-ai-provider` — provider / middleware / tools modes, same as the Next.js demo |
-| `mcp.mjs` | Shared MCP connection + auth helper (mirrors the demo's `lib/neo4j-mcp.ts`) |
-| `prompts.mjs` | Shared system prompts (mirrors the demo's `lib/constants.ts`) |
-| `providers.mjs` | Shared LLM provider config (OpenAI / Gemini / Anthropic / Mistral) |
+Shared helpers: `mcp.mjs` (MCP connection), `prompts.mjs` (system prompts), `providers.mjs` (which AI model to use).
+
+---
 
 ## Setup
 
 ```bash
-cd notebook
-cp .env.example .env   # fill in OPENAI_API_KEY, NEO4J_*, MCP_*, and MEMORY_API_KEY
+cd vercel-agent/notebook
+cp .env.example .env   # fill in your keys
 npm install
 ```
 
-These scripts run **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`, `@ai-sdk/openai@^4`)
-with `@neo4j-labs/nams-ai-provider@^0.2`, the same set the
-[`vercel_Nams_demo/`](../vercel_Nams_demo/) app pins — both resolve to identical
-versions.
+A plain `npm install` works. If it ever fails with `ERESOLVE`, delete `node_modules/` and `package-lock.json` and install again.
 
-## Running
+---
+
+## Run
 
 ```bash
-node 0-direct-query.mjs             # verify Neo4j connection
-node 1-mcp-agent.mjs                # requires MCP_URL/MCP_PORT + MCP auth
+node 0-direct-query.mjs
+node 1-mcp-agent.mjs
 node 2-custom-tools-agent.mjs
-node 3-memory-agent.mjs             # requires MEMORY_API_KEY
-node 4-nams-provider-agent.mjs      # NAMS_MODE=provider (default)
+node 3-memory-agent.mjs
+node 4-nams-provider-agent.mjs                     # provider mode (default)
 
-NAMS_MODE=tools node 4-nams-provider-agent.mjs        # model-driven memory tools
-NAMS_MODE=middleware node 4-nams-provider-agent.mjs   # transparent memory on a model instance
+NAMS_MODE=middleware node 4-nams-provider-agent.mjs
+NAMS_MODE=tools      node 4-nams-provider-agent.mjs
+NAMS_MODE=hooks      node 4-nams-provider-agent.mjs
 ```
 
-## Environment Variables
+Script 4 asks two questions. The second one ("which company was I researching?") only works if memory recalled the first. Run it again and it still works, because the memory is stored in NAMS, not in the script.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_API_KEY` | ✅ | LLM API key (or the key matching `AI_PROVIDER`) |
-| `AI_PROVIDER` | optional | `openai` (default), `google`, `anthropic`, `mistral` |
-| `AI_MODEL` | optional | Overrides the provider default (`gpt-5.4-mini` for OpenAI) |
-| `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` / `NEO4J_DATABASE` | for scripts 0 & 2 | Direct driver connection |
-| `MCP_URL` | for scripts 1–4 | Hosted MCP endpoint (or use `MCP_PORT` for a local server) |
-| `MCP_PORT` | optional | Local `neo4j-mcp-server` port → `http://localhost:${MCP_PORT}/mcp` |
-| `MCP_BEARER_TOKEN` | one of these | MCP auth via `Authorization: Bearer` — takes precedence |
-| `MCP_NEO4J_USERNAME` / `MCP_NEO4J_PASSWORD` | one of these | MCP auth via `Authorization: Basic`; falls back to `NEO4J_USERNAME` / `NEO4J_PASSWORD` |
-| `MEMORY_API_KEY` | for scripts 3 & 4 | NAMS key from [memory.neo4jlabs.com](https://memory.neo4jlabs.com) |
-| `MEMORY_WORKSPACE_ID` | optional | Pin to a specific NAMS workspace; blank uses the key's default |
-| `MEMORY_ENDPOINT` | optional | Override the NAMS endpoint |
-| `DEMO_USER_ID` | optional | Memory scope — memories persist per user id across runs |
-| `NAMS_MODE` | optional | `provider` (default), `middleware`, or `tools` — script 4 only |
+---
 
-## MCP Authentication
+## The four memory modes (script 4)
 
-`mcp.mjs` picks the scheme from the env vars, exactly like the demo's
-`lib/neo4j-mcp.ts`:
+| `NAMS_MODE` | Who takes care of memory |
+|---|---|
+| `provider` (default) | A wrapper around the AI model adds memories before each answer and saves the turn after. |
+| `middleware` | The same wrapper, placed on a model you already have. |
+| `tools` | The model itself, by calling `query_memory` and `store_memory`. |
+| `hooks` | The script: it loads the saved conversation before each answer and saves every turn after. |
 
-| Server | Set |
-|--------|-----|
-| Hosted Aura / NeoCompanion (OAuth 2.1) | `MCP_BEARER_TOKEN` |
-| Self-hosted `mcp-neo4j-cypher` behind Basic auth | `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` |
+Any other value stops the script with an error.
 
-On a 401 the scripts re-probe the endpoint and report its `WWW-Authenticate`
-challenge, so a Basic/Bearer mismatch says so instead of surfacing a bare
-`MCP HTTP Transport Error`.
+In every mode the script loads the saved conversation first, like the Next.js demo. It builds its agent once and reuses it, so it passes each question through `prepareCall`:
 
-## NAMS Integration Modes (script 4)
+```js
+prepareCall: async ({ options, prompt: _p, messages: _m, ...settings }) => ({
+  ...settings,
+  messages: [...(await session.loadSession()), { role: 'user', content: options.prompt }],
+  runtimeContext: options,               // lets onFinish know what to save
+}),
+// hooks mode saves the whole turn; tools mode saves only the text; provider and middleware save it themselves
+onFinish: async (event) => { await session.onFinish()(event); },
 
-| `NAMS_MODE` | API | Behaviour |
-|-------------|-----|-----------|
-| `provider` (default) | `createNamsProvider({ baseProvider, scope }).languageModel(id)` | Memory retrieved and injected before each call, turn persisted after. No memory tools exposed to the model. |
-| `middleware` | `createNams(cfg).wrap(model, scope)` | Same transparent memory, applied to an already-resolved model instance. |
-| `tools` | `createNams(cfg).toolsWithMcp(scope, mcpConfig)` | `query_memory` / `store_memory` as tool calls, merged with MCP tools. `enforceQueryMemory()` guarantees the query runs before the answer. |
+await agent.generate({ prompt: question, options: { prompt: question } });
+```
 
-## LLM Providers
+---
 
-All scripts import from `providers.mjs` — `getModel()` for a model instance,
-`getProvider()` for the provider factory that NAMS provider mode needs. Switch
-providers via `AI_PROVIDER`:
+## Settings (`.env`)
 
-| Provider | `AI_PROVIDER` | API Key Variable |
-|----------|--------------|-----------------|
+| Variable | Needed for | What it does |
+|---|---|---|
+| `OPENAI_API_KEY` | all AI scripts | Your OpenAI key (or the key for `AI_PROVIDER`). |
+| `AI_PROVIDER` | optional | `openai` (default), `google`, `anthropic` or `mistral`. |
+| `AI_MODEL` | optional | Model to use. Default `gpt-5.4-mini` on OpenAI. |
+| `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | scripts 0 and 2 | Direct database login. |
+| `MCP_URL` or `MCP_PORT` | scripts 1–3, optional for 4 | Where the Neo4j MCP server is. |
+| `MCP_BEARER_TOKEN`, or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | with MCP | Login for the MCP server. A token wins if both are set. |
+| `MEMORY_API_KEY` | scripts 3 and 4 | Your NAMS key, free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com). |
+| `MEMORY_WORKSPACE_ID` | optional | Use a specific NAMS workspace. |
+| `DEMO_USER_ID` | optional | Whose memory to use. Same id = same memories across runs. |
+| `NAMS_MODE` | script 4 | `provider`, `middleware`, `tools` or `hooks`. |
+
+**MCP login:** hosted Aura / NeoCompanion servers want a token (`MCP_BEARER_TOKEN`). Self-hosted servers usually want a username and password. On a login error, the scripts tell you which kind the server asked for.
+
+---
+
+## Switching AI providers
+
+Set `AI_PROVIDER` and the matching key. No code changes needed.
+
+| Provider | `AI_PROVIDER` | Key |
+|---|---|---|
 | OpenAI (default) | `openai` | `OPENAI_API_KEY` |
 | Google Gemini | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
 | Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
 
-## Notes
+---
 
-- AI SDK v6 replaced `maxSteps` with `stopWhen: stepCountIs(N)` — all scripts use the new API. v7 renames it to `isStepCount` but keeps `stepCountIs` as a literal alias (same function object), so no change was needed
-- On AI SDK v7, `tool()` takes three type parameters (`tool<INPUT, OUTPUT, CONTEXT>`). These scripts are plain JS and pass no explicit generics, so inference from `inputSchema` still works. In TypeScript, an explicit two-argument `tool<In, Out>` now binds to the `tool<INPUT, CONTEXT>` overload and infers `OUTPUT = never` — it surfaces as `not assignable to type 'undefined'` on `execute`, not as an arity error. Add the third parameter or drop the generics
-- MCP uses `createMCPClient` from `@ai-sdk/mcp` (stable API, replaces `experimental_createMCPClient`)
-- `workspaceId` belongs on the `MemoryClient` config (sent as `X-Workspace-Id`), not on `createConversation()`, which only accepts `{ userId, metadata }`
-- Script 4 records each agent step via `client.reasoning.recordStep`, so past reasoning is recallable in later sessions — the same trace the demo's reasoning panel renders
+## Good to know
+
+- All scripts use AI SDK v7. Agent loops stop with `stopWhen: stepCountIs(N)`, which replaced the old `maxSteps`.
+- `workspaceId` goes on the `MemoryClient`, not on `createConversation()`.
+- Script 4 also saves each reasoning step, the same trace the Next.js demo shows in its side panel.
+- `mcp.mjs` stops any database call after 30 seconds and cuts results over 50,000 characters. The model is told to write a smaller query instead of the script hanging.

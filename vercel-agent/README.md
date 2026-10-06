@@ -2,7 +2,7 @@
 
 ## Overview
 
-**[Vercel AI SDK](https://sdk.vercel.ai)** is a TypeScript-first, provider-agnostic toolkit for building AI-powered applications and agents. It supports streaming, structured output, and multi-step agentic tool loops with a unified interface across OpenAI, Google Gemini, Anthropic, Mistral, and more.
+**[Vercel AI SDK](https://ai-sdk.dev)** is a TypeScript-first, provider-agnostic toolkit for building AI-powered applications and agents. It supports streaming, structured output, and multi-step agentic tool loops with a unified interface across OpenAI, Google Gemini, Anthropic, Mistral, and more.
 
 **Key Features:**
 - `generateText` / `streamText` for one-shot and streaming LLM calls
@@ -12,48 +12,75 @@
 - MCP client support via `@ai-sdk/mcp`
 
 **Official Resources:**
-- Website: [sdk.vercel.ai](https://sdk.vercel.ai)
-- Documentation: [sdk.vercel.ai/docs](https://sdk.vercel.ai/docs)
-- MCP client docs: [sdk.vercel.ai/docs/ai-sdk-core/mcp-clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
+- Website: [ai-sdk.dev](https://ai-sdk.dev)
+- Documentation: [ai-sdk.dev/docs](https://ai-sdk.dev/docs)
+- MCP client docs: [ai-sdk.dev/docs/ai-sdk-core/mcp-tools](https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools)
 
 ## Architecture
 
-**Before** (original — 3 extension points, AI SDK v5/v6):
+Four extension points on AI SDK v7, with NAMS as the memory backend:
 
 ![Architecture](https://mermaid.ink/img/Z3JhcGggVEQKICAgIFVzZXIoWyJOb3RlYm9vayAvIEFwcCJdKSAtLT4gZ2VuCgogICAgc3ViZ3JhcGggc2RrWyJWZXJjZWwgQUkgU0RLIl0KICAgICAgICBnZW5bImdlbmVyYXRlVGV4dCgpIl0KICAgIGVuZAoKICAgIGdlbiAtLT4gcDFbIjEuIE1DUCBBZ2VudApAYWktc2RrL21jcCJdCiAgICBnZW4gLS0-IHAyWyIyLiBDdXN0b20gVG9vbHMKdG9vbCgpICsgbmVvNGotZHJpdmVyIl0KICAgIGdlbiAtLT4gcDNbIjMuIE1lbW9yeSBBZ2VudApuZW80ai1kcml2ZXIiXQoKICAgIHAxIC0tPnxIVFRQIEJhc2ljIEF1dGh8IG1jcFsibmVvNGotbWNwLXNlcnZlciJdCiAgICBwMiAtLT4gZGJbKCJOZW80agpHcmFwaCBEQiIpXQogICAgcDMgLS0-IG1lbWRiWygiTmVvNGoKTWVtb3J5IERCIildCiAgICBtY3AgLS0-IGRi)
 
 **After** (current — 4 extension points, AI SDK v7, NAMS, demo app):
 
-![The vercel AI sdk with Nams](./asset/architecture.svg)
+![The Vercel AI SDK with NAMS](./asset/architecture.svg)
 
 
 ## Code Examples
 
-### Node.js Scripts — [`notebook/`](./notebook/)
+There are three projects here. They all use the same memory service, NAMS (Neo4j Agent Memory System).
 
-Step-by-step agent scripts that progress from a raw Neo4j query to NAMS-backed multi-session memory. All scripts target **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`).
+### A) Node.js scripts — [`notebook/`](./notebook/)
 
-| Script | Description |
-|--------|-------------|
-| `0-direct-query.mjs` | Direct Neo4j query — sanity check, no AI |
-| `1-mcp-agent.mjs` | MCP agent via `createMCPClient` (stable v7 API) |
-| `2-custom-tools-agent.mjs` | MCP + custom Cypher tools merged in one `generateText` call |
-| `3-memory-agent.mjs` | Memory using raw `@neo4j-labs/agent-memory` client (manual before/after hooks) |
-| `4-nams-provider-agent.mjs` | Memory via `@neo4j-labs/nams-ai-provider` — provider / middleware / tools modes |
+Five small scripts. Each adds one idea, from a plain database query up to an agent that remembers you between runs.
 
-See [`notebook/README.md`](./notebook/README.md) for full setup and env-var reference.
+| Script | What it shows |
+|--------|---------------|
+| `0-direct-query.mjs` | Talk to Neo4j directly, no AI |
+| `1-mcp-agent.mjs` | An AI agent that queries Neo4j through an MCP server |
+| `2-custom-tools-agent.mjs` | The same agent plus your own Cypher tools |
+| `3-memory-agent.mjs` | Memory done by hand: load before the answer, save after |
+| `4-nams-provider-agent.mjs` | Memory done by the `nams-ai-provider` package, in any of its four modes (`NAMS_MODE`) |
 
-### Next.js Chat App — [`vercel_Nams_demo/`](./vercel_Nams_demo/)
+Setup and settings: [`notebook/README.md`](./notebook/README.md).
 
-A production-ready Next.js 16 / React 19 chat application showing all three **NAMS** (Neo4j Agent Memory System) modes with a live reasoning-trace UI. Uses `ToolLoopAgent` from AI SDK v7, `@neo4j-labs/nams-ai-provider@^0.2`, and optionally Neo4j MCP for live graph queries.
+### B) Next.js chat app — [`vercel_Nams_demo/`](./vercel_Nams_demo/)
 
-| Mode (`NAMS_MODE`) | How memory is handled |
-|--------------------|----------------------|
-| `provider` (default) | `createNamsProvider()` wraps the provider — transparent middleware, no tool calls visible |
-| `middleware` | `createNams().wrap(model, scope)` — same behaviour applied to an already-resolved model |
-| `tools` | `createNams().toolsWithMcp()` — `query_memory` / `store_memory` driven by the model; `enforceQueryMemory()` guards the read |
+A chat app that remembers you after a page reload. It can switch between all four memory modes with `NAMS_MODE`:
 
-See [`vercel_Nams_demo/README.md`](./vercel_Nams_demo/README.md) for architecture, integration-mode deep-dives, and setup.
+| `NAMS_MODE` | Who takes care of memory |
+|-------------|--------------------------|
+| `provider` (default) | A wrapper around the AI model: adds memories before each answer, saves the turn after |
+| `middleware` | The same wrapper, placed on a model you already have |
+| `tools` | The model itself, by calling `query_memory` and `store_memory` |
+| `hooks` | The app's own code: loads the saved chat before each answer, saves every turn after |
+
+It can also query your Neo4j database through MCP. Setup: [`vercel_Nams_demo/README.md`](./vercel_Nams_demo/README.md).
+
+### C) Eve agent — [`vercel-eve/`](./vercel-eve/)
+
+A research agent built on [eve](https://vercel.com/docs/eve), Vercel's framework for backend agents. It answers questions about companies from a Neo4j graph and remembers each user between sessions. Before each turn it looks up what it knows about the user, and after each turn eve's own hooks save what was said.
+
+```bash
+cd vercel-eve/industry-research-agent
+npm install && cp .env.example .env    # add NAMS_API_KEY + OPENAI_API_KEY
+npm run chat                           # starts the local MCP server + a terminal chat
+```
+
+Setup and how it works: [`vercel-eve/README.md`](./vercel-eve/README.md).
+
+### eve Agent — [`vercel-eve/`](./vercel-eve/)
+
+Persistent, graph-backed memory for [eve](https://vercel.com/docs/eve), Vercel's open-source framework for durable backend agents. The working project, [`vercel-eve/industry-research-agent/`](./vercel-eve/industry-research-agent/), implements the repo's reference agent on eve: recall via dynamic instructions on `turn.started`, retention via hooks on `turn.completed`, three MCP servers mounted as read-only connections — Neo4j's hosted one, NAMS's own, and a local one you can edit in `mcp-server/` — and cross-session recall covered by an eval that discards the transcript between sessions.
+
+```bash
+cd vercel-eve/industry-research-agent
+npm install && cp .env.example .env    # add NAMS_API_KEY + OPENAI_API_KEY
+npm run chat                           # local MCP server + terminal chat UI
+```
+
+See [`vercel-eve/README.md`](./vercel-eve/README.md) for setup, how to add tools and MCP connections, authentication as the memory boundary, and the known NAMS limits.
 
 ## Extension Points
 
@@ -69,7 +96,8 @@ npm install @ai-sdk/mcp
 import { generateText, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 
-// Credentials passed per-request via Basic Auth header
+// Basic auth shown here. The notebook's mcp.mjs also supports a Bearer token
+// (MCP_BEARER_TOKEN) for OAuth 2.1 servers — see "MCP Authentication" below.
 const creds = Buffer.from(`${process.env.NEO4J_USERNAME}:${process.env.NEO4J_PASSWORD}`)
   .toString('base64');
 
@@ -94,10 +122,12 @@ const { text, steps } = await generateText({
 await mcpClient.close();
 ```
 
-**Example output:**
+**Example output** (`node 1-mcp-agent.mjs`; tool names depend on the MCP server):
 ```
-Connected to Neo4j MCP ✓
-Available tools: get-schema, list-gds-procedures, read-cypher, write-cypher
+LLM: openai / gpt-5.4-mini
+[neo4j-mcp] Connected (basic auth) — tools: get-schema, list-gds-procedures, read-cypher, write-cypher
+Agent:  neo4j_explorer
+Tools:  get-schema, list-gds-procedures, read-cypher, write-cypher
 
 Query: How many organizations are in the database?
 
@@ -174,195 +204,185 @@ Result: Google has made investments in several notable companies:
 
 ---
 
-### 3. Custom Tools / Persistent Memory
+### 3. Persistent Memory — `@neo4j-labs/agent-memory` client
 
-Memory is stored directly in Neo4j using `neo4j-driver` — no additional packages needed. The pattern wraps `generateText` with two hooks:
+Memory lives in [NAMS](https://memory.neo4jlabs.com), a hosted memory service backed by Neo4j, reached through the low-level `@neo4j-labs/agent-memory` client. You write the two hooks around `generateText` yourself:
 
-- **Before hook** (`injectMemoryContext`) — queries recent messages from Neo4j and injects them into the system prompt
-- **After hook** (`saveInteraction`) — saves the interaction as `(:MemoryMessage)` nodes for future recall
+- **Before hook** (`buildContext`) — reads the conversation's short-term context (reflections, recent messages) and searches long-term entities for the query, then injects both into the system prompt
+- **After hook** (`saveInteraction`) — saves the user and assistant messages to the conversation, and the answer as a long-term entity so it survives the session
 
-Memory schema:
-```
-(:MemorySession {id})-[:HAS_MESSAGE]->(:MemoryMessage {role, content, timestamp})
+```bash
+npm install @neo4j-labs/agent-memory
 ```
 
 ```js
-import neo4j from 'neo4j-driver';
+import { MemoryClient } from '@neo4j-labs/agent-memory';
 
-const memDriver = neo4j.driver(MEMORY_URI, neo4j.auth.basic(MEMORY_USER, MEMORY_PASS));
+const memoryClient = new MemoryClient({ apiKey: process.env.MEMORY_API_KEY });
+const { id: convId } = await memoryClient.shortTerm.createConversation({ userId: DEMO_USER_ID });
 
-async function getRecentMessages(limit = 10) {
-  const { records } = await memDriver.executeQuery(
-    `MATCH (s:MemorySession {id: $sessionId})-[:HAS_MESSAGE]->(m:MemoryMessage)
-     RETURN m.role AS role, m.content AS content
-     ORDER BY m.timestamp ASC LIMIT $limit`,
-    { sessionId: SESSION_ID, limit },
-    { database: MEMORY_DB }
-  );
-  return records.map(r => `${r.get('role').toUpperCase()}: ${r.get('content')}`);
+async function buildContext(query) {
+  const ctx      = await memoryClient.shortTerm.getContext(convId);
+  const entities = await memoryClient.longTerm.searchEntities(query, { limit: 5 });
+  // ...format ctx.reflections, ctx.recentMessages and entities into a MEMORY CONTEXT block
 }
 
 async function runWithMemory(query) {
-  // BEFORE: inject conversation history into system prompt
-  const history = await getRecentMessages();
-  const systemWithContext = history.length
-    ? `${SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n${history.join('\n')}\n----------------------------`
-    : SYSTEM_PROMPT;
-
   const { text } = await generateText({
     model,
-    system:   systemWithContext,
+    system:   await buildContext(query),   // BEFORE
     prompt:   query,
     tools:    mcpTools,
     stopWhen: stepCountIs(10),
   });
 
-  // AFTER: save interaction to memory graph
-  await memDriver.executeQuery(
-    `MERGE (s:MemorySession {id: $sessionId})
-     CREATE (m:MemoryMessage {role: $role, content: $content, timestamp: datetime()})
-     CREATE (s)-[:HAS_MESSAGE]->(m)`,
-    { sessionId: SESSION_ID, role: 'user', content: query },
-    { database: MEMORY_DB }
-  );
+  // AFTER
+  await memoryClient.shortTerm.addMessage(convId, 'user', query);
+  await memoryClient.shortTerm.addMessage(convId, 'assistant', text);
+  await memoryClient.longTerm.addEntity(`Research: ${query.slice(0, 60)}`, 'concept', {
+    description: text.slice(0, 500),
+  });
   return text;
 }
 ```
 
-**Example output (two-turn demo):**
+`workspaceId` goes on the `MemoryClient` config (sent as `X-Workspace-Id`), not on `createConversation()`.
+
+**Example output (two-turn demo; answers abridged):**
 ```
-[USER]: I am conducting a competitive analysis of 'Google'. I am specifically
-        worried about their subsidiaries and top-tier competitors in the AI space.
-[AGENT]: Understood. I've noted that we're tracking Google for competitive intelligence...
- [Hook] Saving interaction to Neo4j memory graph...
+Memory session: <conversation-id> (workspace: default)
 
---- Indexing memory (5s)... ---
+[USER]: I am conducting a competitive analysis of 'Google'. Tell me about their presence in the knowledge graph.
+[AGENT]: Google appears in the graph as...
+ [Memory] Interaction saved to NAMS ✓
 
-[USER]: What are the main risks in the supply chain for the company I am currently tracking?
- ↳ Injecting 1 memories into context.
-   Memory 1: Conducting competitive analysis of Google — focused on subsidiaries and AI competitors...
-[AGENT]: Based on our ongoing analysis of Google, the main supply chain risks include...
+[USER]: Based on our conversation, what subsidiaries of the company we discussed appear in the database?
+ ↳ Injecting 1 entity/entities from long-term memory.
+ ↳ Injecting context: 2 messages, 1 entities.
+[AGENT]: Based on our analysis of Google, the subsidiaries in the database include...
+ [Memory] Interaction saved to NAMS ✓
 ```
 
-**When to use:** Multi-session agents that need to remember past queries, user context, or analysis state. Particularly useful for research assistants and monitoring agents.
+**When to use:** When you want full control over what is read and written each turn. For the same memory without writing the hooks, use extension point 4.
 
 ---
 
 ### 4. NAMS Provider — `@neo4j-labs/nams-ai-provider`
 
-[NAMS](https://memory.neo4jlabs.com) is a hosted memory service backed by Neo4j. The `@neo4j-labs/nams-ai-provider` package wraps the Vercel AI SDK with persistent memory retrieval and storage — no self-managed Neo4j instance required for memory. It supports the same three modes as the demo:
+This package connects NAMS memory to the AI SDK for you, so you don't write the load-and-save code yourself. It has four modes. The only difference is **who decides when memory is read and saved**.
 
 ```bash
 npm install @neo4j-labs/nams-ai-provider
 ```
 
-**Provider mode (transparent — recommended starting point):**
+| Mode | Who reads and saves memory | Code |
+|------|----------------------------|------|
+| `provider` | A wrapper around every model call | `createNamsProvider({ baseProvider, scope }).languageModel(id)` |
+| `middleware` | The same wrapper, on a model you already have | `createNams(cfg).wrap(model, scope)` |
+| `tools` | The model, by calling `query_memory` / `store_memory` | `createNams(cfg).toolsWithMcp(scope, mcp?)` |
+| `hooks` | Your code: `loadSession()` before, `onFinish()` after | `createNams(cfg).hooks(scope)` |
+
+All four save to the same place, so you can switch modes without losing memory.
+
+**Provider mode** (the easiest place to start):
 
 ```js
 import { createNamsProvider } from '@neo4j-labs/nams-ai-provider';
 import { openai } from '@ai-sdk/openai';
-import { generateText, stepCountIs } from 'ai';
+import { generateText } from 'ai';
 
 const model = createNamsProvider({
   apiKey:       process.env.MEMORY_API_KEY,
   baseProvider: openai,
-  scope:        { userId: 'user-1', conversationId: 'session-1' },
+  scope:        { userId: 'user-1' },
 }).languageModel('gpt-5.4-mini');
 
-const { text } = await generateText({
-  model,
-  prompt:   'What were the Google supply-chain risks we discussed before?',
-  tools:    mcpTools,         // optional — add MCP or custom tools
-  stopWhen: stepCountIs(10),
-});
+const { text } = await generateText({ model, prompt: 'What did we discuss last time?' });
 ```
 
-Memory is retrieved and injected before each call and the turn is persisted after — no before/after hooks to write. The model sees memories as part of its system prompt context.
+**Middleware mode** does the same thing for a model you already have:
 
-**Tools mode (model-driven — visible reasoning trace):**
+```js
+const model = createNams({ apiKey }).wrap(openai('gpt-5.4-mini'), { userId: 'user-1' });
+```
+
+**Tools mode** lets the model decide, and you can see each memory call:
 
 ```js
 import { createNams, enforceQueryMemory } from '@neo4j-labs/nams-ai-provider';
-import { ToolLoopAgent, stepCountIs } from 'ai';   // ToolLoopAgent is v7+
+import { ToolLoopAgent, stepCountIs } from 'ai';
 
-const { tools, close } = await createNams({ apiKey: process.env.MEMORY_API_KEY })
-  .toolsWithMcp(
-    { userId: 'user-1', conversationId: 'session-1' },
-    mcpConfig,   // optional — merges MCP tools alongside query_memory / store_memory
-  );
+const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId: 'user-1' }, mcpConfig);
 
 const agent = new ToolLoopAgent({
   model:       openai('gpt-5.4-mini'),
   tools,
-  prepareStep: enforceQueryMemory({ graceSteps: 2 }),  // forces read if model skips it
+  prepareStep: enforceQueryMemory({ graceSteps: 2 }),   // make sure it reads memory first
   stopWhen:    stepCountIs(10),
   onFinish:    async () => { await close(); },
 });
-
-const result = await agent.run('Which companies did Google invest in?');
 ```
 
-`enforceQueryMemory` guarantees `query_memory` is called in the first steps. `ensureStored()` (used in the demo's `onFinish`) closes the write-side gap for models that answer without calling `store_memory`.
+A model can forget to *save*. The demo doesn't rely on it for the chat itself: it saves each turn's text in `onFinish` through a hooks session (`session.onFinish({ prompt })({ text })`).
 
-**Middleware mode:**
+**Hooks mode** keeps the model out of it. Your code loads the saved chat and saves every turn:
 
 ```js
-import { createNams } from '@neo4j-labs/nams-ai-provider';
+const session = createNams({ apiKey }).hooks({ userId: 'user-1' });
 
-const nams  = createNams({ apiKey: process.env.MEMORY_API_KEY });
-const model = nams.wrap(openai('gpt-5.4-mini'), { userId: 'user-1', conversationId: 'session-1' });
+const { text } = await generateText({
+  model:    openai('gpt-5.4-mini'),
+  messages: [...(await session.loadSession()), { role: 'user', content: prompt }],
+  onFinish: session.onFinish({ prompt }),
+});
 ```
 
-Identical to provider mode but applied to an already-resolved model instance — useful when the base model isn't always the same provider.
+Hooks mode saves the conversation only, not separate long-term facts. With package version 0.3.0 it only reloads the first 40 messages of a conversation. See the [demo README](./vercel_Nams_demo/README.md#known-limits-of-hosted-nams).
 
-**When to use:** Production agents that need cross-session memory without managing a dedicated Neo4j memory database. The demo ([`vercel_Nams_demo/`](./vercel_Nams_demo/)) is the reference client for all three modes; the notebook ([`notebook/4-nams-provider-agent.mjs`](./notebook/4-nams-provider-agent.mjs)) is the minimal script version.
+**Which mode?** Want it to just work: **provider**. Already have a model: **middleware**. Want to see memory calls: **tools**. Want every turn saved no matter what: **hooks**.
+
+The demo ([`vercel_Nams_demo/`](./vercel_Nams_demo/)) and the notebook ([`notebook/4-nams-provider-agent.mjs`](./notebook/4-nams-provider-agent.mjs)) both run all four modes.
 
 ---
 
 ## MCP Authentication
 
-**Supported Mechanisms:**
+MCP credentials go in the `headers` option of `createMCPClient` (HTTP transport). The notebook's [`notebook/mcp.mjs`](./notebook/mcp.mjs) and the demo's [`lib/neo4j-mcp.ts`](./vercel_Nams_demo/lib/neo4j-mcp.ts) pick the scheme from env vars:
 
-✅ **HTTP Headers (HTTP transport)** — Pass credentials via the `headers` parameter of `createMCPClient`. Used to authenticate per-request against `neo4j-mcp-server` running in HTTP mode.
+| Server | Env vars | Header sent |
+|--------|----------|-------------|
+| Hosted Aura / NeoCompanion (OAuth 2.1) | `MCP_BEARER_TOKEN` | `Authorization: Bearer …` — wins when both are set |
+| Self-hosted server behind Basic auth | `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | `Authorization: Basic …` |
+
+The endpoint is `MCP_URL`, or `http://localhost:${MCP_PORT}/mcp` when only `MCP_PORT` is set. In the notebook, the Basic pair falls back to `NEO4J_USERNAME` / `NEO4J_PASSWORD`.
 
 ```js
-const creds = Buffer.from(`${NEO4J_USERNAME}:${NEO4J_PASSWORD}`).toString('base64');
-
 const mcpClient = await createMCPClient({
   transport: {
     type:    'http',
-    url:     'http://localhost:8443/mcp',
-    headers: { Authorization: `Basic ${creds}` },
+    url:     process.env.MCP_URL,
+    headers: { Authorization: `Bearer ${process.env.MCP_BEARER_TOKEN}` },
   },
 });
 ```
 
-> **Important:** Do **not** export `NEO4J_USERNAME` / `NEO4J_PASSWORD` as environment variables when running `neo4j-mcp-server` in HTTP mode — the server will pick them up for its own connection and the per-request auth will not work correctly. Pass credentials only via the `Authorization` header inside your JS code.
+A 401 usually means the wrong scheme rather than wrong credentials. `explainMcpError()` in both helpers re-probes the endpoint and reports the server's `WWW-Authenticate` challenge.
+
+> **Running `neo4j-mcp-server` yourself in HTTP mode:** don't export `NEO4J_USERNAME` / `NEO4J_PASSWORD` into the *server's* environment — it will use them for its own connection and per-request auth won't work. Pass credentials only through the client's `Authorization` header.
 
 ## LLM Provider Configuration
 
-All three agent files import `getModel()` from [`providers.mjs`](providers.mjs), which selects the LLM based on the `AI_PROVIDER` environment variable. No code changes are needed to switch providers.
+The notebook scripts get their model from [`notebook/providers.mjs`](./notebook/providers.mjs): `getModel()` (scripts 1–3) or `getProvider()` (script 4, since NAMS provider mode wraps a provider, not a model). The provider is picked by the `AI_PROVIDER` environment variable, so switching needs no code changes. The Google, Anthropic and Mistral packages are `optionalDependencies`, so a normal `npm install` includes them.
 
-| Provider | `AI_PROVIDER` | API Key Variable | Extra install |
-|----------|--------------|-----------------|---------------|
-| **OpenAI** (default) | `openai` | `OPENAI_API_KEY` | — |
-| **Google Gemini** | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` | `npm install @ai-sdk/google` |
-| **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` | `npm install @ai-sdk/anthropic` |
-| **Mistral** | `mistral` | `MISTRAL_API_KEY` | `npm install @ai-sdk/mistral` |
+| Provider | `AI_PROVIDER` | API Key Variable |
+|----------|--------------|-----------------|
+| **OpenAI** (default) | `openai` | `OPENAI_API_KEY` |
+| **Google Gemini** | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` |
+| **Mistral** | `mistral` | `MISTRAL_API_KEY` |
 
-## AI SDK Version Notes (v6 vs v7)
+The Next.js demo is OpenAI-only (`OPENAI_MODEL`). The eve agent routes through Vercel AI Gateway or OpenAI directly (`AGENT_MODEL`, `MODEL_ROUTING`).
 
-The notebook and demo target **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`). The table below summarises every breaking or renamed API from v6.
-
-| Area | v6 | v7 |
-|------|----|----|
-| MCP client import | `experimental_createMCPClient` from `@ai-sdk/mcp@^1` | `createMCPClient` (stable) from `@ai-sdk/mcp@^2` |
-| Multi-step control | `stopWhen: stepCountIs(N)` (replaces removed `maxSteps`) | `stopWhen: stepCountIs(N)` still works — `stepCountIs` is a literal alias for the new `isStepCount` export |
-| Agentic loop class | Not available — use `generateText` with `stopWhen` | `ToolLoopAgent` class with `prepareStep`, `onFinish`, `onStepFinish` hooks |
-| `tool()` generics (TypeScript) | `tool<INPUT, OUTPUT>` | `tool<INPUT, OUTPUT, CONTEXT>` — a two-arg call now binds to `tool<INPUT, CONTEXT>` and infers `OUTPUT = never`, surfacing as a type error on `execute`. Add the third param or drop explicit generics |
-| `@ai-sdk/mcp` peer | `ai@^5` / `ai@^6` | `ai@^7` |
-
-> **Upgrading from v6 scripts:** replace `experimental_createMCPClient` with `createMCPClient` and bump `@ai-sdk/mcp` to `^2`. No other changes are needed for the patterns shown here.
 
 ## Challenges and Gaps
 
@@ -371,16 +391,18 @@ The notebook and demo target **AI SDK v7** (`ai@^7`, `@ai-sdk/mcp@^2`). The tabl
 | **JavaScript only** | The Vercel AI SDK has no Python support — all agent code runs in Node.js |
 | **`maxSteps` removed** | Silently removed in AI SDK v6 — passing it does nothing. Use `stopWhen: stepCountIs(N)` |
 | **MCP transport type** | `neo4j-mcp-server` HTTP mode requires `type: 'http'`, not `type: 'sse'` |
-| **Memory DB (manual)** | Extension Point 3 uses `neo4j-driver` directly — requires a separate writable Neo4j instance; Extension Point 4 (NAMS) removes this requirement |
+| **NAMS search is lexical** | Hosted NAMS matches keywords, not meaning — search with the user's own words, not a paraphrase |
+| **NAMS scoping** | Long-term entities belong to the workspace, not the user. Isolating users needs one NAMS workspace per user or tenant |
 | **Edge runtime** | Neo4j driver needs persistent TCP — incompatible with Vercel edge functions; use Node.js serverless runtime |
-| **NAMS `enforceQueryMemory`** | Only guards the read side — use `ensureStored()` in `onFinish` to guarantee write-back when the model skips `store_memory` |
+| **NAMS `enforceQueryMemory`** | Only guards the read side — save the turn yourself in `onFinish`, because the model can skip `store_memory` (the demo uses a hooks session's `onFinish`) |
 
 ## Resources
 
-- [Vercel AI SDK Documentation](https://sdk.vercel.ai/docs)
-- [Vercel AI SDK — Tool Use](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
-- [Vercel AI SDK — MCP Clients](https://sdk.vercel.ai/docs/ai-sdk-core/mcp-clients)
+- [Vercel AI SDK Documentation](https://ai-sdk.dev/docs)
+- [Vercel AI SDK — Tool Calling](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)
+- [Vercel AI SDK — MCP Tools](https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools)
 - [`@ai-sdk/mcp` on npm](https://www.npmjs.com/package/@ai-sdk/mcp)
-- [Neo4j Agent Memory (Python)](https://github.com/neo4j-labs/agent-memory)
-- [Neo4j MCP Server](https://github.com/neo4j-contrib/mcp-neo4j)
+- [Neo4j Agent Memory Service](https://memory.neo4jlabs.com)
+- [`@neo4j-labs/agent-memory`](https://www.npmjs.com/package/@neo4j-labs/agent-memory) and [`@neo4j-labs/nams-ai-provider`](https://www.npmjs.com/package/@neo4j-labs/nams-ai-provider) — source at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory)
+- [Neo4j MCP Server (official)](https://github.com/neo4j/mcp) · [`mcp-neo4j` (Neo4j Labs)](https://github.com/neo4j-contrib/mcp-neo4j)
 - [Neo4j JavaScript Driver Documentation](https://neo4j.com/docs/javascript-manual/current/)

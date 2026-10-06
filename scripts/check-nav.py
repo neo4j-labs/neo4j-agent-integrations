@@ -15,9 +15,17 @@ Errors (exit 1):
   N-01  nav xref with no generated page          -> breaks the Antora build
   N-02  landing-page xref with no generated page -> breaks the Antora build
   N-03  nav links a page marked ``thin: true``   -> flag and page disagree
+  N-05  image target with no copied file         -> broken image on the site
+  N-06  image target starting with './'          -> broken image on the site
 
 Warnings (exit 0):
   N-04  slug is generated but nothing links to it
+
+N-06 exists because Antora resolves a ``./``-prefixed target relative to the
+*page's own directory* inside the family. Every generated page lives in
+``pages/genai-frameworks/``, so ``image::./a/b.svg`` is looked up under
+``images/genai-frameworks/a/b.svg`` and silently renders as a dead relative
+URL. The plain form ``image::a/b.svg`` resolves against imagesdir correctly.
 
 Usage:
     check-nav.py --pages-dir <generated> [--nav-dir <labs-pages checkout>]
@@ -34,6 +42,7 @@ REPO_ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).parent.parent))
 SLUG_MAP = REPO_ROOT / "scripts" / "slug-map.yml"
 
 XREF_RE = re.compile(r'xref:genai-frameworks/([\w.-]+)\.adoc')
+IMAGE_RE = re.compile(r'^image::([^\[]+)\[', re.MULTILINE)
 LANDING_PAGES = ("agent-frameworks.adoc", "agent-platforms.adoc")
 
 # labs-pages is a separate repository -- locally usually a symlink or sibling
@@ -121,6 +130,24 @@ def main():
 
     for slug in sorted(nav_active & thin):
         errors.append(f"N-03  nav.adoc links '{slug}' but slug-map marks it thin: true")
+
+    # Image targets must exist in the images directory the converter filled,
+    # otherwise Antora emits the raw target and the image 404s on the site.
+    images_dir = pages_dir.parent.parent / "images"
+    for page in sorted(pages_dir.glob("*.adoc")):
+        for target in IMAGE_RE.findall(page.read_text()):
+            target = target.strip()
+            if re.match(r'^[a-zA-Z][\w+.-]*:', target):  # external URL
+                continue
+            if target.startswith('./'):
+                errors.append(
+                    f"N-06  {page.name} has image::{target} -- a leading './' is "
+                    f"resolved relative to the page directory and will 404")
+                continue
+            if not (images_dir / target).exists():
+                errors.append(
+                    f"N-05  {page.name} references image '{target}' "
+                    f"but no such file was copied into {images_dir.name}/")
 
     linked = nav_active | nav_commented | landing_active
     for slug in sorted(generated - linked):
