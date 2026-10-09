@@ -43,7 +43,7 @@ NAMS adds optional durable memory beyond the current run.
 
 ## Architecture at a Glance
 
-![CrewAI, Neo4j, MCP, and NAMS architecture](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-1.png)
+![CrewAI, Neo4j, MCP, and NAMS architecture](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/main/crewai/assets/diagram-1.png)
 
 The important routing decision is the MCP-first path. When
 `MCP_SERVER_COMMAND` is configured, the reusable crew uses discovered MCP
@@ -72,7 +72,7 @@ task boundaries constrain how the workflow obtains and uses data.
 The integration starts the official `neo4j-mcp-server` as a local stdio
 subprocess. No hosted MCP URL and no OAuth client are required.
 
-![Local MCP discovery and invocation sequence](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-2.png)
+![Local MCP discovery and invocation sequence](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/main/crewai/assets/diagram-2.png)
 
 [`agent/mcp.py`](agent/mcp.py) forwards the regular `NEO4J_*` settings to
 their `NEO4J_MCP_*` equivalents when explicit MCP values are absent. It also
@@ -88,7 +88,7 @@ tool without the required argument.
 
 The integration uses this selection rule:
 
-![MCP-first graph tool routing decision](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-3.png)
+![MCP-first graph tool routing decision](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/main/crewai/assets/diagram-3.png)
 
 This preserves a direct-driver fallback for environments that do not use MCP,
 while preferring the transport that has been validated for the configured
@@ -178,7 +178,7 @@ when the graph lacks the requested entity or relationship.
 
 `build_company_intelligence_crew()` creates a sequential three-agent crew.
 
-![Sequential multi-agent company briefing flow](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-4.png)
+![Sequential multi-agent company briefing flow](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/main/crewai/assets/diagram-4.png)
 
 1. The **Lead Knowledge Graph Researcher** retrieves company facts and relevant
    graph structure.
@@ -268,7 +268,7 @@ uv pip install --system-certs -r requirements.txt
 
 The design uses several layered controls:
 
-![Layered security and operational boundaries](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/agents/crewai-neo4j-integration/crewai/assets/diagram-5.png)
+![Layered security and operational boundaries](https://raw.githubusercontent.com/neo4j-labs/neo4j-agent-integrations/main/crewai/assets/diagram-5.png)
 
 - **No credentials in source or notebook outputs.** Credentials stay in the
   environment or ignored `.env` file.
@@ -324,3 +324,13 @@ rather than assumed labels, and treat memory writes as a deliberate
 knowledge-management operation. That combination turns an LLM from a
 free-form text generator into a graph-aware workflow that can explain what it
 knows, how it learned it, and where the graph does not yet provide evidence.
+
+## Resources
+
+- [CrewAI + Neo4j integration in this repository](https://github.com/neo4j-labs/neo4j-agent-integrations/tree/main/crewai)
+- [Neo4j Agent Integrations repository](https://github.com/neo4j-labs/neo4j-agent-integrations)
+- [Neo4j MCP Server](https://github.com/neo4j/mcp)
+- [Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/)
+- [CrewAI documentation](https://docs.crewai.com/)
+- [Model Context Protocol specification](https://modelcontextprotocol.io/)
+- [uv documentation](https://docs.astral.sh/uv/)
