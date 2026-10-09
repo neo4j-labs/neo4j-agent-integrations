@@ -23,7 +23,9 @@ The system utilizes [context.py](app/core/context.py) to maintain strict cryptog
 
 ## ✨ Core Features
 
-
+* **Dual-Mode Authentication (OIDC & A2A M2M):** 
+* **Interactive UI:** Uses Google Workspace OIDC (`authorization_code`) to verify human emails and enforce individual user token quotas in the Gemini Enterprise UI.
+* **Headless A2A Protocol:** Supports OAuth 2.0 `client_credentials` for direct Agent-to-Agent delegations, automatically attributing background execution tokens to the parent Order.
 **Federated Identity (OIDC):** Integrates directly with Google Workspace Identity. The agent uses a secure [Federated OAuth Flow](app/api/auth_routes.py) to verify the user's corporate email, ensuring token limits follow the individual across any Gemini app they use.  
 **True Multi-Tenancy:** Dynamically routes queries to isolated target Neo4j databases. The [TokenManager](app/services/token_manager.py) resolves the correct encrypted credentials for each specific Marketplace Order ID.  
 **Granular Token Economics:** Implements a dual-bucket tracking system. It monitors both **Daily Limits** (enforcing quotas) and **Lifetime Cumulative Usage** (for long-term analytics) at the individual user level.  
@@ -35,13 +37,14 @@ The system utilizes [context.py](app/core/context.py) to maintain strict cryptog
 
 ## 🏛️ Internal Tracking Graph (State Management)
 
-Because this is a multi-tenant application, it relies on its own internal Neo4j database to manage routing and state. The graph schema elegantly connects Marketplace procurement with human identities:  
+Because this is a multi-tenant application, it relies on its own internal Neo4j database to manage routing and state. The graph schema connects Marketplace procurement with identities:
 
 
-**`(:Order)`**: The master tenant node representing the corporate subscription. Holds the target database URI and encrypted password references.  
-**`(:User)`**: The human employee (identified by email). Linked to an Order. Tracks `tokens_used_today` and `total_tokens_used`.  
-**`(:OAuthClient)`**: The specific Gemini App installation. Links to the Order.  
-**`(:RefreshToken)`**: Tied specifically to the User and the Client, ensuring identity persists securely across token refreshes.  
+**`(:ProcurementAccount)`**: The master Google Cloud Billing account node representing the purchasing organization. Linked to one or more Orders via `HAS_SUBSCRIPTION`.
+**`(:Order)`**: Represents a specific Marketplace Entitlement/Subscription. Holds the target Neo4j URI and Secret Manager password references.
+**`(:User)`**: The human employee (identified by email) or synthetic service account. Linked to an Order via `HAS_USER`. Tracks `tokens_used_today` and `total_tokens_used`.
+**`(:OAuthClient)`**: The specific Gemini App or A2A client installation. Linked to the Order via `HAS_CLIENT`.
+**`(:RefreshToken)`**: Bound to the User and OAuthClient for session persistence across token renewals.  
 
 
 ---
@@ -62,8 +65,8 @@ To automate provisioning, the application processes real-time events via a [Pub/
 ## 🔄 Lifecycle Breakdown
 
 
-**Purchase:** A customer subscribes on the Marketplace. Pub/Sub triggers [marketplace.py](app/api/marketplace.py) to initialize the tenant's profile.  
-**Configuration:** The IT Admin visits the `/setup` portal. Credentials for the target Neo4j instance are encrypted and stored in **Google Secret Manager** via the [TokenManager's secure vault logic](app/services/token_manager.py).  
+**Purchase & Ingestion:** A customer subscribes on Google Cloud Marketplace. Pub/Sub pushes lifecycle events (`ACCOUNT_ACTIVE`, `ENTITLEMENT_CREATION_REQUESTED`) to `marketplace.py`, which records the pending tenant graph asynchronously and acknowledges immediately (`200 OK`) to avoid delivery loops.
+**Configuration & Procurement Approval:** The IT Admin completes the `/setup` portal. Credentials are stored securely in Google Secret Manager, and the service executes deferred Google Procurement API approvals (`approve_marketplace_account` and `approve_marketplace_entitlement`) in background worker threads to activate billing. 
 **Registration:** Gemini calls the `/dcr` endpoint in [auth_routes.py](app/api/auth_routes.py) to generate unique credentials for a specific agent installation.  
 **Authorization (Federated):** When a user chats, the [authorize_handler](app/api/auth_routes.py) redirects them to a native Google Login. Once verified, the user's email is cryptographically bound to an internal JWT.  
 **Execution:** The [OAuthValidationMiddleware](app/api/middleware.py) extracts the identity. The [Neo4jADKExecutor](app/services/agent_executor.py) then loads the specific tenant tools and executes the query against the graph.  

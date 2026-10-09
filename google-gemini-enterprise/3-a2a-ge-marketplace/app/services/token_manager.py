@@ -309,7 +309,57 @@ class TokenManager:
         except Exception as e:
             logging.error(f"Failed to retrieve target DB credentials for {order_id}: {e}")
             return None
-        
+    
+    def get_account_id(self, order_id: str) -> str:
+        """Retrieves the Procurement Account ID linked to a specific Order/Entitlement."""
+        query = """
+        MATCH (a:ProcurementAccount)-[:HAS_SUBSCRIPTION]->(o:Order {id: $order_id})
+        RETURN a.id AS account_id
+        """
+        try:
+            records, _, _ = self.driver.execute_query(query, order_id=order_id)
+            if records:
+                return records[0]["account_id"]
+        except Exception as e:
+            logging.error(f"[token_manager] Failed to get account ID for order {order_id}: {e}")
+        return None
+
+    def get_entitlement_id(self, order_id: str) -> str:
+        """
+        Retrieves the Entitlement ID. 
+        Based on the graph schema, the internal Order ID *is* the Entitlement ID.
+        """
+        # We return it directly, but encapsulating it here keeps the handler logic clean
+        return order_id
+
+    def verify_client_credentials(self, client_id: str, client_secret: str) -> str:
+        """
+        Verifies machine-to-machine (A2A) client credentials.
+        Returns the associated order_id if valid, else None.
+        """
+        hashed_secret = self.hash_secret(client_secret)
+        query = """
+        MATCH (c:OAuthClient {client_id: $client_id, client_secret_hash: $hashed_secret})
+        RETURN c.order_id AS order_id
+        """
+        try:
+            records, _, _ = self.driver.execute_query(query, client_id=client_id, hashed_secret=hashed_secret)
+            if records:
+                return records[0]["order_id"]
+        except Exception as e:
+            logging.error(f"[token_manager] Failed to verify client credentials for {client_id}: {e}")
+        return None
+
+    def generate_internal_jwt(self, client_id: str, user_email: str, order_id: str) -> str:
+        """Generates a scoped JWT for internal A2A or authorized requests."""
+        payload = {
+            "sub": client_id,
+            "order_id": order_id,
+            "email": user_email,
+            "exp": time.time() + 3600
+        }
+        return jwt.encode(payload, INTERNAL_SECRET_KEY, algorithm="HS256")
+    
     @staticmethod
     def verify_access_token(token: str) -> dict:
         """Validate incoming A2A requests."""
