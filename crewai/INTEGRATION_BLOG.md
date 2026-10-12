@@ -23,6 +23,32 @@ Both use `gpt-5.4-mini` by default and have the same core principles:
 schema-aware querying, read-only graph access, explicit memory behavior, and
 evidence-based answers.
 
+## The Use Case: Evidence-Based Company Intelligence
+
+Consider an analyst preparing a briefing on a company: its industry, related
+organizations, recent news, investments, and the graph evidence behind each
+claim. A general-purpose LLM can write a polished response, but it cannot
+reliably identify the records that support a statement or recognize when the
+requested data is absent.
+
+This integration addresses that gap with a company-intelligence workflow:
+
+1. Discover the actual Neo4j schema instead of assuming a fixed data model.
+2. Retrieve company facts and relationships through the local Neo4j MCP
+   server.
+3. Pass the retrieved evidence through specialist research, analysis, and
+   writing agents.
+4. Produce a concise briefing that distinguishes graph-supported findings
+   from missing or unavailable evidence.
+5. Optionally save verified facts and user preferences with Neo4j Agent
+   Memory.
+
+Company intelligence is the walkthrough's concrete example, not a requirement
+of the architecture. The same grounded-agent pattern applies to customer
+support, fraud investigation, knowledge management, research, supply-chain
+analysis, and compliance: domains where an answer must be traceable to
+connected data.
+
 ## The Problem: Why an Agent Needs More Than a Database Connection
 
 A graph database is useful to an agent only when the agent can safely answer
