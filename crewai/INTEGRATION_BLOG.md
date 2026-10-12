@@ -154,6 +154,24 @@ These tools are useful when the database is a Companies/News graph and direct
 Neo4j routing is supported. They are fallback tools when local MCP is not
 configured.
 
+#### How `run_cypher_query` differs from MCP `read-cypher`
+
+Both tools can retrieve data with Cypher, but they use different integration
+boundaries:
+
+| Aspect | `run_cypher_query` | MCP `read-cypher` |
+| --- | --- | --- |
+| Owner | An application-defined CrewAI tool in [`agent/tools.py`](agent/tools.py). | A capability provided by the official Neo4j MCP server. |
+| Connection path | The application calls the Neo4j Python driver directly. | CrewAI calls the local MCP server over stdio; the server calls Neo4j. |
+| Input contract | A fixed `query` argument defined by this project. | A typed input schema discovered from the running MCP server. |
+| Read-only control | The application rejects common write keywords before executing the query. | The MCP server is configured with `NEO4J_MCP_READ_ONLY=true`, so the server enforces its read-only policy. |
+| When used | Fallback when local MCP is not configured and direct driver routing is supported. | Preferred when `MCP_SERVER_COMMAND` is configured, including supported Aura Graph Analytics deployments. |
+
+They are alternative execution paths, not wrappers around one another. The MCP
+path centralizes Neo4j tool behavior in the official server and exposes its
+available tools dynamically. The direct path keeps the walkthrough usable in
+environments that intentionally do not run a local MCP server.
+
 ### 3. Shared custom tools
 
 [`agent/custom_tools.py`](agent/custom_tools.py) adapts the reusable
