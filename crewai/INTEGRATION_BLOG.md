@@ -166,12 +166,23 @@ different input shapes. The wrapper validates that the value is a JSON object,
 then forwards it to the selected async function.
 
 These tools are intentionally schema-specific. A response with no results can
-be correct if the configured graph is a NAMS graph rather than the Companies
-/ News graph they expect.
+be correct, not an error. It happens when the requested company or
+relationship is absent, or when the configured graph has a different domain
+model--for example, a NAMS graph instead of the Companies/News graph expected
+by these tools. Start with `get-schema` and use `read-cypher` for an unfamiliar
+graph; use the custom tools only after confirming that its labels and
+relationships match their expected schema.
 
 ### 4. NAMS memory tools
 
-NAMS is optional. When configured, [`agent/memory.py`](agent/memory.py) adds:
+[Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/) (NAMS) provides a
+separate memory layer for retaining useful context across sessions and crew
+runs. It is optional: graph retrieval remains grounded in Neo4j whether or
+not memory is configured. When enabled, it lets the crew recall prior
+graph-supported facts and explicit user preferences rather than treating every
+request as an entirely new conversation.
+
+When configured, [`agent/memory.py`](agent/memory.py) adds:
 
 | Tool | Purpose |
 | --- | --- |
@@ -189,6 +200,23 @@ explicit user preferences, not speculative conclusions.
 `build_query_crew()` creates one graph intelligence agent. It receives NAMS
 tools when available, local MCP tools when configured, otherwise direct Neo4j
 tools, and the shared custom tools.
+
+The following is the complete application entry point; the implementation is
+available in [`build_query_crew()`](agent/crew.py):
+
+```python
+from agent.crew import build_query_crew
+
+query = "Show all entities connected to Acme and their relationship types."
+result = build_query_crew(query).kickoff()
+print(result)
+```
+
+The crew constructs a single agent and task, then selects local MCP tools when
+`MCP_SERVER_COMMAND` is configured. Without local MCP, it selects the direct
+read-only Neo4j tools instead. In both cases, the task requires factual claims
+to come from tool results and requires the agent to say when the graph cannot
+answer the question.
 
 This is the right pattern for requests such as:
 
