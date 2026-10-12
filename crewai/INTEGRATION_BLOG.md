@@ -120,6 +120,22 @@ This preserves a direct-driver fallback for environments that do not use MCP,
 while preferring the transport that has been validated for the configured
 local MCP workflow.
 
+#### Why not expose both graph transports to the same crew?
+
+The direct-driver tools and MCP tools overlap: both can inspect the graph and
+run Cypher. Giving an agent both at once creates two ways to answer the same
+question, with different connection, input-validation, and read-only
+boundaries. The agent could select the direct driver even when the local MCP
+server is configured as the intended operational path; this also reintroduces
+direct-driver routing failures in Aura Graph Analytics environments.
+
+The selection is therefore exclusive **for graph access within a crew run**:
+MCP tools when `MCP_SERVER_COMMAND` is set, otherwise direct Neo4j tools. It
+does not prevent combining complementary tools. NAMS memory tools are added
+alongside the active graph transport, and the natural-language query crew also
+includes the shared custom tools. The direct tools remain installed as a
+deliberate fallback for deployments that do not run a local MCP server.
+
 ## Tooling Layers
 
 The integration deliberately offers several tool layers because each is useful
