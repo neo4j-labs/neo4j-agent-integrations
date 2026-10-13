@@ -1,0 +1,42 @@
+[project]
+name = "graphrag-banking"
+version = "0.1.0"
+description = "Neo4j GraphRAG banking support demo for IBM watsonx"
+readme = "README.md"
+authors = [
+    { name = "Ryan Knight", email = "ryan.knight@neo4j.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "faker>=40.43.0",
+    "langchain-core>=1.6.10",
+    "langchain-openai>=1.7.1",
+    "langgraph>=1.2.15",
+    "neo4j>=6.4.0",
+    "neo4j-graphrag[openai]>=1.22.0",
+    "openai>=3.29.0",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+check-connection = "graphrag_banking.check_connection:main"
+generate-data = "graphrag_banking.generate_data:main"
+render-policies = "graphrag_banking.render_policies:main"
+validate-data = "graphrag_banking.validate_data:main"
+reset-db = "graphrag_banking.reset_db:main"
+load-structured = "graphrag_banking.load_structured:main"
+build-policy-graph = "graphrag_banking.build_policy_graph:main"
+chat = "graphrag_banking.chat:main"
+baseline-rag = "graphrag_banking.baseline_vector_rag:main"
+eval-local = "graphrag_banking.eval_local:main"
+
+[build-system]
+requires = ["uv_build>=0.11.12,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
