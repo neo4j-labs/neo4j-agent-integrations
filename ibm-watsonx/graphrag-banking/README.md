@@ -10,9 +10,11 @@ The full design is in the PRD, [`neo4j_graphrag_banking_demo_prd.md`](neo4j_grap
 
 ## Status
 
-Phases 1 to 3 run in plain Python against Neo4j Aura, with OpenAI models. They use no watsonx or Orchestrate components yet.
+Phases 1 to 3 run in plain Python against Neo4j Aura, with OpenAI models.
 
-Phases 4 to 7 move the models to watsonx.ai, deploy the agent in watsonx Orchestrate, and add evaluation and stretch goals. A watsonx specialist takes these over after Phase 3. PRD section 9 lists what the handoff includes. [`docs/decision_log.md`](docs/decision_log.md) records the open decisions, the Phase 3 model results, and the problems found so far.
+Phase 5 runs the demo in watsonx Orchestrate. A native Orchestrate agent calls the same six tools as Orchestrate Python tools, and a second agent with an Orchestrate built-in knowledge base is the vector-only baseline. Embeddings still use OpenAI. See [watsonx Orchestrate](#watsonx-orchestrate).
+
+Phases 4, 6, and 7 remain: watsonx.ai models, evaluation against the Orchestrate agent, and stretch goals. [`docs/decision_log.md`](docs/decision_log.md) records the decisions, the Phase 3 model results, and the problems found so far.
 
 ---
 
@@ -21,6 +23,7 @@ Phases 4 to 7 move the models to watsonx.ai, deploy the agent in watsonx Orchest
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.11 from `.python-version` if needed.
 - A Neo4j Aura instance. AuraDB Free fits the default data volumes.
 - An OpenAI API key.
+- For the Orchestrate demo only: a watsonx Orchestrate instance and the [ADK CLI](https://developer.watson-orchestrate.ibm.com/getting_started/installing), with an environment activated by `orchestrate env activate <env>`.
 
 AuraDB Free instances pause after 72 hours without activity. Resume a paused instance from the Aura console. Free snapshots cannot be restored, so rebuild the graph with `make rebuild` instead.
 
@@ -74,6 +77,12 @@ Each pipeline step is a console script, so it runs as `uv run <command>`. The `M
 | `make eval` | `eval-local` | Scores the agent on the hero scenarios |
 | `make test` | `pytest` | Runs the test suite |
 | `make lint` | `ruff check src` | Lints the source |
+| `make wxo-setup` | the four `wxo-*` targets below, in order | Builds the whole Orchestrate demo |
+| `make wxo-connection` | `orchestrate/create_connection.sh` | Creates the `banking_creds` connection from `.env` |
+| `make wxo-tools` | `orchestrate/build_tools.sh` | Imports the six tools |
+| `make wxo-agent` | `orchestrate/build_agent.py`, then `orchestrate agents import` | Imports the `banking_support` agent |
+| `make wxo-baseline` | `orchestrate/build_baseline.sh` | Imports the knowledge base and the `banking_baseline` agent |
+| `make wxo-deploy` | `orchestrate agents deploy` | Publishes both agents to live |
 
 Use `make rebuild`, not `make ingest` twice. Each `build-policy-graph` run writes new `Chunk` nodes, so a second ingest without a reset duplicates the chunks.
 
@@ -91,7 +100,7 @@ See [The hero scenarios](#the-hero-scenarios) for sample questions.
 uv run baseline-rag "What's the overdraft fee on our joint account?"
 ```
 
-It stands in for the Orchestrate built-in knowledge base until Phase 5.
+In Orchestrate, the `banking_baseline` agent replaces it. See [watsonx Orchestrate](#watsonx-orchestrate).
 
 ### Evaluation
 
@@ -158,9 +167,54 @@ The agent is a LangGraph ReAct agent with six tools in `src/graphrag_banking/too
 | `get_my_household` | Household members and the accounts they share with the customer |
 | `get_scheduled_payments` | Upcoming payments on one account, with the balance available before each and whether it is covered |
 
-Every customer-scoped tool starts from `DEMO_CUSTOMER_ID` and traverses `HOLDS`. The model never supplies the customer ID. `tools.py` imports only the `neo4j` driver and `embeddings.embed`, so the tools can ship as Orchestrate Python tools in Phase 5.
+Every customer-scoped tool starts from `DEMO_CUSTOMER_ID` and traverses `HOLDS`. The model never supplies the customer ID. `tools.py` imports only the `neo4j` driver and `embeddings.embed`, so the same code ships unchanged as Orchestrate Python tools.
 
 The agent's instructions are in `prompts/agent_instructions.md`. `DEMO_AS_OF` is filled in when the agent loads the file.
+
+---
+
+## watsonx Orchestrate
+
+The Orchestrate demo uses the same graph, tools, and instructions as the local agent. Nothing is rewritten for Orchestrate. The scripts in `orchestrate/` copy the local code into the shape Orchestrate expects.
+
+### What gets created
+
+| Orchestrate object | Name | Built from |
+|---|---|---|
+| Connection | `banking_creds` | `.env`. It holds the Aura credentials, the OpenAI key and embedding model, `DEMO_CUSTOMER_ID`, and `DEMO_AS_OF`, for both draft and live. |
+| Python tools | the six tools in `tools.py` | `orchestrate/tools/banking_tools.py`, a thin wrapper per tool |
+| Agent | `banking_support` | `prompts/agent_instructions.md`, with the date written in |
+| Knowledge base | `banking_policies` | The eight documents in `data/policies/` |
+| Agent | `banking_baseline` | `orchestrate/baseline_agent.yaml` |
+
+Each tool wrapper reads `banking_creds`, opens a Neo4j driver, and calls the matching function in `tools.py`. The customer ID comes from the connection, so the model never chooses whose data it reads. Each wrapper also takes its description from the matching function, so the agent sees the same tool descriptions in Orchestrate as it does locally.
+
+`build_tools.sh` assembles the tool package in `orchestrate/build/` on every run. It copies `tools.py` as `banking_queries.py` and `embeddings.py` next to the wrapper, so `tools.py` stays the single source of truth. `build_agent.py` fills the date into the instructions the same way the local agent does, because Orchestrate instructions have no placeholders. Re-run both after changing the tools or the instructions. `orchestrate/build/` is git-ignored.
+
+The tools install `neo4j` and `openai`. `build_tools.sh` exports their pins from `uv.lock` with `uv export` and keeps only those two, so uv stays the source of truth. The current pins, `neo4j==6.4.0` and `openai==3.29.0`, are on the tenant package allowlist.
+
+Both agents use the Orchestrate model `bedrock/openai.gpt-oss-120b-1:0`. To use another model from `orchestrate models list`, set `ORCHESTRATE_MODEL` for `build_agent.py` and edit `llm` in `orchestrate/baseline_agent.yaml`.
+
+### Setup
+
+Build the graph first with `make rebuild`. Then:
+
+```bash
+orchestrate env activate <env>
+make wxo-setup
+```
+
+Wait until `orchestrate knowledge-bases status -n banking_policies` shows the knowledge base as ready. Test both agents in the Orchestrate preview chat, then publish them with `make wxo-deploy`.
+
+### Running the demo
+
+Start a new chat for each scenario. A follow-up in the same chat carries the earlier answer's context. For example, Scenario D asked right after Scenario C can read "Sarah's account" as the joint account.
+
+1. **The failure.** Ask `banking_baseline` the Scenario A prompt. It answers from the policy documents only, with generic reasons a wire can fail.
+2. **The fix.** Ask `banking_support` the same prompt. It says the wire is held, not failed, and that Premium Checking waives both wire fees.
+3. **The proof.** Run `orchestrate/proof_query.cypher` in the Aura Query tool and switch to the graph view. It draws the path behind the answer, from Marcus to the held wire, its compliance alert and rule, and the fee rules waived for Premium Checking, each with its policy text. Aura saved queries belong to the user who saves them, so each presenter saves the query into their own Aura console.
+
+Scenarios B to D run on `banking_support` the same way. The expected answers are in [The hero scenarios](#the-hero-scenarios).
 
 ---
 
@@ -199,6 +253,16 @@ graphrag-banking/
 ├── eval/
 │   ├── scenarios.yaml
 │   └── results/                    eval-local output
+├── orchestrate/                    watsonx Orchestrate demo
+│   ├── create_connection.sh        banking_creds connection from .env
+│   ├── build_tools.sh              assembles and imports the six tools
+│   ├── build_agent.py              writes the banking_support agent YAML
+│   ├── build_baseline.sh           knowledge base and baseline agent
+│   ├── baseline_agent.yaml         banking_baseline agent
+│   ├── proof_query.cypher          Scenario A subgraph for the Aura console
+│   ├── tools/
+│   │   └── banking_tools.py        Orchestrate wrappers around tools.py
+│   └── build/                      generated by the scripts, git-ignored
 ├── src/graphrag_banking/
 │   ├── config.py                   settings from .env
 │   ├── embeddings.py               embed(), shared by tools and ingestion
