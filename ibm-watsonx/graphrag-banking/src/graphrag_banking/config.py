@@ -54,7 +54,7 @@ def load_settings() -> Settings:
         neo4j_password=os.environ.get("NEO4J_PASSWORD", ""),
         neo4j_database=os.environ.get("NEO4J_DATABASE", "neo4j"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        chat_model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4.1"),
+        chat_model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-5.6-terra"),
         embedding_model=os.environ.get(
             "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
         ),

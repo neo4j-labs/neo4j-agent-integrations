@@ -22,9 +22,9 @@ def _format_chunks(result: dict) -> str:
     for passage in result.get("passages", []):
         heading = passage["text"].splitlines()[0]
         codes = ", ".join(rule["rule_code"] for rule in passage["rules"]) or "none"
-        lines.append(
-            f"{passage['score']:.4f}  {passage['policy']}: {heading}  [rules: {codes}]"
-        )
+        # Neighbors of a match have no score.
+        score = "  near" if passage["score"] is None else f"{passage['score']:.4f}"
+        lines.append(f"{score}  {passage['policy']}: {heading}  [rules: {codes}]")
     return "\n".join(lines) or "(no chunks)"
 
 

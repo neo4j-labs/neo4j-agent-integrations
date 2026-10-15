@@ -20,7 +20,12 @@ from graphrag_banking.config import (
     load_settings,
 )
 from graphrag_banking.load_structured import _NODE_FILES
-from graphrag_banking.tools import COUNTERPARTY_INDEX_NAME, VECTOR_INDEX_NAME
+from graphrag_banking.tools import (
+    COUNTERPARTY_INDEX_NAME,
+    VECTOR_INDEX_NAME,
+    ToolContext,
+    get_scheduled_payments,
+)
 
 
 @pytest.fixture(scope="module")
@@ -206,6 +211,26 @@ def test_scenario_b_joint_deposit_and_mortgage(query) -> None:
     assert (row["payment"], row["payment_amount"]) == ("SP-1001", 3200.0)
     assert row["run_date"].iso_format() == "2026-10-13"
     assert row["payee"] == "Lakeside Home Loans"
+
+
+def test_scenario_b_pending_deposit_carries_hold_rule(
+    driver: neo4j.Driver, settings: Settings
+) -> None:
+    context = ToolContext(
+        driver=driver,
+        database=settings.neo4j_database,
+        customer_id="C-1001",
+        embedding_config=settings.embedding_config,
+        as_of=settings.demo_as_of,
+    )
+    result = get_scheduled_payments(context, "A-1002")
+    deposit = next(
+        d for d in result["pending_deposits"] if d["transaction_id"] == "T-1123"
+    )
+    rules = {rule["rule_code"]: rule for rule in deposit["hold_rules"]}
+    assert "HOLD-CHECK-NBD" in rules
+    assert rules["HOLD-CHECK-NBD"]["policy"]
+    assert rules["HOLD-CHECK-NBD"]["policy_text"]
 
 
 def test_scenario_c_joint_account_overdraft_terms(query) -> None:

@@ -88,6 +88,7 @@ All four scenarios use one demo customer, so Orchestrate only needs one fixed id
 |---|---|---|---|
 | `A-1001` | Premium Checking | Marcus, `PRIMARY` | Sent the Acme Corp wire. Scenario A. |
 | `A-1002` | Standard Checking, named "Joint Checking" | Marcus and Sarah Okafor, both `JOINT` | Pending check deposit and mortgage auto-pay. Scenarios B and C. |
+| `A-1003` | Standard Savings, named "Emergency Fund" | Marcus, `PRIMARY` | His own savings, the account to link for Overdraft Protection. Scenario C. |
 | `A-2001` | Standard Savings | Sarah Okafor, `C-1002`, `PRIMARY` | Not held by Marcus. Scenario D. |
 
 Marcus holds two checking products. Scenarios A and C only work if the agent picks the right account's product, which is itself a graph hop.
@@ -168,10 +169,12 @@ Check hold policy chunk via vector search, linked to (:HoldRule {rule_code:'HOLD
 - $29 overdraft fee per item.
 - No fee when the account is overdrawn by $50 or less.
 - Overdraft Protection can link a savings account, with a $10 transfer fee.
+- The savings account to link is Marcus's own Emergency Fund.
 
 **Trace facts:**
 
 - Account `A-1002`, product Standard Checking.
+- Account `A-1003`, product Standard Savings.
 - Fee rules `FEE-OVERDRAFT` and `FEE-ODP-TRANSFER`.
 
 **Must not appear:**
@@ -193,6 +196,8 @@ Vector search alone can answer the general question. The graph adds the account'
 - Account ID `A-2001`.
 - Sarah's savings balance, $18,250.
 - Any amount from the transactions on `A-2001`. The hero fixtures list them.
+
+The agent may mention Marcus's own Emergency Fund, but it must not present that account as Sarah's. This item is checked by manual review.
 
 The `A-2001` fixture amounts are distinctive, such as $1,137.42. They cannot collide with amounts that correct answers to other scenarios contain, such as $2,000 or $3,200.
 
@@ -445,7 +450,7 @@ The `Makefile` wraps these:
 - Add runtime dependencies with `uv add`. Add development tools with `uv add --dev`. Section 8.1 lists both.
 - Commit `pyproject.toml`, `uv.lock`, and `.python-version`. Anyone who clones the repo gets the identical environment with `uv sync`.
 - Register each pipeline step as a console script under `[project.scripts]`, so every step runs as `uv run <command>`. The `Makefile` targets call these commands.
-- Create `example.env` with `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, `DEMO_AS_OF`, `DEMO_CUSTOMER_ID`, `DATA_SEED`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, and `OPENAI_EMBEDDING_MODEL`. The agent and the local baseline both use `OPENAI_CHAT_MODEL`, so the beat 1 comparison is fair.
+- Create `env.sample` with `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, `DEMO_AS_OF`, `DEMO_CUSTOMER_ID`, `DATA_SEED`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, and `OPENAI_EMBEDDING_MODEL`. The agent and the local baseline both use `OPENAI_CHAT_MODEL`, so the beat 1 comparison is fair.
 - Provision an Aura instance. AuraDB Free fits the default volumes for building and testing. Free instances pause after 72 hours without activity, and their snapshots cannot be restored or exported. The graph is rebuilt with `make rebuild` instead of restored from a snapshot. See the risks in 11.1.
 
 **Exit check:** `uv sync` succeeds on a clean clone, and `uv run check-connection` runs `RETURN 1` against Aura.
@@ -593,7 +598,7 @@ graphrag-banking/
 ├── pyproject.toml               dependencies and console scripts
 ├── uv.lock                      committed lock file
 ├── .python-version              3.11, written by uv python pin
-├── example.env
+├── env.sample
 ├── Makefile
 ├── data/
 │   ├── policy_facts.yaml        canonical rules shared by data, rules, and documents

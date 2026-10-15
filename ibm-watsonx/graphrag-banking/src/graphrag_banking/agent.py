@@ -113,7 +113,7 @@ class SupportAgent:
         model = ChatOpenAI(
             model=settings.chat_model,
             api_key=settings.openai_api_key,
-            temperature=0,
+            use_responses_api=True,
         )
         self._graph = create_react_agent(
             model,

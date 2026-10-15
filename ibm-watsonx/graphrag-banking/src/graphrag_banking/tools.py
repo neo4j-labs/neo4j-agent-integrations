@@ -38,6 +38,17 @@ _CREDIT_TYPES = ["CHECK_DEPOSIT", "ACH_IN", "WIRE_IN"]
 _POLICY_RESULTS = 5
 _TRANSACTION_LIMIT = 25
 _LUCENE_SPECIAL = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
+# Dollar fields the model quotes to the customer. Formatted last, so the
+# coverage math in _project_balances still runs on numbers.
+_MONEY_FIELDS = frozenset(
+    {
+        "amount",
+        "ledger_balance",
+        "available_balance",
+        "available_before_payment",
+        "threshold",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +83,8 @@ def search_policies(context: ToolContext, question: str) -> dict[str, Any]:
         question: The policy question in plain language.
 
     Returns:
-        The best matching policy passages, each with its policy name and rules.
+        The best matching policy passages and the passages next to them, each
+        with its policy name and rules. Neighboring passages have no score.
     """
     records = _run(
         context,
@@ -81,7 +93,7 @@ def search_policies(context: ToolContext, question: str) -> dict[str, Any]:
         k=_POLICY_RESULTS,
         embedding=embed(question, context.embedding_config),
     )
-    return {"passages": records}
+    return _format_money({"passages": records})
 
 
 def get_my_accounts(context: ToolContext) -> dict[str, Any]:
@@ -94,7 +106,7 @@ def get_my_accounts(context: ToolContext) -> dict[str, Any]:
         The customer's accounts.
     """
     records = _run(context, _GET_MY_ACCOUNTS)
-    return {"accounts": records}
+    return _format_money({"accounts": records})
 
 
 def find_my_transactions(
@@ -137,7 +149,7 @@ def find_my_transactions(
         )
     else:
         records = _run(context, _FIND_TRANSACTIONS, **params)
-    return {"transactions": records}
+    return _format_money({"transactions": records})
 
 
 def explain_transaction(context: ToolContext, transaction_id: str) -> dict[str, Any]:
@@ -157,7 +169,7 @@ def explain_transaction(context: ToolContext, transaction_id: str) -> dict[str, 
     records = _run(context, _EXPLAIN_TRANSACTION, transaction_id=transaction_id)
     if not records:
         return {"error": f"No transaction {transaction_id} on your accounts."}
-    return records[0]
+    return _format_money(records[0])
 
 
 def get_my_household(context: ToolContext) -> dict[str, Any]:
@@ -178,7 +190,8 @@ def get_scheduled_payments(context: ToolContext, account_id: str) -> dict[str, A
 
     For each payment, ``available_before_payment`` is today's available balance
     plus pending deposits available by the payment date, minus earlier scheduled
-    payments. ``covered`` says whether that amount covers the payment.
+    payments. ``covered`` says whether that amount covers the payment. Each
+    pending deposit lists the hold rules for its type and the policy behind them.
 
     Args:
         account_id: An account ID from get_my_accounts.
@@ -198,7 +211,7 @@ def get_scheduled_payments(context: ToolContext, account_id: str) -> dict[str, A
         return {"error": f"No account {account_id} among your accounts."}
     result = records[0]
     _project_balances(result)
-    return result
+    return _format_money(result)
 
 
 def _project_balances(result: dict[str, Any]) -> None:
@@ -253,13 +266,35 @@ def _plain(value: Any) -> Any:
             return value
 
 
+def _format_money(value: Any) -> Any:
+    """Write dollar fields as "$5,000.00" anywhere in a tool result."""
+    match value:
+        case dict():
+            return {
+                key: f"${item:,.2f}"
+                if key in _MONEY_FIELDS and isinstance(item, int | float)
+                else _format_money(item)
+                for key, item in value.items()
+            }
+        case list():
+            return [_format_money(item) for item in value]
+        case _:
+            return value
+
+
+# Each match brings the sections before and after it in the same document, so a
+# related section the vector search ranked lower still reaches the model.
+# Neighbors have a null score and sort with the match that brought them in.
 _SEARCH_POLICIES = """
-CALL db.index.vector.queryNodes($index, $k, $embedding) YIELD node AS chunk, score
+CALL db.index.vector.queryNodes($index, $k, $embedding) YIELD node AS hit, score
+UNWIND [hit] + [(hit)-[:NEXT_CHUNK]-(neighbor:Chunk) | neighbor] AS chunk
+WITH chunk, max(CASE WHEN chunk = hit THEN score END) AS score,
+     max(score) AS rank
 MATCH (chunk)-[:FROM_DOCUMENT]->(doc:Document)
 OPTIONAL MATCH (rule)-[:FROM_CHUNK]->(chunk)
-WITH chunk, score, doc, rule
+WITH chunk, score, rank, doc, rule
 ORDER BY rule.rule_code
-WITH chunk, score, doc, collect(rule {
+WITH chunk, score, rank, doc, collect(rule {
   .rule_code, .name, .amount, .hold_days, .threshold, .condition,
   .transaction_types,
   kind: head(labels(rule)),
@@ -268,7 +303,7 @@ WITH chunk, score, doc, collect(rule {
 }) AS rules
 RETURN doc.title AS policy, doc.policy_id AS policy_id, chunk.text AS text,
        round(score, 4) AS score, rules
-ORDER BY score DESC
+ORDER BY rank DESC, chunk.index
 """
 
 _GET_MY_ACCOUNTS = """
@@ -325,7 +360,21 @@ MATCH (:Customer {customer_id: $customer_id})-[:HOLDS]->(a:Account)
     + _TRANSACTION_FIELDS
 )
 
-_EXPLAIN_TRANSACTION = """
+# Hold rules that match a transaction ``t`` by type, with the policy behind each.
+_HOLD_RULES = """
+COLLECT {
+  MATCH (rule:HoldRule)
+  WHERE t.type IN rule.transaction_types
+  RETURN rule {
+    .rule_code, .name, .hold_days, .threshold, .condition,
+    policy: [(policy:Policy)-[:DEFINES]->(rule) | policy.name][0],
+    policy_text: [(rule)-[:FROM_CHUNK]->(chunk:Chunk) | chunk.text]
+  }
+  ORDER BY rule.rule_code
+}"""
+
+_EXPLAIN_TRANSACTION = (
+    """
 MATCH (:Customer {customer_id: $customer_id})-[:HOLDS]->(a:Account)
       -[:HAS_TRANSACTION]->(t:Transaction {transaction_id: $transaction_id})
 OPTIONAL MATCH (a)-[:IS_PRODUCT]->(p:AccountProduct)
@@ -362,17 +411,11 @@ COLLECT {
   }
   ORDER BY rule.rule_code
 } AS fee_rules,
-COLLECT {
-  MATCH (rule:HoldRule)
-  WHERE t.type IN rule.transaction_types
-  RETURN rule {
-    .rule_code, .name, .hold_days, .threshold, .condition,
-    policy: [(policy:Policy)-[:DEFINES]->(rule) | policy.name][0],
-    policy_text: [(rule)-[:FROM_CHUNK]->(chunk:Chunk) | chunk.text]
-  }
-  ORDER BY rule.rule_code
-} AS hold_rules
 """
+    + _HOLD_RULES
+    + """ AS hold_rules
+"""
+)
 
 _GET_MY_HOUSEHOLD = """
 MATCH (c:Customer {customer_id: $customer_id})-[rel:RELATED_TO]-(other:Customer)
@@ -383,7 +426,8 @@ RETURN other.customer_id AS customer_id, other.name AS name,
 ORDER BY name
 """
 
-_GET_SCHEDULED_PAYMENTS = """
+_GET_SCHEDULED_PAYMENTS = (
+    """
 MATCH (:Customer {customer_id: $customer_id})-[:HOLDS]->
       (a:Account {account_id: $account_id})
 CALL (a) {
@@ -402,10 +446,14 @@ CALL (a) {
   WITH t ORDER BY t.available_on
   RETURN collect(t {
     .transaction_id, .type, .amount, .available_on,
-    initiated_by: [(who:Customer)-[:INITIATED]->(t) | who.name][0]
+    initiated_by: [(who:Customer)-[:INITIATED]->(t) | who.name][0],
+    hold_rules: """
+    + _HOLD_RULES
+    + """
   }) AS pending_deposits
 }
 RETURN a.account_id AS account_id, a.nickname AS nickname,
        a.available_balance AS available_balance, $as_of AS as_of,
        pending_deposits, payments
 """
+)

@@ -93,9 +93,9 @@ Hero records come from `hero_fixtures.yaml`. Background records never use these 
 | Entity | Hero IDs | Background IDs |
 |---|---|---|
 | Customer | `C-1001`, `C-1002` | `C-5000` and up |
-| Account | `A-1001`, `A-1002`, `A-2001` | `A-5000` and up |
+| Account | `A-1001` to `A-1003`, `A-2001` | `A-5000` and up |
 | Counterparty | `CP-1001` to `CP-1016` | `CP-5000` and up |
-| Transaction | `T-1001` to `T-1208` | `T-50000` and up |
+| Transaction | `T-1001` to `T-1306` | `T-50000` and up |
 | ComplianceAlert | `AL-1001` | `AL-5000` and up |
 | ScheduledPayment | `SP-1001` to `SP-1004` | `SP-5000` and up |
 
