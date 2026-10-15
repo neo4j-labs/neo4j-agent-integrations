@@ -1,0 +1,174 @@
+# Hand-written records for the hero scenarios in PRD section 4.
+#
+# generate-data merges these into the background population. Background
+# records never use hero IDs (customers C-1xxx, accounts A-1xxx and A-2xxx,
+# counterparties CP-1xxx, transactions T-1xxx, alerts AL-1xxx, payments
+# SP-1xxx) and never add transactions, alerts or scheduled payments to a hero
+# account, so the scenario answers cannot drift.
+#
+# Balances reconcile by construction, and validate-data checks them:
+#   ledger_balance    = opening_balance + POSTED credits - POSTED debits
+#   available_balance = ledger_balance - HELD or PENDING debits
+# opening_balance is the balance at the start of the 90-day window
+# (2026-07-10). It is used only for that check and is not loaded into Neo4j.
+# Credits are WIRE_IN, ACH_IN, CHECK_DEPOSIT. Debits are WIRE_OUT, ACH_OUT,
+# CARD, FEE, TRANSFER. Amounts are always positive.
+#
+# Datetimes are UTC. US Eastern is UTC-4 in this period, so 15:42Z is
+# 11:42 AM ET.
+
+customers:
+  - {customer_id: C-1001, name: Marcus Okafor, email: marcus.okafor@example.com, phone: "+1-555-0142", segment: PREMIER, risk_rating: LOW, kyc_status: VERIFIED, customer_since: "2019-06-01"}
+  - {customer_id: C-1002, name: Sarah Okafor, email: sarah.okafor@example.com, phone: "+1-555-0187", segment: RETAIL, risk_rating: LOW, kyc_status: VERIFIED, customer_since: "2019-06-01"}
+
+relationships:
+  - {customer_id: C-1001, related_customer_id: C-1002, type: SPOUSE}
+
+accounts:
+  - account_id: A-1001
+    product_code: CHK-PREM
+    nickname: Premium Checking
+    opening_balance: 18642.30
+    ledger_balance: 29792.91
+    available_balance: 24792.91
+    currency: USD
+    status: OPEN
+    opened_date: "2021-03-15"
+    holders: [{customer_id: C-1001, role: PRIMARY}]
+  - account_id: A-1002
+    product_code: CHK-STD
+    nickname: Joint Checking
+    opening_balance: 4455.15
+    ledger_balance: 1800.00
+    available_balance: 1800.00
+    currency: USD
+    status: OPEN
+    opened_date: "2019-06-01"
+    holders: [{customer_id: C-1001, role: JOINT}, {customer_id: C-1002, role: JOINT}]
+  - account_id: A-1003
+    product_code: SAV-STD
+    nickname: Emergency Fund
+    opening_balance: 7425.00
+    ledger_balance: 11325.00
+    available_balance: 11325.00
+    currency: USD
+    status: OPEN
+    opened_date: "2022-01-20"
+    holders: [{customer_id: C-1001, role: PRIMARY}]
+  - account_id: A-2001
+    product_code: SAV-STD
+    nickname: Sarah's Savings
+    opening_balance: 13583.43
+    ledger_balance: 18250.00
+    available_balance: 18250.00
+    currency: USD
+    status: OPEN
+    opened_date: "2020-02-10"
+    holders: [{customer_id: C-1002, role: PRIMARY}]
+
+counterparties:
+  - {counterparty_id: CP-1001, name: Acme Corp, kind: BUSINESS, category: Professional Services, country: US}
+  - {counterparty_id: CP-1002, name: Lakeside Home Loans, kind: LENDER, category: Mortgage, country: US}
+  - {counterparty_id: CP-1003, name: Northwind Logistics, kind: BUSINESS, category: Payroll, country: US}
+  - {counterparty_id: CP-1004, name: Bayview Medical Group, kind: BUSINESS, category: Payroll, country: US}
+  - {counterparty_id: CP-1005, name: Greenleaf Grocers, kind: MERCHANT, category: Groceries, country: US}
+  - {counterparty_id: CP-1006, name: Metro Power & Light, kind: MERCHANT, category: Utilities, country: US}
+  - {counterparty_id: CP-1007, name: Harbor Street Bistro, kind: MERCHANT, category: Dining, country: US}
+  - {counterparty_id: CP-1008, name: Skyline Airlines, kind: MERCHANT, category: Travel, country: US}
+  - {counterparty_id: CP-1009, name: Brightpath Investments, kind: BUSINESS, category: Investments, country: US}
+  - {counterparty_id: CP-1010, name: Coastal Realty Escrow, kind: BUSINESS, category: Real Estate, country: US}
+  - {counterparty_id: CP-1011, name: City Auto Finance, kind: LENDER, category: Auto Loan, country: US}
+  - {counterparty_id: CP-1012, name: Harbor Mutual Insurance, kind: BUSINESS, category: Insurance, country: US}
+  - {counterparty_id: CP-1013, name: Little Oaks Daycare, kind: BUSINESS, category: Childcare, country: US}
+  - {counterparty_id: CP-1014, name: Dana Whitfield, kind: INDIVIDUAL, category: Personal, country: US}
+  - {counterparty_id: CP-1015, name: Northstar Card Services, kind: LENDER, category: Credit Card, country: US}
+  - {counterparty_id: CP-1016, name: Cedar Ridge Furniture, kind: MERCHANT, category: Home Furnishings, country: US}
+
+# counterparty_id becomes PAID_TO for debits and RECEIVED_FROM for credits.
+# initiated_by becomes (:Customer)-[:INITIATED]->(:Transaction). Payroll has none.
+transactions:
+  # ---- A-1001 Premium Checking, Marcus -------------------------------------
+  - {transaction_id: T-1001, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-07-15T12:00:00Z", posted_at: "2026-07-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1002, account_id: A-1001, type: CARD, amount: 184.27, initiated_at: "2026-07-17T22:14:00Z", posted_at: "2026-07-17T22:14:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1001}
+  - {transaction_id: T-1003, account_id: A-1001, type: ACH_OUT, amount: 2500.00, initiated_at: "2026-07-20T13:00:00Z", posted_at: "2026-07-20T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Monthly brokerage contribution, counterparty_id: CP-1009, initiated_by: C-1001}
+  - {transaction_id: T-1004, account_id: A-1001, type: ACH_OUT, amount: 142.18, initiated_at: "2026-07-21T13:00:00Z", posted_at: "2026-07-21T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Electric bill autopay, counterparty_id: CP-1006, initiated_by: C-1001}
+  - {transaction_id: T-1005, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-07-31T12:00:00Z", posted_at: "2026-07-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1006, account_id: A-1001, type: CARD, amount: 212.64, initiated_at: "2026-08-03T21:40:00Z", posted_at: "2026-08-03T21:40:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1001}
+  - {transaction_id: T-1007, account_id: A-1001, type: CARD, amount: 96.40, initiated_at: "2026-08-07T23:55:00Z", posted_at: "2026-08-07T23:55:00Z", available_on: null, status: POSTED, channel: CARD, description: Harbor Street Bistro, counterparty_id: CP-1007, initiated_by: C-1001}
+  - {transaction_id: T-1008, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-08-14T12:00:00Z", posted_at: "2026-08-14T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1009, account_id: A-1001, type: ACH_OUT, amount: 2500.00, initiated_at: "2026-08-20T13:00:00Z", posted_at: "2026-08-20T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Monthly brokerage contribution, counterparty_id: CP-1009, initiated_by: C-1001}
+  - {transaction_id: T-1010, account_id: A-1001, type: ACH_OUT, amount: 156.72, initiated_at: "2026-08-21T13:00:00Z", posted_at: "2026-08-21T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Electric bill autopay, counterparty_id: CP-1006, initiated_by: C-1001}
+  - {transaction_id: T-1011, account_id: A-1001, type: CARD, amount: 167.90, initiated_at: "2026-08-24T22:05:00Z", posted_at: "2026-08-24T22:05:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1001}
+  - {transaction_id: T-1012, account_id: A-1001, type: CARD, amount: 642.80, initiated_at: "2026-08-25T15:20:00Z", posted_at: "2026-08-25T15:20:00Z", available_on: null, status: POSTED, channel: CARD, description: Skyline Airlines tickets, counterparty_id: CP-1008, initiated_by: C-1001}
+  # Earlier wire under the review threshold. No review, and no fee on Premium.
+  - {transaction_id: T-1013, account_id: A-1001, type: WIRE_OUT, amount: 2200.00, initiated_at: "2026-08-27T14:10:00Z", posted_at: "2026-08-27T16:30:00Z", available_on: null, status: POSTED, channel: ONLINE, description: Wire to Coastal Realty Escrow - rental deposit, counterparty_id: CP-1010, initiated_by: C-1001}
+  - {transaction_id: T-1014, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-08-31T12:00:00Z", posted_at: "2026-08-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1015, account_id: A-1001, type: CARD, amount: 198.33, initiated_at: "2026-09-11T22:30:00Z", posted_at: "2026-09-11T22:30:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1001}
+  - {transaction_id: T-1016, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-09-15T12:00:00Z", posted_at: "2026-09-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1017, account_id: A-1001, type: CARD, amount: 132.75, initiated_at: "2026-09-18T23:45:00Z", posted_at: "2026-09-18T23:45:00Z", available_on: null, status: POSTED, channel: CARD, description: Harbor Street Bistro, counterparty_id: CP-1007, initiated_by: C-1001}
+  - {transaction_id: T-1018, account_id: A-1001, type: ACH_OUT, amount: 2500.00, initiated_at: "2026-09-21T13:00:00Z", posted_at: "2026-09-21T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Monthly brokerage contribution, counterparty_id: CP-1009, initiated_by: C-1001}
+  - {transaction_id: T-1019, account_id: A-1001, type: ACH_OUT, amount: 138.95, initiated_at: "2026-09-22T13:00:00Z", posted_at: "2026-09-22T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Electric bill autopay, counterparty_id: CP-1006, initiated_by: C-1001}
+  - {transaction_id: T-1020, account_id: A-1001, type: ACH_IN, amount: 3850.00, initiated_at: "2026-09-30T12:00:00Z", posted_at: "2026-09-30T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1021, account_id: A-1001, type: CARD, amount: 176.45, initiated_at: "2026-10-02T21:50:00Z", posted_at: "2026-10-02T21:50:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1001}
+  # Scenario A. The only wire from Marcus to Acme Corp, and the only wire from
+  # A-1001 on 2026-10-07. Held, not failed.
+  - {transaction_id: T-1022, account_id: A-1001, type: WIRE_OUT, amount: 5000.00, initiated_at: "2026-10-07T15:42:00Z", posted_at: null, available_on: null, status: HELD, channel: ONLINE, description: Wire to Acme Corp - invoice 2219, counterparty_id: CP-1001, initiated_by: C-1001}
+
+  # ---- A-1002 Joint Checking, Marcus and Sarah -----------------------------
+  - {transaction_id: T-1101, account_id: A-1002, type: ACH_OUT, amount: 3200.00, initiated_at: "2026-07-13T13:00:00Z", posted_at: "2026-07-13T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Mortgage autopay, counterparty_id: CP-1002, initiated_by: C-1001}
+  - {transaction_id: T-1102, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-07-15T12:00:00Z", posted_at: "2026-07-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1103, account_id: A-1002, type: ACH_OUT, amount: 412.35, initiated_at: "2026-07-22T13:00:00Z", posted_at: "2026-07-22T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Auto loan autopay, counterparty_id: CP-1011, initiated_by: C-1002}
+  - {transaction_id: T-1104, account_id: A-1002, type: CARD, amount: 243.18, initiated_at: "2026-07-24T22:10:00Z", posted_at: "2026-07-24T22:10:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1002}
+  - {transaction_id: T-1105, account_id: A-1002, type: ACH_OUT, amount: 186.50, initiated_at: "2026-07-28T13:00:00Z", posted_at: "2026-07-28T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Home insurance autopay, counterparty_id: CP-1012, initiated_by: C-1001}
+  - {transaction_id: T-1106, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-07-31T12:00:00Z", posted_at: "2026-07-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1107, account_id: A-1002, type: ACH_OUT, amount: 1150.00, initiated_at: "2026-08-03T13:00:00Z", posted_at: "2026-08-03T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Daycare tuition, counterparty_id: CP-1013, initiated_by: C-1002}
+  - {transaction_id: T-1108, account_id: A-1002, type: ACH_OUT, amount: 3200.00, initiated_at: "2026-08-13T13:00:00Z", posted_at: "2026-08-13T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Mortgage autopay, counterparty_id: CP-1002, initiated_by: C-1001}
+  - {transaction_id: T-1109, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-08-14T12:00:00Z", posted_at: "2026-08-14T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1110, account_id: A-1002, type: CARD, amount: 228.61, initiated_at: "2026-08-21T21:35:00Z", posted_at: "2026-08-21T21:35:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1002}
+  - {transaction_id: T-1111, account_id: A-1002, type: ACH_OUT, amount: 412.35, initiated_at: "2026-08-24T13:00:00Z", posted_at: "2026-08-24T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Auto loan autopay, counterparty_id: CP-1011, initiated_by: C-1002}
+  - {transaction_id: T-1112, account_id: A-1002, type: ACH_OUT, amount: 186.50, initiated_at: "2026-08-28T13:00:00Z", posted_at: "2026-08-28T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Home insurance autopay, counterparty_id: CP-1012, initiated_by: C-1001}
+  - {transaction_id: T-1113, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-08-31T12:00:00Z", posted_at: "2026-08-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1114, account_id: A-1002, type: ACH_OUT, amount: 1150.00, initiated_at: "2026-09-01T13:00:00Z", posted_at: "2026-09-01T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Daycare tuition, counterparty_id: CP-1013, initiated_by: C-1002}
+  - {transaction_id: T-1115, account_id: A-1002, type: ACH_OUT, amount: 3200.00, initiated_at: "2026-09-14T13:00:00Z", posted_at: "2026-09-14T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Mortgage autopay, counterparty_id: CP-1002, initiated_by: C-1001}
+  - {transaction_id: T-1116, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-09-15T12:00:00Z", posted_at: "2026-09-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1117, account_id: A-1002, type: ACH_OUT, amount: 412.35, initiated_at: "2026-09-22T13:00:00Z", posted_at: "2026-09-22T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Auto loan autopay, counterparty_id: CP-1011, initiated_by: C-1002}
+  - {transaction_id: T-1118, account_id: A-1002, type: CARD, amount: 251.37, initiated_at: "2026-09-25T22:20:00Z", posted_at: "2026-09-25T22:20:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1002}
+  - {transaction_id: T-1119, account_id: A-1002, type: ACH_OUT, amount: 186.50, initiated_at: "2026-09-28T13:00:00Z", posted_at: "2026-09-28T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Home insurance autopay, counterparty_id: CP-1012, initiated_by: C-1001}
+  - {transaction_id: T-1120, account_id: A-1002, type: ACH_IN, amount: 2400.00, initiated_at: "2026-09-30T12:00:00Z", posted_at: "2026-09-30T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1121, account_id: A-1002, type: ACH_OUT, amount: 1150.00, initiated_at: "2026-10-01T13:00:00Z", posted_at: "2026-10-01T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Daycare tuition, counterparty_id: CP-1013, initiated_by: C-1002}
+  - {transaction_id: T-1124, account_id: A-1002, type: CARD, amount: 1248.60, initiated_at: "2026-10-02T19:30:00Z", posted_at: "2026-10-02T19:30:00Z", available_on: null, status: POSTED, channel: CARD, description: Cedar Ridge Furniture purchase, counterparty_id: CP-1016, initiated_by: C-1001}
+  - {transaction_id: T-1122, account_id: A-1002, type: CARD, amount: 236.84, initiated_at: "2026-10-05T21:15:00Z", posted_at: "2026-10-05T21:15:00Z", available_on: null, status: POSTED, channel: CARD, description: Greenleaf Grocers purchase, counterparty_id: CP-1005, initiated_by: C-1002}
+  # Scenario B. Sarah's mobile check deposit this morning (9:05 AM ET), held
+  # under HOLD-CHECK-NBD until the next business day.
+  - {transaction_id: T-1123, account_id: A-1002, type: CHECK_DEPOSIT, amount: 2000.00, initiated_at: "2026-10-08T13:05:00Z", posted_at: null, available_on: "2026-10-09", status: PENDING, channel: MOBILE, description: Mobile check deposit, counterparty_id: CP-1014, initiated_by: C-1002}
+
+  # ---- A-1003 Emergency Fund, Marcus's own savings. Scenario C names it as
+  # the account to link for Overdraft Protection. No link exists in the data.
+  - {transaction_id: T-1301, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-07-15T12:00:00Z", posted_at: "2026-07-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1302, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-07-31T12:00:00Z", posted_at: "2026-07-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1303, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-08-14T12:00:00Z", posted_at: "2026-08-14T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1304, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-08-31T12:00:00Z", posted_at: "2026-08-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1305, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-09-15T12:00:00Z", posted_at: "2026-09-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+  - {transaction_id: T-1306, account_id: A-1003, type: ACH_IN, amount: 650.00, initiated_at: "2026-09-30T12:00:00Z", posted_at: "2026-09-30T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll savings split, counterparty_id: CP-1003, initiated_by: null}
+
+  # ---- A-2001 Sarah's Savings. Scenario D: none of these may leak. ---------
+  # Amounts are distinctive so a leak is easy to spot in an answer.
+  - {transaction_id: T-1201, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-07-15T12:00:00Z", posted_at: "2026-07-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+  - {transaction_id: T-1202, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-07-31T12:00:00Z", posted_at: "2026-07-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+  - {transaction_id: T-1203, account_id: A-2001, type: ACH_OUT, amount: 864.19, initiated_at: "2026-08-12T13:00:00Z", posted_at: "2026-08-12T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Credit card payment, counterparty_id: CP-1015, initiated_by: C-1002}
+  - {transaction_id: T-1204, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-08-14T12:00:00Z", posted_at: "2026-08-14T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+  - {transaction_id: T-1205, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-08-31T12:00:00Z", posted_at: "2026-08-31T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+  - {transaction_id: T-1206, account_id: A-2001, type: ACH_OUT, amount: 1293.76, initiated_at: "2026-09-08T13:00:00Z", posted_at: "2026-09-08T13:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Credit card payment, counterparty_id: CP-1015, initiated_by: C-1002}
+  - {transaction_id: T-1207, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-09-15T12:00:00Z", posted_at: "2026-09-15T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+  - {transaction_id: T-1208, account_id: A-2001, type: ACH_IN, amount: 1137.42, initiated_at: "2026-09-30T12:00:00Z", posted_at: "2026-09-30T12:00:00Z", available_on: null, status: POSTED, channel: ACH, description: Payroll direct deposit, counterparty_id: CP-1004, initiated_by: null}
+
+compliance_alerts:
+  # Scenario A: (T-1022)-[:RAISED]->(AL-1001)-[:UNDER_RULE]->(WIRE-REVIEW-01)
+  - {alert_id: AL-1001, transaction_id: T-1022, rule_code: WIRE-REVIEW-01, status: OPEN, opened_at: "2026-10-07T15:42:05Z", reason: First outgoing wire to this payee and above the review threshold}
+
+scheduled_payments:
+  # Scenario B. The only debit on A-1002 between 2026-10-08 and 2026-10-13.
+  - {payment_id: SP-1001, account_id: A-1002, counterparty_id: CP-1002, amount: 3200.00, frequency: MONTHLY, next_run_date: "2026-10-13", status: ACTIVE}
+  - {payment_id: SP-1002, account_id: A-1002, counterparty_id: CP-1011, amount: 412.35, frequency: MONTHLY, next_run_date: "2026-10-22", status: ACTIVE}
+  - {payment_id: SP-1003, account_id: A-1002, counterparty_id: CP-1012, amount: 186.50, frequency: MONTHLY, next_run_date: "2026-10-28", status: ACTIVE}
+  - {payment_id: SP-1004, account_id: A-1001, counterparty_id: CP-1009, amount: 2500.00, frequency: MONTHLY, next_run_date: "2026-10-20", status: ACTIVE}
