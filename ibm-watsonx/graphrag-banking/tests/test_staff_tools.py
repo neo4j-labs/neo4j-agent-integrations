@@ -119,6 +119,7 @@ TOOLS = [
     staff_tools.get_beneficial_owners,
     staff_tools.get_connected_group,
     staff_tools.find_circular_flows,
+    staff_tools.screen_business,
 ]
 
 # Every query that returns details about one business or application.
@@ -128,6 +129,7 @@ DETAIL_QUERIES = [
     staff_tools._BENEFICIAL_OWNERS,
     staff_tools._CONNECTED_GROUP,
     staff_tools._CIRCULAR_FLOWS,
+    staff_tools._CHECK_MY_BUSINESS,
 ]
 
 
@@ -264,6 +266,11 @@ def test_loop_summary_with_no_loops_has_every_key() -> None:
 def test_no_owners_and_no_shared_identifiers_are_empty() -> None:
     assert _beneficial_owners([], 25) == []
     assert _shares_identifiers([], []) is False
+
+
+def test_screen_business_outside_my_book_is_an_error() -> None:
+    result = staff_tools.screen_business(_offline([]), KEYSTONE)
+    assert result == {"error": f"No business {KEYSTONE} in your book."}
 
 
 def test_find_my_client_with_no_matches_has_both_lists() -> None:
@@ -517,6 +524,26 @@ def test_another_bankers_business_is_refused(context: StaffContext) -> None:
         assert result == {
             "error": f"No application {KEYSTONE_APPLICATION} from a client in your book."
         }
+
+
+@pytest.mark.usefixtures("groups")
+@pytest.mark.parametrize("business_id", [ORTEGA, BRIGHTLINE])
+def test_screen_business_returns_each_check_unchanged(
+    context: StaffContext, business_id: str
+) -> None:
+    result = staff_tools.screen_business(context, business_id)
+    assert result == {
+        "beneficial_owners": staff_tools.get_beneficial_owners(context, business_id),
+        "connected_group": staff_tools.get_connected_group(context, business_id),
+        "circular_flows": staff_tools.find_circular_flows(context, business_id),
+    }
+
+
+def test_screen_business_refuses_another_bankers_business(
+    context: StaffContext,
+) -> None:
+    result = staff_tools.screen_business(context, KEYSTONE)
+    assert result == {"error": f"No business {KEYSTONE} in your book."}
 
 
 def test_no_tool_returns_a_balance(context: StaffContext) -> None:

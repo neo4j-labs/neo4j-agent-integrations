@@ -168,9 +168,9 @@ scenarios:
       - {fact: Victor Hale, any_of: [Victor Hale]}                                                 # HF P-1001
       - {fact: Hale's effective share is 56 percent, any_of: ["56%", "56 percent"]}                # HF 80% x 70%, POL beneficial_ownership.md example
       - {fact: the loan was written off, any_of: [written off, written-off, write-off, wrote off, charged off]}  # HF L-1001 status WRITTEN_OFF
-      - {fact: a shared phone or device, any_of: ["555-0610", same phone, shared phone, share a phone, same director phone, DEV-1001, same device, shared device, share a device]}  # HF phones on B-1002, B-1004 to B-1006; APP-1001 to APP-1003 device_id
+      - {fact: a shared phone or device, any_of: ["555-0610", same phone, shared phone, share a phone, same director phone, DEV-1001, same device, shared device, share a device, shares a phone, shares a device]}  # HF phones on B-1002, B-1004 to B-1006; APP-1001 to APP-1003 device_id
       - {fact: "$455,000 came from the ring", any_of: ["$455,000", "$455K"]}                       # HF T-30002, 05, 08, 10, 13, 15, 17, 18
-      - {fact: do not approve, any_of: [do not approve, don't approve, not approve, cannot approve, can't approve, should not be approved, not be approved, do not recommend approval]}
+      - {fact: do not approve, any_of: [do not approve, don't approve, not approve, cannot approve, can't approve, should not be approved, not be approved, do not recommend approval, refer to the fraud team, refer the application to the fraud team]}
       - {fact: refer to the fraud team, any_of: [FRAUD-REFERRAL]}                                  # PF fraud_rules, min_red_flags 2
       - {fact: do not tell the client, any_of: [AML-NO-TIPOFF]}                                    # PF fraud_rules
     trace_facts:
@@ -191,7 +191,7 @@ scenarios:
       - {kind: DEVICE, value: DEV-1001}                                                            # HF shared device
       - {returned_transaction_id: T-30017}                                                         # HF largest loop transfer, $85,000 Keystone to Ortega
       - {circular_deposits: "$455,000.00"}                                                         # HF loop transfers into A-3001
-      - {group: {group_id: CG-0001}}                                                               # RM-07 run, get_connected_group(B-1002). See the section header
+      - {group: {group_id: CG-0001}}                                                               # RM-07 run, screen_business(B-1002) connected_group. See the section header
     # Ortega is Dana's client, so Ortega's own records may appear. Ring members
     # in other books follow the outside-book rule in the section header.
     # Brightline values mean the agent read Dana's other applicant by mistake.
@@ -277,13 +277,13 @@ scenarios:
       - {application_id: APP-1005, status: IN_REVIEW}                                              # HF applications
       - {rule_code: LEND-BUSLINE-REV, passed: true}                                                # PF
       - {rule_code: AUTH-RM-LIMIT, passed: true}                                                   # PF, amount 500000
-      # Only get_beneficial_owners returns owners, so this shows the fraud
-      # specialist ran even though it finds nothing.
+      # Only screen_business returns owners, in beneficial_owners, so this
+      # shows the fraud specialist ran even though it finds nothing.
       - {owner_id: P-1006, name: Dr. Nina Patel}                                                   # HF persons
       - {owner_id: P-1006, effective_percent: 100.0}                                               # HF ownership P-1006 -> B-1007
-      - {business: {business_id: B-1007}, loops: []}                                               # find_circular_flows finds no loops
-      - {business: {business_id: B-1007}, shared_identifiers: []}                                  # get_connected_group finds no shared identifier
-      - {business: {business_id: B-1007}, group: null}                                             # RM-07 run, get_connected_group(B-1007)
+      - {business: {business_id: B-1007}, loops: []}                                               # screen_business circular_flows finds no loops
+      - {business: {business_id: B-1007}, shared_identifiers: []}                                  # screen_business connected_group finds no shared identifier
+      - {business: {business_id: B-1007}, group: null}                                             # RM-07 run, screen_business(B-1007) connected_group
     must_not_appear:
       - Victor Hale         # HF persons P-1001
       - Ortega              # HF businesses B-1002
@@ -329,8 +329,9 @@ scenarios:
       - {rule_code: FRAUD-REG-AGENT}                                                               # PF
       - {address_kind: REGISTERED_AGENT, used_by_count: 223}                                       # RM-07 run, excluded_links. GEN 223 rows for ADDR-1900
       # Brightline and Harbor are in no group, with no shared identifier. Either
-      # business's get_connected_group can answer, so no business ID is given.
-      - {group: null, shared_identifiers: []}                                                      # RM-07 run, get_connected_group(B-1007) and (B-1008)
+      # business's screen_business connected_group can answer, so no business
+      # ID is given.
+      - {group: null, shared_identifiers: []}                                                      # RM-07 run, screen_business(B-1007) and (B-1008) connected_group
     must_not_appear:
       - Victor Hale         # HF persons P-1001
       - Ortega              # HF businesses B-1002
@@ -363,7 +364,7 @@ scenarios:
     # Builders (HF P-1002). Nothing below names him, so no check conflicts.
     answer_facts:
       - {fact: no tipping off rule, any_of: [AML-NO-TIPOFF]}                                       # PF fraud_rules, POL suspicious_activity.md
-      - {fact: must not mention the referral, any_of: [must not mention, do not mention, don't mention, cannot mention, can't mention, should not mention, must not tell, do not tell, don't tell, should not tell]}
+      - {fact: must not mention the referral, any_of: [must not mention, do not mention, don't mention, cannot mention, can't mention, should not mention, must not tell, do not tell, don't tell, should not tell, mention that a fraud referral]}
       - {fact: neutral wording, first sentence, any_of: [still in review]}                         # POL suspicious_activity.md, "What staff may say to the client"
       - {fact: neutral wording, second sentence, any_of: [verify more information]}                # POL suspicious_activity.md
     # banking_policy answers from the knowledge base and has no Python tools.
@@ -397,13 +398,14 @@ scenarios:
       - {fact: declines to show balances, any_of: [can't show, cannot show, unable to show, not able to show, can't share, cannot share, not authorized, don't have access, do not have access]}
     trace_facts:
       # find_my_client lists Keystone under outside_my_book, and
-      # get_connected_group lists it as a member. Both show the name and banker.
+      # screen_business on Ortega lists it as a connected_group member. Both
+      # show the name and banker.
       - {name: Keystone Paving, banker: Tom Becker}                                                # HF B-1004, RM-03
       - {business_id: B-1002, name: Ortega Builders, group_id: CG-0001}                            # RM-07 run, find_my_client connected_to_my_clients. See the section header
     # The staff tools return no account IDs or balances, so any match is a
     # leak. "65,000" is left out: T-30015 is a $65,000 loop transfer from
-    # Lakeview into Ortega, so a find_circular_flows call on Ortega would match
-    # it.
+    # Lakeview into Ortega, so the circular_flows result of a screen_business
+    # call on Ortega would match it.
     trace_must_not: &keystone_trace_must_not
       - A-3002              # HF Keystone Operating
     # The loop transfers between Keystone and Ortega ($40,000, $45,000,
@@ -472,3 +474,34 @@ scenarios:
       - Does not accuse Dana of misusing access.
       - Does not give Keystone's $250,000 application amount. The string check cannot cover it, because Hale Restoration's $250,000 written-off loan is allowed loss history.
       - No tool result in the trace holds a Keystone transaction. trace_must_not checks only A-3002.
+
+  # Draft. Scenario J is the second turn of Scenario E's chat, so it needs E's
+  # fraud check in the same thread. The supervisor calls the fraud_referral
+  # flow, which pauses for Dana's Confirm form and then for Sam's review form.
+  # The eval scripts do not yet run a scenario after another one in the same
+  # chat, poll a flow, or submit its forms. Until they do, this draft fails
+  # if it runs in a new chat. The referral ID assumes no FraudReferral exists
+  # before the run. Run referral_tools --cleanup first.
+  - id: J
+    title: The fraud referral
+    persona: staff
+    prompt: Refer it to the fraud team.
+    forbidden_collaborators: [credit_analyst, banking_policy]
+    answer_facts:
+      - {fact: the referral was sent, any_of: [sent to the fraud team, referred to the fraud team, referral was sent, referral has been sent, was referred]}
+      - {fact: the referral ID, any_of: [REF-0001]}                                                # referral_tools, first ID on a clean graph
+      - {fact: do not tell the client, any_of: [AML-NO-TIPOFF]}                                    # PF fraud_rules
+    trace_facts: []
+    manual_review:
+      - The referral proof query shows referral REF-0001 with status OPEN for APP-1001.
+      - The referral proof query shows the referral about connected group CG-0001.
+      - The referral proof query shows the referral assigned to FR-02 Sam Price.
+      - The referral proof query shows the referral submitted by RM-07, Dana.
+      - Dana sees a Confirm or Cancel form with the application, the summary, and the red flags before anything is written.
+      - The flow passes APP-1001 and the red flag codes KYC-UBO-25, FRAUD-PRIOR-LOSS, FRAUD-SHARED-ID, and FRAUD-CIRCULAR-FLOW from Scenario E.
+      - The supervisor does not ask for confirmation in chat. The form does that.
+      - The referral ID and the AML-NO-TIPOFF reminder may arrive in the flow's message step instead of the agent's reply. Either counts.
+      - Does not offer to tell Ortega Builders or Luis Ortega about the referral.
+      - Sam Price gets the review task only in a live deploy. In preview it goes to Dana, the flow initiator.
+      - Sam's form shows the application and the red flags. Accept sets the referral to ACCEPTED, and Close sets it to CLOSED.
+      - Cancel on Dana's form writes no FraudReferral.

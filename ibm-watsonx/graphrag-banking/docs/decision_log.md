@@ -419,3 +419,94 @@ Run times are the server's `completed_at` minus `started_at`. The client's wall 
 **Ryan chose one tool.** `screen_business` runs the owner, connected group, and circular flow checks and returns all three results together. `fraud_investigator` now has only `find_my_client` and `screen_business`, so every check runs every time. The three functions stay in the code with their tests. Docstring reminders were dropped, because they are another instruction-level fix. A stronger model for this agent alone was dropped, because the demo would then mix models.
 
 **No red-flag language about outside businesses.** In Scenario I, two of three runs said that Keystone Paving, another banker's client, matches a red flag. The agent now says only how an outside business connects to Dana's client. The red flags belong to the review of Dana's client.
+
+### Scenario D2 fix, other scenarios on the narrowed wording
+
+**Only C still fails.** This follows "Scenario D2 impersonation fix". Ryan approved one more run on the narrowed line, "In that answer, do not name or describe any account." D2 passed 10 of 10. A, B, and D each passed 3 of 3. C stays at 1 of 5 from the earlier run.
+
+**D no longer looks up accounts.** D refused without calling a tool in all 3 runs. Two of its answers say the agent "can't access or show transactions for Sarah's account". That implies Sarah has an account, which the Privacy section says not to reveal.
+
+**Manual-review flag for D.** When reviewing D, fail an answer that implies Sarah has an account, such as "I can't access or show transactions for Sarah's account". The string checks cannot catch this wording. C and D are on hold with no prompt changes. On 2026-10-20 the local agent on gpt-5.6-terra passed A to D 4 of 4, C included, so C may be a gpt-oss weakness. Moving `banking_support` to gpt-6-luna may fix it.
+
+### Scenario J proof query
+
+**The referral proof query has its own file.** It is `orchestrate/referral_proof_query.cypher`. `orchestrate/proof_query.cypher` holds the Scenario A query, and README beat 3 and decision D3 both point to that file. Adding a second query there would change what beat 3 runs. The Aura Query tool also runs one query per tab, so each beat needs its own query to paste. The J query returns nothing after `make demo-reset`, because that target deletes every referral. A shared file would mix a query that always draws with one that draws only after a referral. orz chose this, and the demo walkthrough covers the query. The README does not mention it yet.
+
+### Answering the fraud_referral form from the eval runner
+
+**The question.** Scenario J starts the `fraud_referral` flow, which pauses at Dana's Confirm form. `run_agent.py` talks to Orchestrate through the V1 `/runs` and `/threads` APIs. The runner has to see that form, press Confirm, and wait for the referral message.
+
+**A paused flow shows in the thread, not the run.** IBM's async flow tutorial says that when an agent starts an async flow, the run's stream ends after a `flow.slot.listen` event. The thread then carries the flow's state. `GET /v1/orchestrate/threads/{thread_id}` returns a status of `ready`, `async_wait`, or `async_slot_request`. `async_wait` means the flow is running and the thread accepts no new user messages. `async_slot_request` means the flow is waiting for input. The tutorial says to poll `/threads/{thread_id}/messages` every 1 to 3 seconds and track message IDs. The external websocket is not available, so polling is the supported way. Source: https://developer.watson-orchestrate.ibm.com/tutorials/tutorial_api_async_flow.md
+
+**The form is an assistant message item.** The ADK chat client flags a content item whose `response_type` is `user_input`, `form`, or `forms` as waiting for the user. It never submits one. The ADK's FormWidget has `response_type: "forms"`, `name`, `json_schema`, `ui_schema`, and `form_data`. Sources: `ibm_watsonx_orchestrate/cli/commands/chat/chat_controller.py` and `ibm_watsonx_orchestrate/run/widgets/forms/types.py` in ADK 2.18.2.
+
+**A form is answered with a new run on the same thread.** The tutorial replies to a flow by sending a new run with the same `thread_id`. The server OpenAPI lets a run's message content be a string or a list of AssistantContent items. Those items have `response_type`, `id`, `form_data`, and `form_operation` fields, and `response_type` includes `form_operation`. The Chat With Agents API page shows the same fields. Sources: https://developer.watson-orchestrate.ibm.com/apis/server_openapi.json and https://developer.watson-orchestrate.ibm.com/apis/orchestrate-agent/chat-with-agents
+
+**The submit item follows the ADK's own example.** The ADK's MCP elicitation example answers a flow form with `{"response_type": "form_operation", "form_operation": "submit", "form_data": ...}`. A cancel sends `form_operation: "cancel"` with empty `form_data`. Source: `examples/flow_builder/flow_mcp_tester/ELICITATION_SUPPORT.md` in https://github.com/IBM/ibm-watsonx-orchestrate-adk
+
+**Submit presses Confirm.** In the compiled `fraud_referral` spec, Confirm is the form's default button. Its name is `submit` and its kind is `submit`. The Cancel button from `add_button` has a generated name. A hidden `cancel` button also exists. So `form_operation: "submit"` should follow the Confirm edge.
+
+**V1 stays, not V2.** IBM's V2 chat completion guide answers a form with a user message whose content is JSON text keyed by the form's field IDs. Its limitations page says V2 does not deliver display messages or multi-user human-in-the-loop steps. The referral message is a display message, and the review form goes to a second user, so V2 does not fit. Sources: https://www.ibm.com/docs/en/watsonx/watson-orchestrate/base?topic=awvcca-getting-started-agentic-workflows-by-using-v2-chat-completion-rest-api and https://www.ibm.com/docs/en/watsonx/watson-orchestrate/base?topic=builder-agentic-workflows-v2-chat-completion-api
+
+**In preview the review form comes to the runner.** IBM's user activities page says that in preview, every user activity message and form goes to the person who started the flow. Source: https://www.ibm.com/docs/en/watsonx/watson-orchestrate/base?topic=builder-adding-user-activities
+
+**What the runner does.** `run_agent.py --referral-flow` sends E then J in one thread. `REFERRAL_FLOW=1` in `wxo_eval.sh` passes the flag. After J, the runner polls the thread's messages for the first form. It sends one `form_operation: "submit"` item with the form's `id` and its `form_data`. All of the confirm form's fields are output-only, so its `form_data` goes back unchanged. The runner then polls until a message contains `REF-`, "No referral was recorded", or "The referral was cancelled". It stops there, so the review form is never answered. The flow's messages are saved with J's turn. Their text is added to J's answer, including the strings in any `form_data`, because an output-only form may carry the referral text there.
+
+**Open until a tenant run.** Five points are not yet checked against a tenant:
+
+1. The exact shape of the form message in `/threads/{thread_id}/messages`.
+2. Whether the submit item must echo the form item's `id`, its `name`, or neither.
+3. Whether `form_data` must be an object, as the OpenAPI says, or JSON text, as the MCP example sends.
+4. How a client presses a custom button, such as Cancel. No public doc covers it. The runner only needs Confirm.
+5. The thread status endpoint. The ADK client has no method for it, so the runner reads messages only.
+
+**J's trace facts will likely fail.** `create_fraud_referral` runs inside the flow, not as an agent tool call. Its result does not appear in the reply's `step_history`, so `score.py` cannot see the four `trace_facts` in J. Only J's `answer_facts` can be met, from the flow's messages. This is reported to orz, who owns `eval/scenarios.yaml`.
+
+**The run leaves state behind.** The review form stays pending, and the referral stays OPEN. `make demo-reset` deletes the referral before the next run.
+
+### Supervisor on gpt-6-luna, first runs
+
+`bank_supervisor` runs on `virtual-model/openai/gpt-6-luna`. On Scenario H in a new thread, it routed to banking_policy every time. banking_policy read "the line is delayed" as a delayed wire, and it answered from the wire policy, so H failed 3 of 3. The supervisor sends the banker's message word for word, so banking_policy never learned that the line was a line of credit under fraud review.
+
+- **Decision:** Ryan chose to let the supervisor add one sentence of context from the chat when it sends a question to banking_policy. H now runs after E in one thread, the way the demo plays it. The sentence carries no amounts, balances, or account details.
+- **Result:** In the E then H run, all three H answers gave the policy's script for a delayed application, and none tipped off the client.
+- **Dropped:** We did not move banking_policy to luna, because a better model still would not know the context.
+
+### Supervisor prompt review
+
+In Scenario E, the luna supervisor dropped specialist facts, such as Hale's 56 percent share and Luis Ortega. The prompt follows the usual practice for agent prompts. It gives a role and routing conditions, it sets limits, and it names no scenario or expected answer. It had one conflict. It asked for "one short section per specialist" and also to keep every amount, date, rule code, name, and percentage. This conflict is the likely cause of the summarizing, but that is not proven.
+
+- **Decision:** Ryan chose to remove "short" and add the reason: the banker decides whether to refer from these sections, so they need the full evidence.
+- **Dropped:** We did not add a fixed checklist of facts or a fixed recommendation sentence. Ryan does not want the supervisor's answers hard-coded.
+
+### fraud_investigator after screen_business
+
+With `screen_business`, F passed 3 of 3, but E dropped FRAUD-SHARED-ID in all 3 runs. The tool returns a separate `red_flags` list in each of its three sections. The instruction still said "List only rules in red_flags", which reads as one list. In all 3 E runs, fraud_investigator also worked out the LEND-BUSLINE-REV line size, which is credit_analyst's job.
+
+- **Decision:** Ryan chose two general rule changes. The instruction now names all three lists. A new line tells the agent to leave lending rules to credit_analyst.
+- **Dropped:** We did not make step 1 open with a fixed sentence about whose book a business is in, because that hard-codes the answer. The "FRADE-REG-AGENT" typo in G is left alone.
+
+### Scorer text normalization
+
+The luna answers use U+2011 non-breaking hyphens, a space before the percent sign, and `**` bold inside phrases. The scorer missed rule codes such as AML-NO-TIPOFF in those answers. Its must-not-appear checks also let through a leak written as "A‑3002" or "**Victor** Hale". Ryan approved folding these into plain text in the scorer. With the fix, H runs 2 and 3 pass. The remaining E misses are real content gaps.
+
+### Wording gaps in E and H, and the supervisor check
+
+After the combining fix, the supervisor answered E and H with the right content, but some answers used wording the checks did not list. One E answer opened "Refer to the fraud team" without saying "do not approve". Another said "The group shares a phone number". One H answer said "you must not:" and then "Mention that a fraud referral exists" in a bullet.
+
+- **Decision:** Ryan approved widening these lists. E's "do not approve" now accepts a recommendation to refer the application to the fraud team. E's shared phone or device check accepts "shares a phone" and "shares a device". H's "must not mention the referral" accepts "mention that a fraud referral".
+- **Result:** All six saved answers from the E then H run now meet every answer fact.
+- **Supervisor check:** `supervisor_check.py` read rule codes from the raw text, so luna's U+2011 hyphens made codes look dropped or added. It also counted AML-NO-TIPOFF as an added fact, though the supervisor's instructions require that reminder. Ryan approved folding the hyphens and allowing AML-NO-TIPOFF.
+
+### Scenario I opening
+
+fraud_investigator passed I in 2 of 3 runs. The failing run called `screen_business` on Ortega and then reported Ortega's full screen. It never said Keystone belongs to another banker. Ryan asked foz to fix the order. The step now begins the answer by saying the business belongs to another banker. It also reports only the identifiers the outside business shares with Dana's client, not the client's own red flags. Both lines set order and scope. Neither one fixes the answer's content.
+
+### Smaller staff demo
+
+The full staff flow did not run reliably end to end. `banking_baseline` refused Scenario E in 3 of 3 runs, so it cannot show the failure step. `fraud_investigator` passed Scenario I in 1 or 2 of 3 runs after three rounds of instruction changes. No run leaked Keystone data. The referral workflow, Scenario J, and the eval code that answers the workflow's forms are built and tested locally, but none of it ran on the tenant. Sam's tenant login and how a member connection resolves in a flow step are still open.
+
+- **Decision:** Ryan chose to keep only the steps that pass on the tenant. The staff demo is now four steps. `credit_analyst` alone approves Scenario E. `bank_supervisor` answers Scenario E with both specialists. Scenario H follows in the same chat. The proof query draws the ring.
+- **Scenario I:** Scenario I is now a leak check. It passes when no Keystone account ID, balance, transaction, application detail, or home address appears. The wording about Keystone's banker is reviewed by hand.
+- **Deferred:** The referral workflow, Scenario J, the referral proof query, the member connection, and the live deploy move to Later phases. Their code stays in the repository, unused.
+- **Dropped:** We dropped `banking_baseline` as the staff failure step, more instruction fixes for the Scenario I opening, and five runs per scenario. Three runs each is the bar.

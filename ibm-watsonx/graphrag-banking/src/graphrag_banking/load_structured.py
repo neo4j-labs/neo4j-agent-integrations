@@ -73,6 +73,7 @@ _NODE_KEYS = {
     "LendingRule": "rule_code",
     "Banker": "banker_id",
     "FraudReviewer": "reviewer_id",
+    "FraudReferral": "referral_id",
     "Person": "person_id",
     "Business": "business_id",
     "Phone": "number",

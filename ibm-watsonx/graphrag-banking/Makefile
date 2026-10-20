@@ -1,4 +1,4 @@
-.PHONY: sync check reset ingest rebuild chat baseline eval lint test \
+.PHONY: sync check reset ingest rebuild demo-reset chat baseline eval lint test \
 	wxo-env wxo-connection wxo-tools wxo-agent wxo-baseline wxo-policy \
 	wxo-staff-tools wxo-staff-agents wxo-setup wxo-check wxo-deploy wxo-eval
 
@@ -22,6 +22,11 @@ ingest:
 	uv run build-groups
 
 rebuild: reset ingest
+
+# Deletes every FraudReferral the fraud_referral flow wrote, so the loan fraud
+# demo can run again from Scenario E. Leaves the rest of the graph alone.
+demo-reset:
+	uv run python -m graphrag_banking.referral_tools --cleanup
 
 chat:
 	uv run chat

@@ -15,7 +15,8 @@ requests a minute and keeps traces for four hours.
          that the supervisor's answer keeps. Names are the "name" values in that
          collaborator's own tool results.
   Added  Amounts, rule codes, and percentages in the supervisor's answer that are
-         in no collaborator's answer.
+         in no collaborator's answer. AML-NO-TIPOFF is allowed, because
+         bank_supervisor's instructions tell it to add that reminder.
   Copy   For a scenario with one expected collaborator, whether the answer is
          its answer exactly, with a difflib ratio. Reported, not scored.
 
@@ -34,10 +35,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from graphrag_banking.eval_local import contains, load_scenarios, normalize
+from graphrag_banking.eval_local import _HYPHENS, contains, load_scenarios, normalize
 
 TRACES_SCRIPT = Path(__file__).with_name("traces.py")
 SCORED_KINDS = ("amount", "rule_code", "percent")
+# Rule codes the supervisor may add that no collaborator gave.
+SUPERVISOR_RULE_CODES = frozenset({"AML-NO-TIPOFF"})
 
 _AMOUNT = re.compile(r"\$\d+(?:\.\d+)?(?!\w|\.\d)")
 _RULE_CODE = re.compile(r"\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b")
@@ -69,11 +72,12 @@ def collaborator_answers(observations: list[dict[str, Any]]) -> list[tuple[str, 
 
 
 def facts(text: str, year: int) -> dict[str, set[str]]:
-    """Amounts, rule codes, percentages, and dates in text, normalized."""
+    """Amounts, rule codes, percentages, and dates in text, normalized. Rule codes
+    are read from text with its hyphens folded but its case kept."""
     plain = normalize(text, year)
     return {
         "amount": set(_AMOUNT.findall(plain)),
-        "rule_code": set(_RULE_CODE.findall(text)),
+        "rule_code": set(_RULE_CODE.findall(text.translate(_HYPHENS))),
         "percent": {f"{number}%" for number in _PERCENT.findall(plain)},
         "date": set(_DATE.findall(plain)),
     }
@@ -130,7 +134,10 @@ def check_run(
             if values - kept:
                 result.missing.setdefault(name, []).extend(sorted(values - kept))
     result.added = sorted(
-        v for kind in SCORED_KINDS for v in final_facts[kind] - from_collaborators[kind]
+        v
+        for kind in SCORED_KINDS
+        for v in final_facts[kind] - from_collaborators[kind]
+        if v not in SUPERVISOR_RULE_CODES
     )
     if answers and len(scenario.get("expected_collaborators", [])) == 1:
         copied = answers[-1][1].strip()

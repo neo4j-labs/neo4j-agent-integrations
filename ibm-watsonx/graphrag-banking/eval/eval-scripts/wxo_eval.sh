@@ -8,6 +8,8 @@
 #   PERSONA=customer         the persona "all" runs: customer or staff
 #   RUNS=1                   runs per scenario
 #   SAME_THREAD=             1 sends the scenarios in order in one thread per run
+#   REFERRAL_FLOW=           1 runs E then J in one thread and presses Confirm on
+#                            the fraud_referral flow's form. Ignores SCENARIOS.
 #   SUPERVISOR_CHECK=        1 also runs supervisor_check.py on the saved results
 #   TRACES_DIR=eval/results/traces   where supervisor_check.py caches traces
 set -euo pipefail
@@ -18,6 +20,7 @@ SCENARIOS="${SCENARIOS:-A,B,C,D}"
 PERSONA="${PERSONA:-customer}"
 RUNS="${RUNS:-1}"
 SAME_THREAD="${SAME_THREAD:-}"
+REFERRAL_FLOW="${REFERRAL_FLOW:-}"
 SUPERVISOR_CHECK="${SUPERVISOR_CHECK:-}"
 TRACES_DIR="${TRACES_DIR:-eval/results/traces}"
 
@@ -28,6 +31,9 @@ trap 'rm -rf "$runs_dir"' EXIT
 args=(--agents "$AGENTS" --scenarios "$SCENARIOS" --persona "$PERSONA" --runs "$RUNS")
 if [[ "$SAME_THREAD" == 1 ]]; then
   args+=(--same-thread)
+fi
+if [[ "$REFERRAL_FLOW" == 1 ]]; then
+  args+=(--referral-flow)
 fi
 
 "$ADK_PY" -I eval/eval-scripts/run_agent.py "$runs_dir" "${args[@]}"

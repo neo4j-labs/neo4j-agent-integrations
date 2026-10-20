@@ -37,6 +37,10 @@ _DATE = re.compile(
     re.IGNORECASE,
 )
 _AMOUNT = re.compile(r"(?:(\$)\s?)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?")
+# Some models write U+2011 non-breaking hyphens, "56 %" with a narrow space, and
+# **bold** inside a phrase, as in "you **cannot** mention".
+_HYPHENS = str.maketrans("\u2010\u2011", "--")
+_PERCENT = re.compile(r"(\d)\s+%")
 
 
 @dataclass
@@ -57,7 +61,8 @@ def persona(scenario: dict[str, Any]) -> str:
 
 
 def normalize(text: str, year: int) -> str:
-    """Lowercase, write dates as YYYY-MM-DD, and amounts as $5000 or $1137.42."""
+    """Lowercase, write dates as YYYY-MM-DD, and amounts as $5000 or $1137.42.
+    Drop bold markers, and write hyphens as "-" and percentages as "56%"."""
 
     def iso_date(match: re.Match[str]) -> str:
         month = _MONTH_ABBREVS.index(match[1][:3].lower()) + 1
@@ -69,7 +74,8 @@ def normalize(text: str, year: int) -> str:
             cents = ""
         return f"{match[1] or ''}{match[2].replace(',', '')}{cents}"
 
-    text = text.replace("\u2019", "'")
+    text = text.replace("\u2019", "'").translate(_HYPHENS).replace("**", "")
+    text = _PERCENT.sub(r"\1%", text)
     text = _DATE.sub(iso_date, text)
     text = _AMOUNT.sub(plain_amount, text)
     return " ".join(text.lower().split())

@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 
 from graphrag_banking.config import EVAL_DIR
-from graphrag_banking.eval_local import found_in, load_scenarios, persona, score
+from graphrag_banking.eval_local import (
+    found_in,
+    load_scenarios,
+    normalize,
+    persona,
+    score,
+)
 
 sys.path.insert(0, str(EVAL_DIR / "eval-scripts"))
 import score as wxo_score
@@ -53,7 +59,7 @@ def test_persona_defaults_to_customer() -> None:
 
 def test_scenarios_split_by_persona() -> None:
     by_persona = {s["id"]: persona(s) for s in load_scenarios()}
-    staff = {"E", "F", "G", "H", "I", "I1"}
+    staff = {"E", "F", "G", "H", "I", "I1", "J"}
     assert {sid for sid, p in by_persona.items() if p == "staff"} == staff
     assert {p for sid, p in by_persona.items() if sid not in staff} == {"customer"}
     assert set("ABCD") <= by_persona.keys() - staff
@@ -105,6 +111,46 @@ def test_trace_must_not_ignores_other_amounts_and_ids() -> None:
     scenario = _scenario(trace_must_not=["A-3002", "65,000"])
     results = [{"amount": 650000.0, "account": "A-30021"}, {"group": None}, []]
     assert _failed(score(scenario, _result(results), YEAR)) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("AML\u2011NO\u2011TIPOFF", "aml-no-tipoff"),
+        ("+1\u2011555\u20110610", "+1-555-0610"),
+        ("non\u2010breaking", "non-breaking"),
+        ("effective 56\u202f% ownership", "effective 56% ownership"),
+        ("56 % and 100%", "56% and 100%"),
+        ("you **cannot** mention it", "you cannot mention it"),
+        ("**FRAUD\u2011REFERRAL**", "fraud-referral"),
+    ],
+)
+def test_normalize_hyphens_percent_and_bold(text: str, expected: str) -> None:
+    assert normalize(text, YEAR) == expected
+
+
+def test_normalize_keeps_en_dash_and_single_asterisks() -> None:
+    assert normalize("pages 1\u20132 *note*", YEAR) == "pages 1\u20132 *note*"
+
+
+def test_answer_facts_match_through_formatting() -> None:
+    scenario = _scenario(
+        answer_facts=[
+            {"fact": "rule", "any_of": ["AML-NO-TIPOFF"]},
+            {"fact": "share", "any_of": ["56%"]},
+            {"fact": "mention", "any_of": ["cannot mention"]},
+        ]
+    )
+    result = _result([]) | {
+        "answer": "Hale owns 56\u202f%. You **cannot** mention it (AML\u2011NO\u2011TIPOFF)."
+    }
+    assert _failed(score(scenario, result, YEAR)) == []
+
+
+def test_must_not_appear_catches_a_leak_with_a_non_breaking_hyphen() -> None:
+    scenario = _scenario(must_not_appear=["A-3002", "Victor Hale"])
+    result = _result([]) | {"answer": "Account A\u20113002 belongs to **Victor** Hale."}
+    assert _failed(score(scenario, result, YEAR)) == ["A-3002", "Victor Hale"]
 
 
 def test_absence_matches_empty_list_and_none() -> None:
@@ -188,6 +234,39 @@ def test_added_reports_facts_no_collaborator_gave(
         supervisor_run, scenario, supervisor_trace, YEAR
     )
     assert result.added == ["$12", "15%", "FEE-WIRE-OUT"]
+
+
+def test_facts_fold_hyphens_in_rule_codes() -> None:
+    found = supervisor_check.facts(
+        "**AUTH\u2011RM\u2011LIMIT** and FRAUD\u2010REFERRAL", YEAR
+    )
+    assert found["rule_code"] == {"AUTH-RM-LIMIT", "FRAUD-REFERRAL"}
+
+
+def test_kept_matches_rule_codes_across_hyphen_styles(
+    supervisor_run, supervisor_trace
+) -> None:
+    scenario = {"expected_collaborators": ["banking_support"]}
+    collaborator = next(o for o in supervisor_trace if o.get("name") == "collaborator")
+    answer = collaborator["output"]["message"]
+    collaborator["output"]["message"] = answer + " See FEE‑WIRE‑OUT."
+    supervisor_run["answer"] = answer + " See FEE-WIRE-OUT."
+    result = supervisor_check.check_run(
+        supervisor_run, scenario, supervisor_trace, YEAR
+    )
+    assert result.missing == {}
+    assert result.added == []
+
+
+def test_added_allows_only_the_supervisor_rule_code(
+    supervisor_run, supervisor_trace
+) -> None:
+    scenario = {"expected_collaborators": ["banking_support"]}
+    supervisor_run["answer"] += " Per AML\u2011NO\u2011TIPOFF, see AML-SAR-FILE."
+    result = supervisor_check.check_run(
+        supervisor_run, scenario, supervisor_trace, YEAR
+    )
+    assert result.added == ["AML-SAR-FILE"]
 
 
 def test_copy_compares_single_collaborator_answer(
