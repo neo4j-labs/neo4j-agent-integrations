@@ -585,6 +585,10 @@ def check_policies(c: Checker, facts: dict[str, Any]) -> None:
             text.splitlines()[0] == f"# {policy['name']}",
             f"{policy['file']}: first line must be '# {policy['name']}'",
         )
+        c.check(
+            policy.get("audience") in {"customer", "staff"},
+            f"{policy['file']}: audience must be customer or staff",
+        )
         for section in re.split(r"^(?=## )", text, flags=re.MULTILINE):
             heading = section.splitlines()[0]
             for code in RULE_CODE_LINE.findall(section):
@@ -636,11 +640,15 @@ def _is_amount(value: str, positive: bool) -> bool:
 
 
 def main() -> None:
+    # Imported here because validate_fraud reuses this module's helpers.
+    from graphrag_banking.validate_fraud import check_fraud, read_fraud_csvs
+
     settings = load_settings()
     facts = load_policy_facts()
     hero = load_hero_fixtures()
     try:
         tables = read_csvs()
+        fraud_tables = read_fraud_csvs()
     except FileNotFoundError as err:
         raise SystemExit(f"{err.filename} is missing. Run generate-data.") from err
 
@@ -648,6 +656,7 @@ def main() -> None:
     check_structure(checker, tables, facts)
     check_rules_in_data(checker, tables, facts, settings.demo_as_of)
     check_hero(checker, tables, facts, hero, settings.demo_as_of)
+    check_fraud(checker, fraud_tables, facts, settings.demo_as_of)
     check_policies(checker, facts)
 
     for error in checker.errors:

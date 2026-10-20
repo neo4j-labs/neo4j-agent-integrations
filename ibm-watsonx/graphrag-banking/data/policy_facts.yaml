@@ -18,10 +18,14 @@
 #     name                also the document title (the "# <Title>" line)
 #     effective_date      YYYY-MM-DD
 #     file                file name in data/policy_templates/ and data/policies/
+#     audience            customer or staff. Only customer documents are in
+#                         the chunk_embedding index that search_policies uses.
 #
 #   fee_rules[]         -> (:FeeRule)
 #   hold_rules[]        -> (:HoldRule)
 #   compliance_rules[]  -> (:ComplianceRule)
+#   fraud_rules[]       -> (:FraudRule)      staff demo: KYC, FRAUD and AML rules
+#   lending_rules[]     -> (:LendingRule)    staff demo: LEND and AUTH rules
 #     rule_code           key; tagged as "Rule code: <CODE>" in exactly one
 #                         section of the document for policy_id
 #     policy_id           (:Policy)-[:DEFINES]->(rule)
@@ -34,6 +38,10 @@
 #     applies_to          fee rules: product codes  -> [:APPLIES_TO]
 #     waived_for          fee rules: product codes  -> [:WAIVED_FOR]
 #                         always a subset of applies_to
+#     percent             fraud and lending rules: whole percent, e.g. 25
+#     years               fraud rules: look-back period in years
+#     lookback_days       fraud rules: look-back period in days
+#     min_red_flags       fraud rules: red flags that trigger a referral
 #
 # Template placeholders are derived from these values by render-policies:
 #   ${<code>_<field>}  with the code lower-cased and "-" replaced by "_".
@@ -59,34 +67,62 @@ policies:
     name: Account Products and Tiers
     effective_date: 2026-01-01
     file: account_products.md
+    audience: customer
   - policy_id: POL-FEES
     name: Fee Schedule
     effective_date: 2026-01-01
     file: fee_schedule.md
+    audience: customer
   - policy_id: POL-FUNDS
     name: Funds Availability and Check Holds
     effective_date: 2026-01-01
     file: funds_availability.md
+    audience: customer
   - policy_id: POL-WIRE
     name: Wire Transfer Policy
     effective_date: 2026-01-01
     file: wire_transfers.md
+    audience: customer
   - policy_id: POL-SCREEN
     name: Payment Screening and Compliance Review
     effective_date: 2026-01-01
     file: payment_screening.md
+    audience: customer
   - policy_id: POL-OD
     name: Overdraft Policy
     effective_date: 2026-01-01
     file: overdraft.md
+    audience: customer
   - policy_id: POL-JOINT
     name: Joint Accounts and Authorized Users
     effective_date: 2026-01-01
     file: joint_accounts.md
+    audience: customer
   - policy_id: POL-COMPLAINTS
     name: Complaint Handling
     effective_date: 2026-01-01
     file: complaint_handling.md
+    audience: customer
+  - policy_id: POL-UBO
+    name: Beneficial Ownership
+    effective_date: 2026-01-01
+    file: beneficial_ownership.md
+    audience: staff
+  - policy_id: POL-FRAUD
+    name: Fraud Red Flags in Lending
+    effective_date: 2026-01-01
+    file: fraud_red_flags.md
+    audience: staff
+  - policy_id: POL-SAR
+    name: Fraud Referrals and Suspicious Activity
+    effective_date: 2026-01-01
+    file: suspicious_activity.md
+    audience: staff
+  - policy_id: POL-LEND
+    name: Business Lending and Approval Authority
+    effective_date: 2026-01-01
+    file: business_lending.md
+    audience: staff
 
 fee_rules:
   - rule_code: FEE-WIRE-OUT
@@ -190,3 +226,69 @@ compliance_rules:
       within 24 hours are reviewed.
     transaction_types: [WIRE_OUT, ACH_OUT, TRANSFER]
     threshold: 10000.00
+
+fraud_rules:
+  - rule_code: KYC-UBO-25
+    policy_id: POL-UBO
+    name: Beneficial owner threshold
+    condition: >-
+      Anyone with an effective ownership share at or above the percent is a
+      beneficial owner. The effective share multiplies the shares along each
+      ownership chain and adds the chains together.
+    percent: 25
+  - rule_code: FRAUD-PRIOR-LOSS
+    policy_id: POL-FRAUD
+    name: Beneficial owner with a prior loss
+    condition: >-
+      A beneficial owner of the applicant who was an owner of a borrower whose
+      loan was written off within the look-back period is a red flag.
+    years: 5
+  - rule_code: FRAUD-SHARED-ID
+    policy_id: POL-FRAUD
+    name: Shared identifiers across applicants
+    condition: >-
+      Applicants with no stated relationship that share a phone number, email
+      address, device, home or office address, or director are a red flag.
+  - rule_code: FRAUD-CIRCULAR-FLOW
+    policy_id: POL-FRAUD
+    name: Circular money flows
+    condition: >-
+      Deposits that come from businesses in the applicant's connected group,
+      after money left the applicant for that group, are a red flag. They do
+      not count as verified revenue.
+    lookback_days: 90
+  - rule_code: FRAUD-REG-AGENT
+    policy_id: POL-FRAUD
+    name: Registered agent and coworking addresses
+    condition: >-
+      A shared registered agent address or coworking address is not a red flag
+      on its own.
+  - rule_code: FRAUD-REFERRAL
+    policy_id: POL-SAR
+    name: Fraud referral before a decision
+    condition: >-
+      An application that matches the minimum number of red flags is referred
+      to the fraud team before any credit decision.
+    min_red_flags: 2
+  - rule_code: AML-NO-TIPOFF
+    policy_id: POL-SAR
+    name: No tipping off
+    condition: >-
+      Staff must not tell a client, or anyone acting for a client, that a fraud
+      referral or suspicious activity report exists or is being considered.
+
+lending_rules:
+  - rule_code: LEND-BUSLINE-REV
+    policy_id: POL-LEND
+    name: Business line of credit size
+    condition: >-
+      A business line of credit can be at most the percent of the business's
+      verified annual revenue.
+    percent: 25
+  - rule_code: AUTH-RM-LIMIT
+    policy_id: POL-LEND
+    name: Relationship manager approval limit
+    condition: >-
+      A relationship manager can approve business credit up to the amount.
+      Larger requests go to the credit committee.
+    amount: 500000.00

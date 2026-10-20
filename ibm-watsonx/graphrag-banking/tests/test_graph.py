@@ -12,6 +12,7 @@ import neo4j
 import pytest
 import yaml
 
+from graphrag_banking.build_policy_graph import CUSTOMER_CHUNK_LABEL
 from graphrag_banking.config import (
     GENERATED_DIR,
     POLICY_FACTS_PATH,
@@ -70,10 +71,12 @@ def _count(query, label: str) -> int:
 # Node counts
 
 
-@pytest.mark.parametrize(("file", "label"), _NODE_FILES.items())
-def test_structured_counts_match_csvs(query, file: str, label: str) -> None:
-    with (GENERATED_DIR / file).open(newline="", encoding="utf-8") as handle:
-        rows = sum(1 for _ in csv.DictReader(handle))
+@pytest.mark.parametrize("label", sorted(set(_NODE_FILES.values())))
+def test_structured_counts_match_csvs(query, label: str) -> None:
+    rows = 0
+    for file in (f for f, lbl in _NODE_FILES.items() if lbl == label):
+        with (GENERATED_DIR / file).open(newline="", encoding="utf-8") as handle:
+            rows += sum(1 for _ in csv.DictReader(handle))
     assert _count(query, label) == rows
 
 
@@ -83,6 +86,8 @@ def test_rule_layer_counts_match_policy_facts(query, facts) -> None:
     assert _count(query, "FeeRule") == len(facts["fee_rules"])
     assert _count(query, "HoldRule") == len(facts["hold_rules"])
     assert _count(query, "ComplianceRule") == len(facts["compliance_rules"])
+    assert _count(query, "FraudRule") == len(facts["fraud_rules"])
+    assert _count(query, "LendingRule") == len(facts["lending_rules"])
 
 
 def test_one_document_per_policy(query, facts) -> None:
@@ -114,13 +119,31 @@ def test_indexes_online(query) -> None:
     }
 
 
+def test_only_customer_documents_are_in_the_vector_index(query) -> None:
+    rows = query(
+        "SHOW INDEXES YIELD name, labelsOrTypes WHERE name = $name "
+        "RETURN labelsOrTypes",
+        name=VECTOR_INDEX_NAME,
+    )
+    assert rows[0]["labelsOrTypes"] == [CUSTOMER_CHUNK_LABEL]
+    rows = query(
+        """
+        MATCH (c:Chunk)-[:FROM_DOCUMENT]->(d:Document)
+        WHERE (c:CustomerChunk) <> (d.audience = 'customer')
+        RETURN count(c) AS n
+        """
+    )
+    assert rows[0]["n"] == 0
+
+
 # Rule links
 
 
 def test_every_rule_links_to_a_chunk(query) -> None:
     rows = query(
         """
-        MATCH (r) WHERE (r:FeeRule OR r:HoldRule OR r:ComplianceRule)
+        MATCH (r) WHERE (r:FeeRule OR r:HoldRule OR r:ComplianceRule OR r:FraudRule
+          OR r:LendingRule)
           AND NOT (r)-[:FROM_CHUNK]->(:Chunk)
         RETURN r.rule_code AS rule_code
         """
@@ -135,7 +158,8 @@ def test_every_rule_code_tag_matches_a_rule(query) -> None:
         WITH DISTINCT code
         WHERE NOT EXISTS {
           MATCH (r {rule_code: code})
-          WHERE r:FeeRule OR r:HoldRule OR r:ComplianceRule
+          WHERE r:FeeRule OR r:HoldRule OR r:ComplianceRule OR r:FraudRule
+          OR r:LendingRule
         }
         RETURN code
         """
@@ -264,3 +288,76 @@ def test_scenario_d_sarahs_savings_not_held_by_marcus(query) -> None:
         """
     )
     assert rows == [{"holders": ["C-1002"], "balance": 18250.0}]
+
+
+# Loan fraud traversals
+
+
+def test_scenario_e_dana_manages_ortega_and_hale_owns_through_crestline(
+    query,
+) -> None:
+    rows = query(
+        """
+        MATCH (:Banker {banker_id: 'RM-07'})-[:MANAGES]->
+              (b:Business {business_id: 'B-1002'})-[:APPLIED_FOR]->
+              (app:LoanApplication {application_id: 'APP-1001'})
+        MATCH chain = (:Person {person_id: 'P-1001'})-[:OWNS*1..3]->(b)
+        WITH app, reduce(s = 1.0, r IN relationships(chain) | s * r.percent / 100)
+             AS share
+        RETURN app.amount AS amount, round(sum(share) * 100, 2) AS percent
+        """
+    )
+    assert rows == [{"amount": 400000.0, "percent": 56.0}]
+
+
+def test_scenario_e_hale_prior_loss(query) -> None:
+    rows = query(
+        """
+        MATCH (:Person {person_id: 'P-1001'})-[:OWNS]->(:Business)
+              -[:BORROWER_ON]->(l:Loan {status: 'WRITTEN_OFF'})
+        RETURN l.loan_id AS loan, l.balance AS written_off
+        """
+    )
+    assert rows == [{"loan": "L-1001", "written_off": 186400.0}]
+
+
+def test_scenario_e_ring_shares_phone_and_device(query) -> None:
+    rows = query(
+        """
+        MATCH (b:Business)-[:HAS_PHONE]->(:Phone {number: '+1-555-0610'})
+        RETURN collect(b.business_id) AS phone,
+               COLLECT {
+                 MATCH (x:Business)-[:APPLIED_FOR]->(:LoanApplication)
+                       -[:SUBMITTED_FROM]->(:Device {device_id: 'DEV-1001'})
+                 RETURN x.business_id ORDER BY x.business_id
+               } AS device
+        """
+    )
+    assert sorted(rows[0]["phone"]) == ["B-1002", "B-1004", "B-1005", "B-1006"]
+    assert rows[0]["device"] == ["B-1002", "B-1004", "B-1005"]
+
+
+def test_scenario_e_loop_inflow(query, settings: Settings) -> None:
+    rows = query(
+        """
+        MATCH (src:Account)-[:HAS_TRANSACTION]->(t:Transaction)
+              -[:TO_ACCOUNT]->(:Account {account_id: 'A-3001'})
+        WHERE src.account_id IN ['A-3002', 'A-3003', 'A-3004']
+          AND date(t.initiated_at) >= $as_of - duration({days: 90})
+        RETURN sum(t.amount) AS inflow
+        """,
+        as_of=settings.demo_as_of,
+    )
+    assert rows == [{"inflow": 455000.0}]
+
+
+def test_scenario_f_brightline_has_no_shared_links(query) -> None:
+    rows = query(
+        """
+        MATCH (b:Business {business_id: 'B-1007'})-[:HAS_PHONE|HAS_EMAIL]->(id)
+              <-[:HAS_PHONE|HAS_EMAIL]-(other)
+        WHERE other <> b AND NOT EXISTS { (other)-[:OWNS|DIRECTOR_OF]->(b) }
+        RETURN count(other) AS n
+        """
+    )
+    assert rows == [{"n": 0}]

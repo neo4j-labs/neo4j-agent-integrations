@@ -4,6 +4,10 @@ Runs a neo4j-graphrag ``Pipeline`` over ``data/policies/`` with no entity
 extraction, then creates the vector index and links each rule node to its
 chunks through ``Chunk.rule_codes`` (PRD section 5.3).
 
+Chunks from customer documents also get the ``CustomerChunk`` label, and the
+vector index covers only that label. Staff documents stay out of
+``search_policies``. Staff tools read their policy text through ``FROM_CHUNK``.
+
 Run after ``load-structured``. Running it twice without ``reset-db`` duplicates
 the chunks, so use ``make rebuild``.
 """
@@ -41,11 +45,19 @@ _RULE_CODE_LINE = re.compile(r"^Rule code: (\S+)[ \t]*$", re.MULTILINE)
 _SECTION_START = re.compile(r"^## ", re.MULTILINE)
 _TITLE_LINE = re.compile(r"^# .*$", re.MULTILINE)
 
+CUSTOMER_CHUNK_LABEL = "CustomerChunk"
+
+_LABEL_CUSTOMER_CHUNKS = """
+MATCH (c:Chunk)-[:FROM_DOCUMENT]->(:Document {audience: 'customer'})
+SET c:CustomerChunk
+RETURN count(c) AS chunks
+"""
+
 _LINK_RULES_TO_CHUNKS = """
 MATCH (c:Chunk)
 UNWIND c.rule_codes AS code
 MATCH (r {rule_code: code})
-WHERE r:FeeRule OR r:HoldRule OR r:ComplianceRule
+WHERE r:FeeRule OR r:HoldRule OR r:ComplianceRule OR r:FraudRule OR r:LendingRule
 MERGE (r)-[:FROM_CHUNK]->(c)
 RETURN count(*) AS links
 """
@@ -106,7 +118,11 @@ async def _write_documents(driver: neo4j.Driver, settings: Settings) -> None:
         path = POLICIES_DIR / policy["file"]
         document_info = DocumentInfo(
             path=str(path.relative_to(PROJECT_ROOT)),
-            metadata={"title": policy["name"], "policy_id": policy["policy_id"]},
+            metadata={
+                "title": policy["name"],
+                "policy_id": policy["policy_id"],
+                "audience": policy["audience"],
+            },
         )
         await pipeline.run(
             {
@@ -121,6 +137,10 @@ def build_policy_graph(settings: Settings) -> None:
     """Write the document layer, create the vector index, and link rules."""
     with get_driver(settings) as driver:
         asyncio.run(_write_documents(driver, settings))
+        records, _, _ = driver.execute_query(
+            _LABEL_CUSTOMER_CHUNKS, database_=settings.neo4j_database
+        )
+        logger.info("Labeled customer chunks: %d", records[0]["chunks"])
 
         dimensions = len(
             SharedEmbedder(settings.embedding_config).embed_query("dimensions")
@@ -128,7 +148,7 @@ def build_policy_graph(settings: Settings) -> None:
         create_vector_index(
             driver,
             name=VECTOR_INDEX_NAME,
-            label="Chunk",
+            label=CUSTOMER_CHUNK_LABEL,
             embedding_property="embedding",
             dimensions=dimensions,
             similarity_fn="cosine",

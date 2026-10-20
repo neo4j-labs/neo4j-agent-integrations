@@ -13,7 +13,7 @@ from neo4j_graphrag.retrievers import VectorRetriever
 from neo4j_graphrag.types import RetrieverResultItem
 
 from graphrag_banking.config import get_driver, load_settings
-from graphrag_banking.eval_local import load_scenarios
+from graphrag_banking.eval_local import load_scenarios, persona
 from graphrag_banking.models import SharedEmbedder
 from graphrag_banking.tools import VECTOR_INDEX_NAME
 
@@ -39,7 +39,7 @@ def main() -> None:
         questions = [
             (f"Scenario {s['id']}", s["prompt"])
             for s in load_scenarios()
-            if not s.get("adversarial")
+            if not s.get("adversarial") and persona(s) == "customer"
         ]
 
     settings = load_settings()

@@ -8,7 +8,13 @@ import yaml
 
 from graphrag_banking.config import HERO_FIXTURES_PATH, POLICY_FACTS_PATH
 
-RULE_SECTIONS = ("fee_rules", "hold_rules", "compliance_rules")
+RULE_SECTIONS = (
+    "fee_rules",
+    "hold_rules",
+    "compliance_rules",
+    "fraud_rules",
+    "lending_rules",
+)
 CREDIT_TYPES = frozenset({"WIRE_IN", "ACH_IN", "CHECK_DEPOSIT"})
 DEBIT_TYPES = frozenset({"WIRE_OUT", "ACH_OUT", "CARD", "FEE", "TRANSFER"})
 
@@ -24,7 +30,7 @@ def load_hero_fixtures() -> dict[str, Any]:
 
 
 def all_rules(facts: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every fee, hold and compliance rule, in file order."""
+    """Every fee, hold, compliance, fraud and lending rule, in file order."""
     return [rule for section in RULE_SECTIONS for rule in facts[section]]
 
 

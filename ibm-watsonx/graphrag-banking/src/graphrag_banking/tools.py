@@ -97,10 +97,11 @@ def search_policies(context: ToolContext, question: str) -> dict[str, Any]:
 
 
 def get_my_accounts(context: ToolContext) -> dict[str, Any]:
-    """List the customer's accounts with product, balances, and co-holders.
+    """List the customer's accounts with product, balances, and holders.
 
     Use this to find which account the customer means, such as "our joint
-    account", and which product terms apply to it.
+    account", and which product terms apply to it. ``holders`` names every
+    holder of the account, including the customer.
 
     Returns:
         The customer's accounts.
@@ -129,7 +130,9 @@ def find_my_transactions(
         date_to: Latest initiation date, YYYY-MM-DD, inclusive.
 
     Returns:
-        Matching transactions, at most 25.
+        Matching transactions, at most 25. ``account_holders`` names who holds
+        the account. ``initiated_by`` names who made the transaction, which on
+        a joint account can be a co-holder.
     """
     if type is not None and type not in TRANSACTION_TYPES:
         raise ValueError(f"Unknown transaction type {type!r}")
@@ -314,6 +317,7 @@ RETURN a.account_id AS account_id, a.nickname AS nickname, holds.role AS role,
        a.ledger_balance AS ledger_balance,
        a.available_balance AS available_balance,
        a.currency AS currency, a.status AS status,
+       [(holder:Customer)-[:HOLDS]->(a) | holder.name] AS holders,
        [(other:Customer)-[:HOLDS]->(a) WHERE other <> c | other.name]
          AS other_holders
 ORDER BY account_id
@@ -327,7 +331,9 @@ WHERE ($type IS NULL OR t.type = $type)
 
 _TRANSACTION_FIELDS = """
 RETURN t.transaction_id AS transaction_id, a.account_id AS account_id,
-       a.nickname AS account_nickname, t.type AS type, t.amount AS amount,
+       a.nickname AS account_nickname,
+       [(holder:Customer)-[:HOLDS]->(a) | holder.name] AS account_holders,
+       t.type AS type, t.amount AS amount,
        t.currency AS currency, t.status AS status,
        t.initiated_at AS initiated_at, t.posted_at AS posted_at,
        t.available_on AS available_on, t.channel AS channel,

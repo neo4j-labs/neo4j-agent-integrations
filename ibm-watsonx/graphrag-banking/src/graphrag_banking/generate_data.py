@@ -813,9 +813,17 @@ def write_csvs(data: Dataset) -> None:
 
 
 def main() -> None:
+    # Imported here because generate_fraud reuses this module's helpers.
+    from graphrag_banking.generate_fraud import FraudGenerator, write_fraud_csvs
+
     settings = load_settings()
+    hero = load_hero_fixtures()
     generator = Generator(settings.data_seed, settings.demo_as_of, load_policy_facts())
-    write_csvs(generator.run(load_hero_fixtures()))
+    data = generator.run(hero)
+    write_csvs(data)
+    customer_ids = [row["customer_id"] for row in data.rows["customers"]]
+    fraud = FraudGenerator(settings.data_seed, settings.demo_as_of)
+    write_fraud_csvs(fraud.run(hero["fraud"], customer_ids))
 
 
 if __name__ == "__main__":

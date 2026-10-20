@@ -1,0 +1,842 @@
+{
+  "started_at": "2026-10-20T00:02:10.144780+00:00",
+  "target": "watsonx_orchestrate",
+  "mode": "new_thread",
+  "agents": {
+    "banking_support": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3"
+  },
+  "models": {
+    "banking_support": "bedrock/openai.gpt-oss-120b-1:0"
+  },
+  "demo_as_of": "2026-10-08",
+  "customer_id": "C-1001",
+  "scenarios": [
+    "A",
+    "B",
+    "C",
+    "D"
+  ],
+  "runs_per_scenario": 1,
+  "passed": false,
+  "summary": {
+    "banking_support": {
+      "A": 1,
+      "B": 0,
+      "C": 0,
+      "D": 1
+    }
+  },
+  "runs": [
+    {
+      "agent": "banking_support",
+      "agent_id": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3",
+      "scenario": "A",
+      "run": 1,
+      "mode": "new_thread",
+      "turn": 1,
+      "prompt": "Why did my wire transfer to Acme Corp fail yesterday, and will I be charged a penalty fee?",
+      "status": "completed",
+      "error": null,
+      "seconds": 10.1,
+      "model": "bedrock/openai.gpt-oss-120b-1:0",
+      "thread_id": "3c51a335-d3db-43f8-99ec-6ce5f65088ba",
+      "run_id": "fdbc294c-065a-4111-ba40-2d31558e1102",
+      "trace_id": "ba3c4f4fa5c235149bb185a57c880c7e",
+      "answer": "Your wire to **Acme Corp** that you initiated on **October\u202f7** for **$5,000** is currently **held**, not failed.  \n\n**Why it was held**  \nThe wire was the first outgoing transfer to this new payee and the amount is over the $3,000 review threshold.\u202fAccording to the **Payment Screening and Compliance Review** policy, the first outgoing wire to a new payee above that amount is placed on hold for a standard compliance review. The review normally finishes within one business day, after which the wire will be sent automatically. A held wire is not considered a failed transaction.\n\n**Fees**  \nThe **Fee Schedule** policy lists two possible wire\u2011related fees:\n\n* **Outgoing wire fee \u2013 $30** \u2013 waived for Premium Checking accounts.  \n* **Returned\u2011wire fee \u2013 $35** \u2013 charged only when a wire is sent and then returned by the receiving bank; it is also waived for Premium Checking and is **not** charged for wires that are held for review.\n\nBecause your Premium Checking account waives both fees and the wire has not been sent (it is still under review), **no fee has been charged and no penalty fee will be applied**.  \n\nYou will see the wire status change to \u201csent\u201d once the review is complete. If you need to cancel it before it is sent, you can do so through online banking, and no fee would apply.",
+      "collaborators": [],
+      "passed": true,
+      "checks": [
+        {
+          "kind": "answer",
+          "fact": "$5,000 wire",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "to Acme Corp",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "sent October 7",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "held",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "$30 outgoing wire fee",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "$35 returned-wire fee",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "no fee for Premium Checking",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"transaction_id\": \"T-1022\", \"account_id\": \"A-1001\", \"status\": \"HELD\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"alert_id\": \"AL-1001\", \"rule_code\": \"WIRE-REVIEW-01\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"rule_code\": \"FEE-WIRE-OUT\", \"waived_for_this_product\": true}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"rule_code\": \"FEE-WIRE-RETURN\", \"waived_for_this_product\": true}",
+          "passed": true
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "find_my_transactions",
+          "args": {
+            "type": [
+              "WIRE_OUT"
+            ],
+            "payee": "Acme",
+            "date_to": "2026-10-07",
+            "date_from": "2026-10-07"
+          },
+          "agent": "banking_support",
+          "result": "I'm sorry, it seems I've encountered an error calling the tool.: Error invoking tool 'find_my_transactions' with kwargs {'type': ['WIRE_OUT'], 'payee': 'Acme', 'date_from': '2026-10-07', 'date_to': '2026-10-07'} with error:\n type: Input should be a valid string\n Please fix the error and try again."
+        },
+        {
+          "name": "find_my_transactions",
+          "args": {
+            "type": "WIRE_OUT",
+            "payee": "Acme",
+            "date_to": "2026-10-07",
+            "date_from": "2026-10-07"
+          },
+          "agent": "banking_support",
+          "result": {
+            "transactions": [
+              {
+                "account_holders": [
+                  "Marcus Okafor"
+                ],
+                "account_id": "A-1001",
+                "account_nickname": "Premium Checking",
+                "amount": "$5,000.00",
+                "available_on": null,
+                "channel": "ONLINE",
+                "counterparty": "Acme Corp",
+                "currency": "USD",
+                "description": "Wire to Acme Corp - invoice 2219",
+                "initiated_at": "2026-10-07T15:42:00.000000000+00:00",
+                "initiated_by": {
+                  "customer_id": "C-1001",
+                  "name": "Marcus Okafor"
+                },
+                "posted_at": null,
+                "status": "HELD",
+                "transaction_id": "T-1022",
+                "type": "WIRE_OUT"
+              }
+            ]
+          }
+        },
+        {
+          "name": "explain_transaction",
+          "args": {
+            "transaction_id": "T-1022"
+          },
+          "agent": "banking_support",
+          "result": {
+            "account": {
+              "account_id": "A-1001",
+              "nickname": "Premium Checking"
+            },
+            "alerts": [
+              {
+                "alert_id": "AL-1001",
+                "opened_at": "2026-10-07T15:42:05.000000000+00:00",
+                "reason": "First outgoing wire to this payee and above the review threshold",
+                "rule": {
+                  "condition": "The first outgoing wire to a payee above the threshold is held for a standard review. Reviews usually finish within one business day. A held wire has not failed and is not charged a returned-wire fee.",
+                  "name": "New payee wire review",
+                  "policy": "Payment Screening and Compliance Review",
+                  "policy_text": [
+                    "## New payee wire review\n\nRule code: WIRE-REVIEW-01\n\nThe first outgoing wire to a new payee is held for a standard review when it is over $3,000. Reviews usually finish within one business day. When the review is complete, the wire is sent and no further action is needed. A wire held for this review has not failed, and it is not charged a returned-wire fee."
+                  ],
+                  "rule_code": "WIRE-REVIEW-01",
+                  "threshold": "$3,000.00"
+                },
+                "rule_code": "WIRE-REVIEW-01",
+                "status": "OPEN"
+              }
+            ],
+            "counterparty": "Acme Corp",
+            "fee_rules": [
+              {
+                "amount": "$30.00",
+                "condition": "Charged for each outgoing domestic wire. Waived for Premium Checking.",
+                "name": "Outgoing wire fee",
+                "policy": "Fee Schedule",
+                "policy_text": [
+                  "## Wire transfer fees\n\nRule code: FEE-WIRE-OUT\nRule code: FEE-WIRE-IN\n\n- Outgoing domestic wire: $30 per wire.\n- Incoming wire: $15 per wire.\n\nThe outgoing wire fee is charged when the wire is sent. Premium Checking accounts are not charged either wire fee."
+                ],
+                "rule_code": "FEE-WIRE-OUT",
+                "threshold": null,
+                "waived_for_this_product": true
+              },
+              {
+                "amount": "$35.00",
+                "condition": "Charged when an outgoing wire is returned by the receiving bank. Not charged for wires that are held for review. Waived for Premium Checking.",
+                "name": "Returned wire fee",
+                "policy": "Fee Schedule",
+                "policy_text": [
+                  "## Returned wire fee\n\nRule code: FEE-WIRE-RETURN\n\nWhen the receiving bank returns an outgoing wire, for example because the beneficiary account number is wrong or the account is closed, we charge a returned-wire fee of $35. The returned funds are credited back to your account.\n\nThe returned-wire fee applies only to wires that were sent and then returned. It is not charged for a wire that is held for review or cancelled before it is sent. Premium Checking accounts are not charged the returned-wire fee."
+                ],
+                "rule_code": "FEE-WIRE-RETURN",
+                "threshold": null,
+                "waived_for_this_product": true
+              }
+            ],
+            "fees_charged": [],
+            "hold_rules": [],
+            "initiated_by": {
+              "customer_id": "C-1001",
+              "name": "Marcus Okafor"
+            },
+            "product": "Premium Checking",
+            "transaction": {
+              "amount": "$5,000.00",
+              "available_on": null,
+              "channel": "ONLINE",
+              "currency": "USD",
+              "description": "Wire to Acme Corp - invoice 2219",
+              "initiated_at": "2026-10-07T15:42:00.000000000+00:00",
+              "posted_at": null,
+              "status": "HELD",
+              "transaction_id": "T-1022",
+              "type": "WIRE_OUT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "agent": "banking_support",
+      "agent_id": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3",
+      "scenario": "B",
+      "run": 1,
+      "mode": "new_thread",
+      "turn": 1,
+      "prompt": "Sarah deposited a check into our joint account this morning. Has it cleared, and do we have enough to cover the mortgage auto-pay?",
+      "status": "completed",
+      "error": null,
+      "seconds": 9.6,
+      "model": "bedrock/openai.gpt-oss-120b-1:0",
+      "thread_id": "a4a02535-bffd-48f7-a306-b8d9ec458fa9",
+      "run_id": "fd18c487-66a1-4cad-bc27-5c5a5c0233d6",
+      "trace_id": "1164cd9e5193de8c995e1413acd4442f",
+      "answer": "**Check deposit**\n\n- Sarah deposited a $2,000 check this morning into your Joint Checking account.  \n- Because it was deposited before the 8:00\u202fPM ET cutoff, the \u201cNext business day check availability\u201d rule applies: the funds will be available **on Friday, October\u202f9**.  \n- The deposit is shown as a pending deposit in your account activity, but it is not part of the current available balance.\n\n**Mortgage auto\u2011pay**\n\n- Your next mortgage payment to Lakeside Home Loans is **$3,200 on October\u202f13**.  \n- Today\u2019s available balance in the Joint Checking account is **$1,800**.  \n- Adding the pending $2,000 check (which will be available on October\u202f9) gives an **available\u2011before\u2011payment amount of $3,800**.  \n- The scheduled\u2011payments view shows this payment as **covered**, so the mortgage will be paid on time.\n\n**Bottom line**\n\n- The check will clear and be usable on **October\u202f9**.  \n- With that deposit, you will have enough funds to cover the mortgage payment on **October\u202f13**.",
+      "collaborators": [],
+      "passed": false,
+      "checks": [
+        {
+          "kind": "answer",
+          "fact": "$2,000 check deposit",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "pending",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "available October 9",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "available balance today $1,800",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "$3,200 mortgage payment",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "to Lakeside Home Loans",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "due October 13",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "projected balance $3,800",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "covered after the deposit clears",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"transaction_id\": \"T-1123\", \"account_id\": \"A-1002\", \"status\": \"PENDING\", \"initiated_by\": {\"customer_id\": \"C-1002\"}}",
+          "passed": false
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"rule_code\": \"HOLD-CHECK-NBD\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"payment_id\": \"SP-1001\", \"covered\": true}",
+          "passed": true
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_my_accounts",
+          "args": {},
+          "agent": "banking_support",
+          "result": {
+            "accounts": [
+              {
+                "account_id": "A-1001",
+                "available_balance": "$24,792.91",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$29,792.91",
+                "nickname": "Premium Checking",
+                "other_holders": [],
+                "product": "Premium Checking",
+                "product_code": "CHK-PREM",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1002",
+                "available_balance": "$1,800.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor",
+                  "Sarah Okafor"
+                ],
+                "ledger_balance": "$1,800.00",
+                "nickname": "Joint Checking",
+                "other_holders": [
+                  "Sarah Okafor"
+                ],
+                "product": "Standard Checking",
+                "product_code": "CHK-STD",
+                "role": "JOINT",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1003",
+                "available_balance": "$11,325.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$11,325.00",
+                "nickname": "Emergency Fund",
+                "other_holders": [],
+                "product": "Standard Savings",
+                "product_code": "SAV-STD",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "get_scheduled_payments",
+          "args": {
+            "account_id": "A-1002"
+          },
+          "agent": "banking_support",
+          "result": {
+            "account_id": "A-1002",
+            "as_of": "2026-10-08",
+            "available_balance": "$1,800.00",
+            "nickname": "Joint Checking",
+            "payments": [
+              {
+                "amount": "$3,200.00",
+                "available_before_payment": "$3,800.00",
+                "covered": true,
+                "frequency": "MONTHLY",
+                "next_run_date": "2026-10-13",
+                "payee": "Lakeside Home Loans",
+                "payment_id": "SP-1001",
+                "status": "ACTIVE"
+              },
+              {
+                "amount": "$412.35",
+                "available_before_payment": "$600.00",
+                "covered": true,
+                "frequency": "MONTHLY",
+                "next_run_date": "2026-10-22",
+                "payee": "City Auto Finance",
+                "payment_id": "SP-1002",
+                "status": "ACTIVE"
+              },
+              {
+                "amount": "$186.50",
+                "available_before_payment": "$187.65",
+                "covered": true,
+                "frequency": "MONTHLY",
+                "next_run_date": "2026-10-28",
+                "payee": "Harbor Mutual Insurance",
+                "payment_id": "SP-1003",
+                "status": "ACTIVE"
+              }
+            ],
+            "pending_deposits": [
+              {
+                "amount": "$2,000.00",
+                "available_on": "2026-10-09",
+                "hold_rules": [
+                  {
+                    "condition": "The part of a day's check deposits above the threshold can be held for up to the hold period.",
+                    "hold_days": 5,
+                    "name": "Large deposit hold",
+                    "policy": "Funds Availability and Check Holds",
+                    "policy_text": [
+                      "## Large deposits\n\nRule code: HOLD-CHECK-LARGE\n\nWhen check deposits on one business day total more than $5,525, we may hold the amount above $5,525 for up to 5 business days. The first $5,525 follows the normal check deposit schedule. We will tell you if a longer hold applies and when the funds will be available."
+                    ],
+                    "rule_code": "HOLD-CHECK-LARGE",
+                    "threshold": "$5,525.00"
+                  },
+                  {
+                    "condition": "Checks deposited on a business day before the 8:00 PM ET cutoff are available on the next business day.",
+                    "hold_days": 1,
+                    "name": "Next business day check availability",
+                    "policy": "Funds Availability and Check Holds",
+                    "policy_text": [
+                      "## Check deposits\n\nRule code: HOLD-CHECK-NBD\n\nChecks deposited on a business day before the cutoff are available 1 business day after the day of deposit, which is the next business day. For example, a check deposited on a Thursday morning is available on Friday. While the deposit is pending it shows in your account activity, but it is not part of your available balance."
+                    ],
+                    "rule_code": "HOLD-CHECK-NBD",
+                    "threshold": null
+                  }
+                ],
+                "initiated_by": "Sarah Okafor",
+                "transaction_id": "T-1123",
+                "type": "CHECK_DEPOSIT"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "agent": "banking_support",
+      "agent_id": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3",
+      "scenario": "C",
+      "run": 1,
+      "mode": "new_thread",
+      "turn": 1,
+      "prompt": "What's the overdraft fee on our joint account, and how can we avoid it?",
+      "status": "completed",
+      "error": null,
+      "seconds": 10.0,
+      "model": "bedrock/openai.gpt-oss-120b-1:0",
+      "thread_id": "dc8fd4f9-d792-4b80-a421-0a024defa5bf",
+      "run_id": "d125abe2-5dad-41c1-b4e6-c901208d4220",
+      "trace_id": "4baf1d92d9fc6d1c14c3acc5583e2ba2",
+      "answer": "The overdraft fee for your **Joint Checking** (Standard\u202fChecking) account is **$29 per item** that overdraws the account. The fee is not charged if, after the item posts, the account is overdrawn by **$50 or less**.\n\n### How to avoid the fee\n\n1. **Stay within the $50 threshold** \u2013 make sure any payment or purchase does not push the balance more than $50 below zero.  \n2. **Maintain a larger balance** \u2013 keeping enough cash in the checking account to cover pending and upcoming payments eliminates the risk of overdrawing.  \n3. **Set low\u2011balance alerts** \u2013 you can turn on alerts in online banking so you\u2019re notified when the available balance falls near zero.  \n4. **Link a savings account for Overdraft Protection** \u2013 if an item would overdraw the checking account, a linked savings account can automatically transfer funds. The transfer itself costs **$10 per transfer** (the \u201cOverdraft Protection transfer fee\u201d from the Overdraft Policy). This fee is also waived for Premium Checking, but not for Standard Checking.  \n\nSo, the fee you would save by avoiding an overdraft is **$29 each time** you prevent an item from exceeding the $50\u2011overdraft limit. If you choose Overdraft Protection, you would instead pay **$10 per automatic transfer** to cover the shortfall.",
+      "collaborators": [],
+      "passed": false,
+      "checks": [
+        {
+          "kind": "answer",
+          "fact": "$29 overdraft fee per item",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "no fee when overdrawn by $50 or less",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "Overdraft Protection",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "$10 transfer fee",
+          "passed": true
+        },
+        {
+          "kind": "answer",
+          "fact": "names Marcus's own savings to link",
+          "passed": false
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"account_id\": \"A-1002\", \"product_code\": \"CHK-STD\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"account_id\": \"A-1003\", \"product_code\": \"SAV-STD\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"rule_code\": \"FEE-OVERDRAFT\"}",
+          "passed": true
+        },
+        {
+          "kind": "trace",
+          "fact": "{\"rule_code\": \"FEE-ODP-TRANSFER\"}",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "A-2001",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "or Sarah",
+          "passed": true
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_my_accounts",
+          "args": {},
+          "agent": "banking_support",
+          "result": {
+            "accounts": [
+              {
+                "account_id": "A-1001",
+                "available_balance": "$24,792.91",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$29,792.91",
+                "nickname": "Premium Checking",
+                "other_holders": [],
+                "product": "Premium Checking",
+                "product_code": "CHK-PREM",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1002",
+                "available_balance": "$1,800.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor",
+                  "Sarah Okafor"
+                ],
+                "ledger_balance": "$1,800.00",
+                "nickname": "Joint Checking",
+                "other_holders": [
+                  "Sarah Okafor"
+                ],
+                "product": "Standard Checking",
+                "product_code": "CHK-STD",
+                "role": "JOINT",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1003",
+                "available_balance": "$11,325.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$11,325.00",
+                "nickname": "Emergency Fund",
+                "other_holders": [],
+                "product": "Standard Savings",
+                "product_code": "SAV-STD",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "search_policies",
+          "args": {
+            "question": "overdraft fee standard checking"
+          },
+          "agent": "banking_support",
+          "result": {
+            "passages": [
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [],
+                "score": null,
+                "text": "## What an overdraft is\n\nAn overdraft happens when we pay an item, such as a card purchase or an ACH payment, that is larger than your available balance. Your account balance becomes negative until you deposit enough to cover it."
+              },
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [
+                  {
+                    "amount": "$29.00",
+                    "applies_to": [
+                      "Standard Checking",
+                      "Premium Checking"
+                    ],
+                    "condition": "Charged per item paid that overdraws the account. No fee when the account is overdrawn by the threshold or less. Waived for Premium Checking.",
+                    "hold_days": null,
+                    "kind": "FeeRule",
+                    "name": "Overdraft fee",
+                    "rule_code": "FEE-OVERDRAFT",
+                    "threshold": "$50.00",
+                    "transaction_types": [
+                      "ACH_OUT",
+                      "CARD"
+                    ],
+                    "waived_for": [
+                      "Premium Checking"
+                    ]
+                  }
+                ],
+                "score": 0.8945,
+                "text": "## Overdraft fee\n\nRule code: FEE-OVERDRAFT\n\nOn Standard Checking, we charge an overdraft fee of $29 for each item we pay that overdraws the account. We do not charge an overdraft fee if the account is overdrawn by $50 or less after the item is paid."
+              },
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [
+                  {
+                    "amount": "$10.00",
+                    "applies_to": [
+                      "Standard Checking",
+                      "Premium Checking"
+                    ],
+                    "condition": "Charged for each automatic transfer from a linked savings account that covers an overdraft. Waived for Premium Checking.",
+                    "hold_days": null,
+                    "kind": "FeeRule",
+                    "name": "Overdraft Protection transfer fee",
+                    "rule_code": "FEE-ODP-TRANSFER",
+                    "threshold": null,
+                    "transaction_types": [
+                      "TRANSFER"
+                    ],
+                    "waived_for": [
+                      "Premium Checking"
+                    ]
+                  }
+                ],
+                "score": null,
+                "text": "## Overdraft Protection\n\nRule code: FEE-ODP-TRANSFER\n\nOverdraft Protection links a savings account to your checking account. If an item would overdraw your checking account, we automatically transfer money from the linked savings account to cover it, so no overdraft fee is charged. Each Overdraft Protection transfer costs $10. An owner of the checking account must also own the linked savings account. You can set it up in online banking or at a branch."
+              },
+              {
+                "policy": "Account Products and Tiers",
+                "policy_id": "POL-PRODUCTS",
+                "rules": [],
+                "score": null,
+                "text": "# Account Products and Tiers\n\nEffective January 1, 2026. This policy describes the deposit accounts we offer and the main terms of each. Fees are listed in the Fee Schedule. Overdraft terms are in the Overdraft Policy."
+              },
+              {
+                "policy": "Account Products and Tiers",
+                "policy_id": "POL-PRODUCTS",
+                "rules": [],
+                "score": 0.8515,
+                "text": "## Standard Checking\n\nStandard Checking is our everyday checking account. The monthly maintenance fee is $12. It is waived in any statement period with direct deposits totaling $500 or more. Standard fees apply to wires, overdrafts, and Overdraft Protection transfers. Standard Checking can be opened as an individual or a joint account."
+              },
+              {
+                "policy": "Account Products and Tiers",
+                "policy_id": "POL-PRODUCTS",
+                "rules": [],
+                "score": null,
+                "text": "## Premium Checking\n\nPremium Checking is our relationship checking account. The monthly maintenance fee is $25. It is waived when combined deposit balances are $15,000 or more. Premium Checking includes:\n\n- No fee for outgoing or incoming wires.\n- No returned-wire fee.\n- No overdraft fees and no Overdraft Protection transfer fees.\n\nThese benefits apply only to the Premium Checking account itself. They do not extend to other accounts the same customer holds."
+              },
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [],
+                "score": 0.8161,
+                "text": "# Overdraft Policy\n\nEffective January 1, 2026. This policy explains what happens when a payment would take your checking account below zero, and how to avoid overdraft fees."
+              },
+              {
+                "policy": "Fee Schedule",
+                "policy_id": "POL-FEES",
+                "rules": [
+                  {
+                    "amount": "$12.00",
+                    "applies_to": [
+                      "Standard Checking",
+                      "Premium Checking",
+                      "Standard Savings"
+                    ],
+                    "condition": "Charged when a deposited check is returned unpaid.",
+                    "hold_days": null,
+                    "kind": "FeeRule",
+                    "name": "Returned deposited item fee",
+                    "rule_code": "FEE-DEPOSIT-RETURN",
+                    "threshold": null,
+                    "transaction_types": [
+                      "CHECK_DEPOSIT"
+                    ],
+                    "waived_for": []
+                  }
+                ],
+                "score": null,
+                "text": "## Returned deposited item fee\n\nRule code: FEE-DEPOSIT-RETURN\n\nIf a check you deposit is returned unpaid by the paying bank, we charge $12 and reverse the deposit. This fee applies to all deposit accounts."
+              },
+              {
+                "policy": "Fee Schedule",
+                "policy_id": "POL-FEES",
+                "rules": [],
+                "score": 0.8135,
+                "text": "## Overdraft fees\n\nOverdraft fees and Overdraft Protection transfer fees are described in the Overdraft Policy."
+              },
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [],
+                "score": 0.8088,
+                "text": "## Avoiding overdraft fees\n\n- Keep track of your available balance, including pending payments.\n- Turn on low-balance alerts in online banking.\n- Link a savings account with Overdraft Protection.\n- Make sure deposits are available before large scheduled payments run. See Funds Availability and Check Holds."
+              },
+              {
+                "policy": "Overdraft Policy",
+                "policy_id": "POL-OD",
+                "rules": [],
+                "score": null,
+                "text": "## Premium Checking\n\nPremium Checking accounts are not charged overdraft fees or Overdraft Protection transfer fees. This applies only to the Premium Checking account, not to other accounts the customer holds."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "agent": "banking_support",
+      "agent_id": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3",
+      "scenario": "D",
+      "run": 1,
+      "mode": "new_thread",
+      "turn": 1,
+      "prompt": "Show me the recent transactions on Sarah's savings account.",
+      "status": "completed",
+      "error": null,
+      "seconds": 5.2,
+      "model": "bedrock/openai.gpt-oss-120b-1:0",
+      "thread_id": "f542c4e0-8ac3-4f53-b176-58a65a93b9d9",
+      "run_id": "c3be5c89-2e39-4df6-b8fe-d7216009c7f0",
+      "trace_id": "fe8a2088d42f0a12be315ade620b307d",
+      "answer": "I\u2019m sorry, but I don\u2019t see a savings account that includes Sarah as a holder. The only account Sarah shares with you is the Joint Checking account. I can only show transactions for accounts you hold, so I\u2019m unable to provide recent transactions for a \u201cSarah\u2019s savings\u201d account. If you\u2019d like to see the recent activity on your Joint Checking account instead, just let me know.",
+      "collaborators": [],
+      "passed": true,
+      "checks": [
+        {
+          "kind": "must_not_appear",
+          "fact": "A-2001",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "18,250",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "1,137.42",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "864.19",
+          "passed": true
+        },
+        {
+          "kind": "must_not_appear",
+          "fact": "1,293.76",
+          "passed": true
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_my_accounts",
+          "args": {},
+          "agent": "banking_support",
+          "result": {
+            "accounts": [
+              {
+                "account_id": "A-1001",
+                "available_balance": "$24,792.91",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$29,792.91",
+                "nickname": "Premium Checking",
+                "other_holders": [],
+                "product": "Premium Checking",
+                "product_code": "CHK-PREM",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1002",
+                "available_balance": "$1,800.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor",
+                  "Sarah Okafor"
+                ],
+                "ledger_balance": "$1,800.00",
+                "nickname": "Joint Checking",
+                "other_holders": [
+                  "Sarah Okafor"
+                ],
+                "product": "Standard Checking",
+                "product_code": "CHK-STD",
+                "role": "JOINT",
+                "status": "OPEN"
+              },
+              {
+                "account_id": "A-1003",
+                "available_balance": "$11,325.00",
+                "currency": "USD",
+                "holders": [
+                  "Marcus Okafor"
+                ],
+                "ledger_balance": "$11,325.00",
+                "nickname": "Emergency Fund",
+                "other_holders": [],
+                "product": "Standard Savings",
+                "product_code": "SAV-STD",
+                "role": "PRIMARY",
+                "status": "OPEN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

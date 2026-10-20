@@ -51,6 +51,11 @@ def load_scenarios() -> list[dict[str, Any]]:
         return yaml.safe_load(f)["scenarios"]
 
 
+def persona(scenario: dict[str, Any]) -> str:
+    """Who asks the scenario's prompt. A scenario with no persona is a customer's."""
+    return scenario.get("persona", "customer")
+
+
 def normalize(text: str, year: int) -> str:
     """Lowercase, write dates as YYYY-MM-DD, and amounts as $5000 or $1137.42."""
 
@@ -102,8 +107,31 @@ def found_in(expected: dict[str, Any], value: Any) -> bool:
             return False
 
 
+def leaves(value: Any) -> list[Any]:
+    """Every value nested anywhere in value that is not a dict or a list."""
+    match value:
+        case dict():
+            return [leaf for item in value.values() for leaf in leaves(item)]
+        case list():
+            return [leaf for item in value for leaf in leaves(item)]
+        case _:
+            return [value]
+
+
 def describe(fact: dict[str, Any]) -> str:
     return json.dumps(fact, separators=(", ", ": "))
+
+
+def routing_checks(scenario: dict[str, Any], collaborators: list[str]) -> list[Check]:
+    """Check that the run called the expected collaborators and none forbidden."""
+    called = set(collaborators)
+    return [
+        Check("routing", f"calls {name}", name in called)
+        for name in scenario.get("expected_collaborators", [])
+    ] + [
+        Check("routing", f"does not call {name}", name not in called)
+        for name in scenario.get("forbidden_collaborators", [])
+    ]
 
 
 def score(scenario: dict[str, Any], result: AgentResult, year: int) -> list[Check]:
@@ -125,6 +153,16 @@ def score(scenario: dict[str, Any], result: AgentResult, year: int) -> list[Chec
         Check("must_not_appear", phrase, not contains(answer, normalize(phrase, year)))
         for phrase in scenario["must_not_appear"]
     ]
+    values = [normalize(str(leaf), year) for leaf in leaves(tool_results)]
+    checks += [
+        Check(
+            "trace_must_not",
+            phrase,
+            not any(contains(value, normalize(phrase, year)) for value in values),
+        )
+        for phrase in scenario.get("trace_must_not", [])
+    ]
+    checks += routing_checks(scenario, result.get("collaborators", []))
     return checks
 
 
@@ -134,11 +172,17 @@ def main() -> None:
     parser.add_argument(
         "--scenario", action="append", help="scenario ID to run, repeatable"
     )
+    parser.add_argument(
+        "--persona",
+        choices=["customer", "staff"],
+        default="customer",
+        help="run only this persona's scenarios",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     year = settings.demo_as_of.year
-    scenarios = load_scenarios()
+    scenarios = [s for s in load_scenarios() if persona(s) == args.persona]
     if args.scenario:
         scenarios = [s for s in scenarios if s["id"] in args.scenario]
 

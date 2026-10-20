@@ -13,6 +13,8 @@ from graphrag_banking.facts import (
 )
 
 MONEY_FIELDS = ("amount", "threshold", "monthly_fee")
+# Whole numbers, rendered as they are: 25, 5, 90.
+NUMBER_FIELDS = ("hold_days", "percent", "years", "lookback_days", "min_red_flags")
 
 
 def placeholder_values(facts: dict[str, Any]) -> dict[str, str]:
@@ -36,8 +38,9 @@ def placeholder_values(facts: dict[str, Any]) -> dict[str, str]:
         for field in MONEY_FIELDS:
             if rule.get(field) is not None:
                 values[placeholder_key(code, field)] = format_money(rule[field])
-        if rule.get("hold_days") is not None:
-            values[placeholder_key(code, "hold_days")] = str(rule["hold_days"])
+        for field in NUMBER_FIELDS:
+            if rule.get(field) is not None:
+                values[placeholder_key(code, field)] = str(rule[field])
     return values
 
 

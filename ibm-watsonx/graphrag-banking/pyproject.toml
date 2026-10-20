@@ -27,9 +27,11 @@ validate-data = "graphrag_banking.validate_data:main"
 reset-db = "graphrag_banking.reset_db:main"
 load-structured = "graphrag_banking.load_structured:main"
 build-policy-graph = "graphrag_banking.build_policy_graph:main"
+build-groups = "graphrag_banking.build_groups:main"
 chat = "graphrag_banking.chat:main"
 baseline-rag = "graphrag_banking.baseline_vector_rag:main"
 eval-local = "graphrag_banking.eval_local:main"
+demo-walkthrough = "graphrag_banking.demo_walkthrough:main"
 
 [build-system]
 requires = ["uv_build>=0.11.12,<0.12.0"]

@@ -20,7 +20,7 @@ for key in "${KEYS[@]}"; do
   args+=(-e "$key=${!key}")
 done
 
-if ! orchestrate connections list 2>/dev/null | grep -q "\b$APP_ID\b"; then
+if ! orchestrate connections list 2>/dev/null | grep "\b$APP_ID\b" >/dev/null; then
   orchestrate connections add --app-id "$APP_ID"
 fi
 

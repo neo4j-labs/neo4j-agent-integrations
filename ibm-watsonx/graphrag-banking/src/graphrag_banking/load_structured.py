@@ -1,8 +1,8 @@
 """Load the structured and rule layers (PRD sections 5.1 and 5.2).
 
 Creates the constraints and the payee full-text index, loads the rules from
-``policy_facts.yaml``, then loads the CSVs in ``data/generated/`` with batched
-``UNWIND ... MERGE``. No LLM is involved. Column formats are in
+``policy_facts.yaml``, then loads the CSVs in ``data/generated/`` and
+``data/generated/fraud/`` with batched ``UNWIND ... MERGE``. No LLM is involved. Column formats are in
 ``data/README.md``.
 """
 
@@ -29,11 +29,32 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
 
-_FLOAT_COLUMNS = frozenset({"amount", "ledger_balance", "available_balance"})
-_DATE_COLUMNS = frozenset(
-    {"available_on", "next_run_date", "opened_date", "customer_since"}
+_FLOAT_COLUMNS = frozenset(
+    {
+        "amount",
+        "ledger_balance",
+        "available_balance",
+        "approval_limit",
+        "principal",
+        "balance",
+        "stated_annual_revenue",
+        "percent",
+    }
 )
-_DATETIME_COLUMNS = frozenset({"initiated_at", "posted_at", "opened_at"})
+_DATE_COLUMNS = frozenset(
+    {
+        "available_on",
+        "next_run_date",
+        "opened_date",
+        "customer_since",
+        "registered_on",
+        "first_seen",
+        "closed_date",
+    }
+)
+_DATETIME_COLUMNS = frozenset(
+    {"initiated_at", "posted_at", "opened_at", "submitted_at"}
+)
 
 # Label -> key property, for the structured and rule layers.
 _NODE_KEYS = {
@@ -48,9 +69,22 @@ _NODE_KEYS = {
     "FeeRule": "rule_code",
     "HoldRule": "rule_code",
     "ComplianceRule": "rule_code",
+    "FraudRule": "rule_code",
+    "LendingRule": "rule_code",
+    "Banker": "banker_id",
+    "FraudReviewer": "reviewer_id",
+    "Person": "person_id",
+    "Business": "business_id",
+    "Phone": "number",
+    "Email": "address",
+    "Address": "address_id",
+    "Device": "device_id",
+    "Loan": "loan_id",
+    "LoanApplication": "application_id",
 }
 
-# File -> label. The first column of each file is the label's key.
+# File -> label. The first column of each file is the label's key. Account,
+# Transaction and Counterparty rows come from both directories.
 _NODE_FILES = {
     "customers.csv": "Customer",
     "accounts.csv": "Account",
@@ -58,12 +92,27 @@ _NODE_FILES = {
     "counterparties.csv": "Counterparty",
     "scheduled_payments.csv": "ScheduledPayment",
     "compliance_alerts.csv": "ComplianceAlert",
+    "fraud/bankers.csv": "Banker",
+    "fraud/fraud_reviewers.csv": "FraudReviewer",
+    "fraud/persons.csv": "Person",
+    "fraud/businesses.csv": "Business",
+    "fraud/phones.csv": "Phone",
+    "fraud/emails.csv": "Email",
+    "fraud/addresses.csv": "Address",
+    "fraud/devices.csv": "Device",
+    "fraud/loans.csv": "Loan",
+    "fraud/loan_applications.csv": "LoanApplication",
+    "fraud/accounts.csv": "Account",
+    "fraud/transactions.csv": "Transaction",
+    "fraud/counterparties.csv": "Counterparty",
 }
 
 _RULE_SECTIONS = {
     "fee_rules": "FeeRule",
     "hold_rules": "HoldRule",
     "compliance_rules": "ComplianceRule",
+    "fraud_rules": "FraudRule",
+    "lending_rules": "LendingRule",
 }
 # Fields of a rule entry that become relationships, not properties.
 _RULE_LINK_FIELDS = frozenset({"rule_code", "policy_id", "applies_to", "waived_for"})
@@ -172,6 +221,159 @@ _REL_FILES = [
         "payment_id",
         "Counterparty",
         "counterparty_id",
+    ),
+    # Loan fraud data
+    _RelFile(
+        "fraud/rel_manages_customer.csv",
+        "MANAGES",
+        "Banker",
+        "banker_id",
+        "Customer",
+        "customer_id",
+    ),
+    _RelFile(
+        "fraud/rel_manages_business.csv",
+        "MANAGES",
+        "Banker",
+        "banker_id",
+        "Business",
+        "business_id",
+    ),
+    _RelFile(
+        "fraud/rel_person_owns.csv",
+        "OWNS",
+        "Person",
+        "person_id",
+        "Business",
+        "business_id",
+    ),
+    _RelFile(
+        "fraud/rel_business_owns.csv",
+        "OWNS",
+        "Business",
+        "owner_business_id",
+        "Business",
+        "business_id",
+    ),
+    _RelFile(
+        "fraud/rel_director_of.csv",
+        "DIRECTOR_OF",
+        "Person",
+        "person_id",
+        "Business",
+        "business_id",
+    ),
+    _RelFile(
+        "fraud/rel_person_has_phone.csv",
+        "HAS_PHONE",
+        "Person",
+        "person_id",
+        "Phone",
+        "number",
+    ),
+    _RelFile(
+        "fraud/rel_business_has_phone.csv",
+        "HAS_PHONE",
+        "Business",
+        "business_id",
+        "Phone",
+        "number",
+    ),
+    _RelFile(
+        "fraud/rel_person_has_email.csv",
+        "HAS_EMAIL",
+        "Person",
+        "person_id",
+        "Email",
+        "address",
+    ),
+    _RelFile(
+        "fraud/rel_business_has_email.csv",
+        "HAS_EMAIL",
+        "Business",
+        "business_id",
+        "Email",
+        "address",
+    ),
+    _RelFile(
+        "fraud/rel_person_has_address.csv",
+        "HAS_ADDRESS",
+        "Person",
+        "person_id",
+        "Address",
+        "address_id",
+    ),
+    _RelFile(
+        "fraud/rel_business_has_address.csv",
+        "HAS_ADDRESS",
+        "Business",
+        "business_id",
+        "Address",
+        "address_id",
+    ),
+    _RelFile(
+        "fraud/rel_business_holds.csv",
+        "HOLDS",
+        "Business",
+        "business_id",
+        "Account",
+        "account_id",
+    ),
+    _RelFile(
+        "fraud/rel_applied_for.csv",
+        "APPLIED_FOR",
+        "Business",
+        "business_id",
+        "LoanApplication",
+        "application_id",
+    ),
+    _RelFile(
+        "fraud/rel_submitted_from.csv",
+        "SUBMITTED_FROM",
+        "LoanApplication",
+        "application_id",
+        "Device",
+        "device_id",
+    ),
+    _RelFile(
+        "fraud/rel_borrower_on.csv",
+        "BORROWER_ON",
+        "Business",
+        "business_id",
+        "Loan",
+        "loan_id",
+    ),
+    _RelFile(
+        "fraud/rel_has_transaction.csv",
+        "HAS_TRANSACTION",
+        "Account",
+        "account_id",
+        "Transaction",
+        "transaction_id",
+    ),
+    _RelFile(
+        "fraud/rel_paid_to.csv",
+        "PAID_TO",
+        "Transaction",
+        "transaction_id",
+        "Counterparty",
+        "counterparty_id",
+    ),
+    _RelFile(
+        "fraud/rel_received_from.csv",
+        "RECEIVED_FROM",
+        "Transaction",
+        "transaction_id",
+        "Counterparty",
+        "counterparty_id",
+    ),
+    _RelFile(
+        "fraud/rel_to_account.csv",
+        "TO_ACCOUNT",
+        "Transaction",
+        "transaction_id",
+        "Account",
+        "account_id",
     ),
 ]
 

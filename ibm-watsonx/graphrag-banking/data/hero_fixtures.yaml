@@ -172,3 +172,235 @@ scheduled_payments:
   - {payment_id: SP-1002, account_id: A-1002, counterparty_id: CP-1011, amount: 412.35, frequency: MONTHLY, next_run_date: "2026-10-22", status: ACTIVE}
   - {payment_id: SP-1003, account_id: A-1002, counterparty_id: CP-1012, amount: 186.50, frequency: MONTHLY, next_run_date: "2026-10-28", status: ACTIVE}
   - {payment_id: SP-1004, account_id: A-1001, counterparty_id: CP-1009, amount: 2500.00, frequency: MONTHLY, next_run_date: "2026-10-20", status: ACTIVE}
+
+# ---- Loan fraud demo (Scenarios E to J) -------------------------------------
+# generate-data writes these, with the background, to data/generated/fraud/.
+# Background records never use hero IDs (bankers RM-01 to RM-09, reviewers
+# FR-02, persons P-1xxx, businesses B-1xxx, addresses ADDR-1xxx, devices
+# DEV-1xxx, loans L-1xxx, applications APP-1xxx, accounts A-3xxx,
+# counterparties CP-3xxx, transactions T-3xxxx) and never add records to a
+# hero business or account.
+#
+# The ring: Victor Hale owns 80% of Crestline Holdings, and Crestline owns 70%
+# of Ortega Builders, so Hale's effective share of Ortega is 56%. Hale holds
+# the phone that Ortega, Keystone, Summit and Lakeview all list. Keystone and
+# Lakeview list Hale's email. Summit's office is Hale's home. Ortega, Keystone
+# and Summit applied from the same device. Hale Restoration LLC, owned by
+# Hale, had a loan written off in 2025.
+#
+# Business balances reconcile like the customer accounts, and a transfer
+# between two hero accounts counts as a debit on the sender and a credit on
+# the account it points to with to_account_id:
+#   ledger_balance = opening_balance + credits + transfers in - debits
+fraud:
+  bankers:
+    - {banker_id: RM-07, name: Dana Whitfield, role: RELATIONSHIP_MANAGER, approval_limit: 500000.00}
+    - {banker_id: RM-03, name: Tom Becker, role: RELATIONSHIP_MANAGER, approval_limit: 500000.00}
+    - {banker_id: RM-05, name: Alicia Romero, role: RELATIONSHIP_MANAGER, approval_limit: 500000.00}
+    - {banker_id: RM-09, name: Grant Holloway, role: RELATIONSHIP_MANAGER, approval_limit: 500000.00}
+
+  fraud_reviewers:
+    - {reviewer_id: FR-02, name: Sam Price}
+
+  addresses:
+    # Hale's home. Summit Ridge Supply lists it as its office.
+    - {address_id: ADDR-1001, line1: 14 Birchwood Lane, city: Naperville, state: IL, kind: HOME}
+    - {address_id: ADDR-1002, line1: 2250 Industrial Parkway, city: Joliet, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1003, line1: 610 Quarry Road, city: Aurora, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1004, line1: 88 Lakeview Court Unit 3, city: Elgin, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1005, line1: 1730 Maple Avenue Suite 210, city: Evanston, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1006, line1: 455 Harbor Drive, city: Waukegan, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1007, line1: 302 Mill Street, city: Joliet, state: IL, kind: OFFICE}
+    - {address_id: ADDR-1008, line1: 9 Orchard Lane, city: Joliet, state: IL, kind: HOME}
+    - {address_id: ADDR-1009, line1: 51 Fox River Road, city: Aurora, state: IL, kind: HOME}
+    - {address_id: ADDR-1010, line1: 2716 Prairie Street, city: Elgin, state: IL, kind: HOME}
+    - {address_id: ADDR-1011, line1: 1408 Ridge Avenue, city: Naperville, state: IL, kind: HOME}
+    - {address_id: ADDR-1012, line1: 77 Chestnut Street, city: Evanston, state: IL, kind: HOME}
+    - {address_id: ADDR-1013, line1: 1290 Sheridan Road, city: Waukegan, state: IL, kind: HOME}
+    # Scenario G. A registered agent service in Delaware. Brightline, Harbor,
+    # Crestline and most background businesses list it.
+    - {address_id: ADDR-1900, line1: 910 Harbor Gate Way Suite 200, city: Dover, state: DE, kind: REGISTERED_AGENT}
+
+  persons:
+    - {person_id: P-1001, name: Victor Hale, phones: ["+1-555-0610"], emails: [victor.hale@hale-advisory.example], addresses: [ADDR-1001]}
+    - {person_id: P-1002, name: Luis Ortega, phones: ["+1-555-0612"], emails: [], addresses: [ADDR-1008]}
+    - {person_id: P-1003, name: Dale Kimball, phones: ["+1-555-0613"], emails: [], addresses: [ADDR-1009]}
+    - {person_id: P-1004, name: Rita Vance, phones: ["+1-555-0614"], emails: [], addresses: [ADDR-1011]}
+    - {person_id: P-1005, name: Owen Pratt, phones: ["+1-555-0615"], emails: [], addresses: [ADDR-1010]}
+    - {person_id: P-1006, name: Dr. Nina Patel, phones: ["+1-555-0616"], emails: [nina.patel@brightlinedental.example], addresses: [ADDR-1012]}
+    - {person_id: P-1007, name: Erin Castillo, phones: ["+1-555-0617"], emails: [erin@harborpt.example], addresses: [ADDR-1013]}
+
+  # banker_id becomes (:Banker)-[:MANAGES]->(:Business).
+  businesses:
+    - {business_id: B-1001, name: Crestline Holdings, industry: Holding Company, registered_on: "2021-02-01", banker_id: RM-05, phones: [], emails: [], addresses: [ADDR-1900]}
+    # Scenario E. Dana's client and the hero applicant.
+    - {business_id: B-1002, name: Ortega Builders, industry: Construction, registered_on: "2016-04-12", banker_id: RM-07, phones: ["+1-555-0610"], emails: [office@ortegabuilders.example], addresses: [ADDR-1002]}
+    - {business_id: B-1003, name: Hale Restoration LLC, industry: Construction, registered_on: "2018-05-10", banker_id: RM-03, phones: ["+1-555-0618"], emails: [], addresses: [ADDR-1007]}
+    - {business_id: B-1004, name: Keystone Paving, industry: Construction, registered_on: "2024-11-05", banker_id: RM-03, phones: ["+1-555-0610"], emails: [victor.hale@hale-advisory.example], addresses: [ADDR-1003]}
+    - {business_id: B-1005, name: Summit Ridge Supply, industry: Building Materials, registered_on: "2025-01-22", banker_id: RM-05, phones: ["+1-555-0610"], emails: [orders@summitridgesupply.example], addresses: [ADDR-1001]}
+    - {business_id: B-1006, name: Lakeview Interiors, industry: Interior Design, registered_on: "2025-03-03", banker_id: RM-09, phones: ["+1-555-0610"], emails: [victor.hale@hale-advisory.example], addresses: [ADDR-1004]}
+    # Scenario F and G. Clean businesses in Dana's book.
+    - {business_id: B-1007, name: Brightline Dental, industry: Dental Practice, registered_on: "2014-08-19", banker_id: RM-07, phones: ["+1-555-0619"], emails: [frontdesk@brightlinedental.example], addresses: [ADDR-1005, ADDR-1900]}
+    - {business_id: B-1008, name: Harbor Physical Therapy, industry: Physical Therapy, registered_on: "2017-06-02", banker_id: RM-07, phones: ["+1-555-0620"], emails: [hello@harborpt.example], addresses: [ADDR-1006, ADDR-1900]}
+
+  # owner_id is a person or a business.
+  ownership:
+    - {owner_id: P-1001, business_id: B-1001, percent: 80}
+    - {owner_id: B-1001, business_id: B-1002, percent: 70}
+    - {owner_id: P-1002, business_id: B-1002, percent: 30}
+    - {owner_id: P-1001, business_id: B-1003, percent: 100}
+    - {owner_id: P-1003, business_id: B-1004, percent: 100}
+    - {owner_id: P-1004, business_id: B-1005, percent: 100}
+    - {owner_id: P-1005, business_id: B-1006, percent: 100}
+    - {owner_id: P-1006, business_id: B-1007, percent: 100}
+    - {owner_id: P-1007, business_id: B-1008, percent: 100}
+
+  directors:
+    - {person_id: P-1001, business_id: B-1001}
+    - {person_id: P-1001, business_id: B-1003}
+    - {person_id: P-1002, business_id: B-1002}
+    - {person_id: P-1003, business_id: B-1004}
+    - {person_id: P-1004, business_id: B-1005}
+    - {person_id: P-1005, business_id: B-1006}
+    - {person_id: P-1006, business_id: B-1007}
+    - {person_id: P-1007, business_id: B-1008}
+
+  devices:
+    - {device_id: DEV-1001, first_seen: "2026-09-18"}
+    - {device_id: DEV-1002, first_seen: "2026-09-30"}
+    - {device_id: DEV-1003, first_seen: "2026-10-01"}
+
+  # Scenario E, FRAUD-PRIOR-LOSS. balance is the amount written off.
+  loans:
+    - {loan_id: L-1001, business_id: B-1003, type: TERM_LOAN, principal: 250000.00, balance: 186400.00, status: WRITTEN_OFF, opened_date: "2023-04-03", closed_date: "2025-02-28"}
+
+  applications:
+    # Scenario E. 2,440,000 is four times the 90-day deposits of $610,000,
+    # which include $455,000 of loop money.
+    - {application_id: APP-1001, business_id: B-1002, device_id: DEV-1001, type: BUSINESS_LINE, amount: 400000.00, stated_annual_revenue: 2440000.00, submitted_at: "2026-10-02T15:20:00Z", status: IN_REVIEW}
+    - {application_id: APP-1002, business_id: B-1004, device_id: DEV-1001, type: BUSINESS_LINE, amount: 250000.00, stated_annual_revenue: 1450000.00, submitted_at: "2026-09-18T14:05:00Z", status: IN_REVIEW}
+    - {application_id: APP-1003, business_id: B-1005, device_id: DEV-1001, type: BUSINESS_LINE, amount: 300000.00, stated_annual_revenue: 1520000.00, submitted_at: "2026-09-24T16:40:00Z", status: IN_REVIEW}
+    - {application_id: APP-1004, business_id: B-1006, device_id: DEV-1002, type: BUSINESS_LINE, amount: 200000.00, stated_annual_revenue: 1080000.00, submitted_at: "2026-09-30T13:15:00Z", status: IN_REVIEW}
+    # Scenario F. 1,200,000 is four times the 90-day deposits of $300,000.
+    - {application_id: APP-1005, business_id: B-1007, device_id: DEV-1003, type: BUSINESS_LINE, amount: 150000.00, stated_annual_revenue: 1200000.00, submitted_at: "2026-10-01T15:00:00Z", status: IN_REVIEW}
+
+  # business_id becomes (:Business)-[:HOLDS {role: PRIMARY}]->(:Account).
+  accounts:
+    - {account_id: A-3001, business_id: B-1002, nickname: Ortega Operating, opening_balance: 40000.00, currency: USD, status: OPEN, opened_date: "2016-05-02"}
+    - {account_id: A-3002, business_id: B-1004, nickname: Keystone Operating, opening_balance: 60000.00, currency: USD, status: OPEN, opened_date: "2024-11-20"}
+    - {account_id: A-3003, business_id: B-1005, nickname: Summit Operating, opening_balance: 80000.00, currency: USD, status: OPEN, opened_date: "2025-02-10"}
+    - {account_id: A-3004, business_id: B-1006, nickname: Lakeview Operating, opening_balance: 45000.00, currency: USD, status: OPEN, opened_date: "2025-03-18"}
+    - {account_id: A-3005, business_id: B-1007, nickname: Brightline Operating, opening_balance: 55000.00, currency: USD, status: OPEN, opened_date: "2014-09-02"}
+    - {account_id: A-3006, business_id: B-1008, nickname: Harbor Operating, opening_balance: 30000.00, currency: USD, status: OPEN, opened_date: "2017-06-20"}
+
+  counterparties:
+    - {counterparty_id: CP-3001, name: Fox Valley Homebuilders, kind: BUSINESS, category: Construction Client, country: US}
+    - {counterparty_id: CP-3002, name: Westbrook Property Group, kind: BUSINESS, category: Construction Client, country: US}
+    - {counterparty_id: CP-3003, name: Cedar Point Developments, kind: BUSINESS, category: Construction Client, country: US}
+    - {counterparty_id: CP-3004, name: Millbrook Park District, kind: BUSINESS, category: Construction Client, country: US}
+    - {counterparty_id: CP-3005, name: Midwest Lumber Supply, kind: BUSINESS, category: Supplies, country: US}
+    - {counterparty_id: CP-3006, name: Prairie Payroll Services, kind: BUSINESS, category: Payroll, country: US}
+    - {counterparty_id: CP-3007, name: Larkspur Dental Benefits, kind: BUSINESS, category: Insurance, country: US}
+    - {counterparty_id: CP-3008, name: Tamarack Health Plan, kind: BUSINESS, category: Insurance, country: US}
+    - {counterparty_id: CP-3009, name: Meridel Mutual, kind: BUSINESS, category: Insurance, country: US}
+    - {counterparty_id: CP-3010, name: Bluestem Insurance Co, kind: BUSINESS, category: Insurance, country: US}
+    - {counterparty_id: CP-3011, name: Patient Card Settlements, kind: BUSINESS, category: Card Settlement, country: US}
+    - {counterparty_id: CP-3012, name: Northgate Clinic Partners, kind: BUSINESS, category: Healthcare Client, country: US}
+    - {counterparty_id: CP-3013, name: Riverside Interiors Trade, kind: BUSINESS, category: Design Client, country: US}
+
+  # to_account_id becomes (:Transaction)-[:TO_ACCOUNT]->(:Account) for a
+  # transfer to another client of the bank. Transfers have no counterparty.
+  transactions:
+    # ---- The loop. Every transfer into Ortega in the window is loop money.
+    - {transaction_id: T-30001, account_id: A-3001, type: WIRE_OUT, amount: 40000.00, initiated_at: "2026-07-15T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Keystone Paving - subcontract, counterparty_id: null, to_account_id: A-3002}
+    - {transaction_id: T-30002, account_id: A-3002, type: WIRE_OUT, amount: 45000.00, initiated_at: "2026-07-17T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30003, account_id: A-3001, type: WIRE_OUT, amount: 50000.00, initiated_at: "2026-07-27T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Summit Ridge Supply - materials, counterparty_id: null, to_account_id: A-3003}
+    - {transaction_id: T-30004, account_id: A-3003, type: WIRE_OUT, amount: 48000.00, initiated_at: "2026-07-29T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Lakeview Interiors - design services, counterparty_id: null, to_account_id: A-3004}
+    - {transaction_id: T-30005, account_id: A-3004, type: WIRE_OUT, amount: 50000.00, initiated_at: "2026-07-31T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30006, account_id: A-3001, type: WIRE_OUT, amount: 45000.00, initiated_at: "2026-08-10T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Lakeview Interiors - finish work, counterparty_id: null, to_account_id: A-3004}
+    - {transaction_id: T-30007, account_id: A-3004, type: WIRE_OUT, amount: 45000.00, initiated_at: "2026-08-12T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Keystone Paving - site work, counterparty_id: null, to_account_id: A-3002}
+    - {transaction_id: T-30008, account_id: A-3002, type: WIRE_OUT, amount: 50000.00, initiated_at: "2026-08-14T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30009, account_id: A-3001, type: WIRE_OUT, amount: 55000.00, initiated_at: "2026-08-24T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Summit Ridge Supply - materials, counterparty_id: null, to_account_id: A-3003}
+    - {transaction_id: T-30010, account_id: A-3003, type: WIRE_OUT, amount: 60000.00, initiated_at: "2026-08-26T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30011, account_id: A-3001, type: WIRE_OUT, amount: 50000.00, initiated_at: "2026-09-08T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Keystone Paving - subcontract, counterparty_id: null, to_account_id: A-3002}
+    - {transaction_id: T-30012, account_id: A-3002, type: WIRE_OUT, amount: 50000.00, initiated_at: "2026-09-10T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Summit Ridge Supply - materials, counterparty_id: null, to_account_id: A-3003}
+    - {transaction_id: T-30013, account_id: A-3003, type: WIRE_OUT, amount: 55000.00, initiated_at: "2026-09-11T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30014, account_id: A-3001, type: WIRE_OUT, amount: 60000.00, initiated_at: "2026-09-21T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Lakeview Interiors - finish work, counterparty_id: null, to_account_id: A-3004}
+    - {transaction_id: T-30015, account_id: A-3004, type: WIRE_OUT, amount: 65000.00, initiated_at: "2026-09-23T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30016, account_id: A-3001, type: WIRE_OUT, amount: 70000.00, initiated_at: "2026-10-01T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Keystone Paving - subcontract, counterparty_id: null, to_account_id: A-3002}
+    - {transaction_id: T-30017, account_id: A-3002, type: WIRE_OUT, amount: 85000.00, initiated_at: "2026-10-05T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+    - {transaction_id: T-30018, account_id: A-3003, type: WIRE_OUT, amount: 45000.00, initiated_at: "2026-10-06T15:00:00Z", status: POSTED, channel: ONLINE, description: Wire to Ortega Builders - project payment, counterparty_id: null, to_account_id: A-3001}
+
+    # ---- A-3001 Ortega. Outside deposits total $155,000.
+    - {transaction_id: T-30101, account_id: A-3001, type: ACH_IN, amount: 14200.00, initiated_at: "2026-07-13T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30102, account_id: A-3001, type: ACH_IN, amount: 16800.00, initiated_at: "2026-07-24T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3002, to_account_id: null}
+    - {transaction_id: T-30103, account_id: A-3001, type: ACH_IN, amount: 15100.00, initiated_at: "2026-08-05T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3003, to_account_id: null}
+    - {transaction_id: T-30104, account_id: A-3001, type: ACH_IN, amount: 15900.00, initiated_at: "2026-08-18T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3004, to_account_id: null}
+    - {transaction_id: T-30105, account_id: A-3001, type: ACH_IN, amount: 13400.00, initiated_at: "2026-08-28T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30106, account_id: A-3001, type: ACH_IN, amount: 17600.00, initiated_at: "2026-09-03T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3002, to_account_id: null}
+    - {transaction_id: T-30107, account_id: A-3001, type: ACH_IN, amount: 14800.00, initiated_at: "2026-09-15T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3003, to_account_id: null}
+    - {transaction_id: T-30108, account_id: A-3001, type: ACH_IN, amount: 16200.00, initiated_at: "2026-09-25T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3004, to_account_id: null}
+    - {transaction_id: T-30109, account_id: A-3001, type: ACH_IN, amount: 15300.00, initiated_at: "2026-09-29T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30110, account_id: A-3001, type: ACH_IN, amount: 15700.00, initiated_at: "2026-10-07T12:00:00Z", status: POSTED, channel: ACH, description: Progress payment, counterparty_id: CP-3002, to_account_id: null}
+    - {transaction_id: T-30111, account_id: A-3001, type: ACH_OUT, amount: 22400.00, initiated_at: "2026-07-20T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30112, account_id: A-3001, type: ACH_OUT, amount: 26100.00, initiated_at: "2026-08-03T13:00:00Z", status: POSTED, channel: ACH, description: Lumber and materials, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30113, account_id: A-3001, type: ACH_OUT, amount: 23800.00, initiated_at: "2026-08-17T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30114, account_id: A-3001, type: ACH_OUT, amount: 25300.00, initiated_at: "2026-08-31T13:00:00Z", status: POSTED, channel: ACH, description: Lumber and materials, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30115, account_id: A-3001, type: ACH_OUT, amount: 24900.00, initiated_at: "2026-09-14T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30116, account_id: A-3001, type: ACH_OUT, amount: 27200.00, initiated_at: "2026-09-24T13:00:00Z", status: POSTED, channel: ACH, description: Lumber and materials, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30117, account_id: A-3001, type: ACH_OUT, amount: 23600.00, initiated_at: "2026-09-28T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30118, account_id: A-3001, type: ACH_OUT, amount: 26700.00, initiated_at: "2026-10-06T13:00:00Z", status: POSTED, channel: ACH, description: Lumber and materials, counterparty_id: CP-3005, to_account_id: null}
+
+    # ---- A-3002 Keystone, A-3003 Summit, A-3004 Lakeview.
+    - {transaction_id: T-30201, account_id: A-3002, type: ACH_IN, amount: 18500.00, initiated_at: "2026-07-22T12:00:00Z", status: POSTED, channel: ACH, description: Paving contract payment, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30202, account_id: A-3002, type: ACH_IN, amount: 17200.00, initiated_at: "2026-08-19T12:00:00Z", status: POSTED, channel: ACH, description: Paving contract payment, counterparty_id: CP-3003, to_account_id: null}
+    - {transaction_id: T-30203, account_id: A-3002, type: ACH_IN, amount: 19100.00, initiated_at: "2026-09-02T12:00:00Z", status: POSTED, channel: ACH, description: Paving contract payment, counterparty_id: CP-3004, to_account_id: null}
+    - {transaction_id: T-30204, account_id: A-3002, type: ACH_IN, amount: 16800.00, initiated_at: "2026-09-17T12:00:00Z", status: POSTED, channel: ACH, description: Paving contract payment, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30205, account_id: A-3002, type: ACH_IN, amount: 18400.00, initiated_at: "2026-09-30T12:00:00Z", status: POSTED, channel: ACH, description: Paving contract payment, counterparty_id: CP-3002, to_account_id: null}
+    - {transaction_id: T-30206, account_id: A-3002, type: ACH_OUT, amount: 14600.00, initiated_at: "2026-07-31T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30207, account_id: A-3002, type: ACH_OUT, amount: 15200.00, initiated_at: "2026-08-28T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30208, account_id: A-3002, type: ACH_OUT, amount: 15400.00, initiated_at: "2026-09-25T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30209, account_id: A-3002, type: ACH_OUT, amount: 14800.00, initiated_at: "2026-10-07T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30301, account_id: A-3003, type: ACH_IN, amount: 21300.00, initiated_at: "2026-07-21T12:00:00Z", status: POSTED, channel: ACH, description: Materials order, counterparty_id: CP-3002, to_account_id: null}
+    - {transaction_id: T-30302, account_id: A-3003, type: ACH_IN, amount: 19400.00, initiated_at: "2026-08-20T12:00:00Z", status: POSTED, channel: ACH, description: Materials order, counterparty_id: CP-3003, to_account_id: null}
+    - {transaction_id: T-30303, account_id: A-3003, type: ACH_IN, amount: 20700.00, initiated_at: "2026-09-16T12:00:00Z", status: POSTED, channel: ACH, description: Materials order, counterparty_id: CP-3001, to_account_id: null}
+    - {transaction_id: T-30304, account_id: A-3003, type: ACH_IN, amount: 18600.00, initiated_at: "2026-10-02T12:00:00Z", status: POSTED, channel: ACH, description: Materials order, counterparty_id: CP-3004, to_account_id: null}
+    - {transaction_id: T-30305, account_id: A-3003, type: ACH_OUT, amount: 12100.00, initiated_at: "2026-08-04T13:00:00Z", status: POSTED, channel: ACH, description: Inventory purchase, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30306, account_id: A-3003, type: ACH_OUT, amount: 11800.00, initiated_at: "2026-09-01T13:00:00Z", status: POSTED, channel: ACH, description: Inventory purchase, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30307, account_id: A-3003, type: ACH_OUT, amount: 12300.00, initiated_at: "2026-09-29T13:00:00Z", status: POSTED, channel: ACH, description: Inventory purchase, counterparty_id: CP-3005, to_account_id: null}
+    - {transaction_id: T-30401, account_id: A-3004, type: ACH_IN, amount: 14700.00, initiated_at: "2026-07-23T12:00:00Z", status: POSTED, channel: ACH, description: Design retainer, counterparty_id: CP-3013, to_account_id: null}
+    - {transaction_id: T-30402, account_id: A-3004, type: ACH_IN, amount: 15600.00, initiated_at: "2026-08-25T12:00:00Z", status: POSTED, channel: ACH, description: Design retainer, counterparty_id: CP-3013, to_account_id: null}
+    - {transaction_id: T-30403, account_id: A-3004, type: ACH_IN, amount: 14900.00, initiated_at: "2026-09-22T12:00:00Z", status: POSTED, channel: ACH, description: Design retainer, counterparty_id: CP-3013, to_account_id: null}
+    - {transaction_id: T-30404, account_id: A-3004, type: ACH_OUT, amount: 10200.00, initiated_at: "2026-08-07T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30405, account_id: A-3004, type: ACH_OUT, amount: 9800.00, initiated_at: "2026-09-04T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+
+    # ---- A-3005 Brightline. Deposits from many outside payers total $300,000.
+    - {transaction_id: T-30501, account_id: A-3005, type: ACH_IN, amount: 23400.00, initiated_at: "2026-07-14T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3007, to_account_id: null}
+    - {transaction_id: T-30502, account_id: A-3005, type: ACH_IN, amount: 26850.00, initiated_at: "2026-07-21T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3008, to_account_id: null}
+    - {transaction_id: T-30503, account_id: A-3005, type: ACH_IN, amount: 24100.00, initiated_at: "2026-07-30T12:00:00Z", status: POSTED, channel: ACH, description: Card settlement, counterparty_id: CP-3011, to_account_id: null}
+    - {transaction_id: T-30504, account_id: A-3005, type: ACH_IN, amount: 25700.00, initiated_at: "2026-08-06T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3009, to_account_id: null}
+    - {transaction_id: T-30505, account_id: A-3005, type: ACH_IN, amount: 22950.00, initiated_at: "2026-08-13T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3010, to_account_id: null}
+    - {transaction_id: T-30506, account_id: A-3005, type: ACH_IN, amount: 25300.00, initiated_at: "2026-08-21T12:00:00Z", status: POSTED, channel: ACH, description: Clinic referral payment, counterparty_id: CP-3012, to_account_id: null}
+    - {transaction_id: T-30507, account_id: A-3005, type: ACH_IN, amount: 26200.00, initiated_at: "2026-08-27T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3007, to_account_id: null}
+    - {transaction_id: T-30508, account_id: A-3005, type: ACH_IN, amount: 24650.00, initiated_at: "2026-09-03T12:00:00Z", status: POSTED, channel: ACH, description: Card settlement, counterparty_id: CP-3011, to_account_id: null}
+    - {transaction_id: T-30509, account_id: A-3005, type: ACH_IN, amount: 25050.00, initiated_at: "2026-09-11T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3008, to_account_id: null}
+    - {transaction_id: T-30510, account_id: A-3005, type: ACH_IN, amount: 23800.00, initiated_at: "2026-09-18T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3009, to_account_id: null}
+    - {transaction_id: T-30511, account_id: A-3005, type: ACH_IN, amount: 26400.00, initiated_at: "2026-09-25T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3010, to_account_id: null}
+    - {transaction_id: T-30512, account_id: A-3005, type: ACH_IN, amount: 25600.00, initiated_at: "2026-10-02T12:00:00Z", status: POSTED, channel: ACH, description: Card settlement, counterparty_id: CP-3011, to_account_id: null}
+    - {transaction_id: T-30513, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-07-17T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30514, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-07-31T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30515, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-08-14T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30516, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-08-28T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30517, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-09-14T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30518, account_id: A-3005, type: ACH_OUT, amount: 40000.00, initiated_at: "2026-09-30T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+
+    # ---- A-3006 Harbor.
+    - {transaction_id: T-30601, account_id: A-3006, type: ACH_IN, amount: 11800.00, initiated_at: "2026-07-16T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3008, to_account_id: null}
+    - {transaction_id: T-30602, account_id: A-3006, type: ACH_IN, amount: 12400.00, initiated_at: "2026-07-30T12:00:00Z", status: POSTED, channel: ACH, description: Card settlement, counterparty_id: CP-3011, to_account_id: null}
+    - {transaction_id: T-30603, account_id: A-3006, type: ACH_IN, amount: 11900.00, initiated_at: "2026-08-13T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3010, to_account_id: null}
+    - {transaction_id: T-30604, account_id: A-3006, type: ACH_IN, amount: 12100.00, initiated_at: "2026-08-27T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3008, to_account_id: null}
+    - {transaction_id: T-30605, account_id: A-3006, type: ACH_IN, amount: 11700.00, initiated_at: "2026-09-10T12:00:00Z", status: POSTED, channel: ACH, description: Card settlement, counterparty_id: CP-3011, to_account_id: null}
+    - {transaction_id: T-30606, account_id: A-3006, type: ACH_IN, amount: 12100.00, initiated_at: "2026-09-24T12:00:00Z", status: POSTED, channel: ACH, description: Insurance claims payment, counterparty_id: CP-3010, to_account_id: null}
+    - {transaction_id: T-30607, account_id: A-3006, type: ACH_OUT, amount: 18000.00, initiated_at: "2026-07-31T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30608, account_id: A-3006, type: ACH_OUT, amount: 18000.00, initiated_at: "2026-08-31T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
+    - {transaction_id: T-30609, account_id: A-3006, type: ACH_OUT, amount: 18000.00, initiated_at: "2026-09-30T13:00:00Z", status: POSTED, channel: ACH, description: Payroll, counterparty_id: CP-3006, to_account_id: null}
