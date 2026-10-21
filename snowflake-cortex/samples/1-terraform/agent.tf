@@ -32,3 +32,11 @@ resource "snowflake_grant_privileges_to_account_role" "agent_grant" {
     object_name = snowflake_cortex_agent.neo4j_agent.fully_qualified_name
   }
 }
+
+# Needed only if the account has a Snowflake Intelligence object: CoWork then shows only the agents added to it.
+resource "snowflake_intelligence_cortex_agent_attachment" "neo4j_agent" {
+  count = var.snowflake_intelligence_name == null ? 0 : 1
+
+  snowflake_intelligence_name = var.snowflake_intelligence_name
+  cortex_agent_name           = snowflake_cortex_agent.neo4j_agent.fully_qualified_name
+}
