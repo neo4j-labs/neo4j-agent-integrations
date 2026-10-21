@@ -43,7 +43,8 @@ This sample creates the [overview](../../README.md) stack with the [Snowflake Te
 
 ## Implementation notes
 
-- The sample needs provider 2.21. [`main.tf`](main.tf) turns on the preview features it uses.
+- The sample needs provider 2.22. [`main.tf`](main.tf) turns on the preview features it uses.
+- If `SHOW SNOWFLAKE INTELLIGENCES` returns an object, CoWork shows only the agents added to it. Set `snowflake_intelligence_name` to that object's name, and Terraform adds the agent to it. Without such an object, CoWork shows every agent the user can use, and you can leave the variable unset.
 - The provider cannot upload files, so [`upload_model.sh.tftpl`](scripts/upload_model.sh.tftpl) uploads the model with `snow stage copy`.
 - The SQL functions and the semantic view come from [`shared/sql/`](../../shared/sql). The Snowsight guide uses the same SQL.
 - Names are uppercase. The provider quotes them, and Cortex rejects quoted lowercase names.
