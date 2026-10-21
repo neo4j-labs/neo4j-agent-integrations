@@ -108,7 +108,7 @@ def _get_mcp_environment() -> dict[str, str]:
         if not environment.get(mcp_setting) and environment.get(integration_setting):
             environment[mcp_setting] = environment[integration_setting]
     environment.setdefault("NEO4J_MCP_READ_ONLY", "true")
-    environment.setdefault("NEO4J_TELEMETRY", "false")
+    environment.setdefault("NEO4J_TELEMETRY", "true")
     return environment
 
 

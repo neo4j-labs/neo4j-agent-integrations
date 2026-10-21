@@ -43,7 +43,7 @@ def test_local_mcp_environment_uses_integration_database_settings(monkeypatch):
     assert environment["NEO4J_MCP_PASSWORD"] == "password123"
     assert environment["NEO4J_MCP_DATABASE"] == "neo4j"
     assert environment["NEO4J_MCP_READ_ONLY"] == "true"
-    assert environment["NEO4J_TELEMETRY"] == "false"
+    assert environment["NEO4J_TELEMETRY"] == "true"
 
 
 def test_server_parameters_uses_local_command(monkeypatch):

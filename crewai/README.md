@@ -139,7 +139,7 @@ NEO4J_PASSWORD=<database-password>
 NEO4J_DATABASE=<database-name>
 
 MCP_SERVER_COMMAND=neo4j-mcp-server
-NEO4J_TELEMETRY=false
+NEO4J_TELEMETRY=true
 
 # Optional NAMS configuration
 MEMORY_API_KEY=

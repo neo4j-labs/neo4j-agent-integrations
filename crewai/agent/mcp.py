@@ -52,7 +52,7 @@ def _local_mcp_environment() -> dict[str, str]:
             environment[mcp_setting] = environment[integration_setting]
 
     environment.setdefault("NEO4J_MCP_READ_ONLY", "true")
-    environment.setdefault("NEO4J_TELEMETRY", "false")
+    environment.setdefault("NEO4J_TELEMETRY", "true")
     return environment
 
 
