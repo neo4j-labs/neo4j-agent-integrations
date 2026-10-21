@@ -169,7 +169,7 @@ def main() -> None:
     ]
     if not all(results):
         sys.exit(
-            "Some checks failed. Re-run `make wxo-setup`, or see Troubleshooting in the README."
+            "Some checks failed. Re-run `make wxo-setup`, or see docs/troubleshooting.md."
         )
     print("All Orchestrate demo objects are in place.")
 

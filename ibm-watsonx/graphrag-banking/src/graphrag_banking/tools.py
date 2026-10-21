@@ -1,4 +1,4 @@
-"""Customer-scoped retrieval tools for the support agent (PRD section 7.3).
+"""Customer-scoped retrieval tools for the support agent.
 
 Portability rule: this module imports only the ``neo4j`` driver and
 ``embeddings.embed``, so the tools move into watsonx Orchestrate unchanged.
@@ -104,16 +104,25 @@ def get_my_accounts(context: ToolContext) -> dict[str, Any]:
     holder of the account, including the customer.
 
     Returns:
-        The customer's accounts.
+        The customer's accounts. ``savings_for_overdraft_protection`` lists, by
+        nickname, the savings accounts the customer holds that can be linked
+        for Overdraft Protection. It is empty if they hold none.
     """
     records = _run(context, _GET_MY_ACCOUNTS)
-    return _format_money({"accounts": records})
+    savings = [
+        record["nickname"] or record["product"]
+        for record in records
+        if record["product_code"] == _LINKABLE_SAVINGS
+    ]
+    return _format_money(
+        {"accounts": records, "savings_for_overdraft_protection": savings}
+    )
 
 
 def find_my_transactions(
     context: ToolContext,
     payee: str | None = None,
-    type: str | None = None,
+    type: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict[str, Any]:
@@ -124,8 +133,9 @@ def find_my_transactions(
 
     Args:
         payee: Payee or payer name. Partial names match, such as "Acme".
-        type: One of WIRE_OUT, WIRE_IN, ACH_OUT, ACH_IN, CHECK_DEPOSIT, CARD,
-            FEE, or TRANSFER.
+        type: One transaction type, or a list of types to match any of them.
+            Valid types are WIRE_OUT, WIRE_IN, ACH_OUT, ACH_IN, CHECK_DEPOSIT,
+            CARD, FEE, and TRANSFER.
         date_from: Earliest initiation date, YYYY-MM-DD, inclusive.
         date_to: Latest initiation date, YYYY-MM-DD, inclusive.
 
@@ -134,10 +144,8 @@ def find_my_transactions(
         the account. ``initiated_by`` names who made the transaction, which on
         a joint account can be a co-holder.
     """
-    if type is not None and type not in TRANSACTION_TYPES:
-        raise ValueError(f"Unknown transaction type {type!r}")
     params = {
-        "type": type,
+        "types": _transaction_types(type),
         "date_from": _parse_date(date_from),
         "date_to": _parse_date(date_to),
         "limit": _TRANSACTION_LIMIT,
@@ -235,6 +243,23 @@ def _project_balances(result: dict[str, Any]) -> None:
         paid += payment["amount"]
 
 
+def _transaction_types(value: str | list[str] | None) -> list[str] | None:
+    """Turn the ``type`` argument into a list of types, or None for no filter.
+
+    A single type becomes a one-item list. An empty list means no filter.
+
+    Raises:
+        ValueError: If any value is not in ``TRANSACTION_TYPES``.
+    """
+    if value is None:
+        return None
+    types = [value] if isinstance(value, str) else list(value)
+    for item in types:
+        if item not in TRANSACTION_TYPES:
+            raise ValueError(f"Unknown transaction type {item!r}")
+    return types or None
+
+
 def _parse_date(value: str | None) -> date | None:
     if value is None:
         return None
@@ -242,6 +267,9 @@ def _parse_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError as error:
         raise ValueError(f"Dates must be YYYY-MM-DD, got {value!r}") from error
+
+
+_LINKABLE_SAVINGS = "SAV-STD"
 
 
 def _run(context: ToolContext, query: str, **params: Any) -> list[dict[str, Any]]:
@@ -324,7 +352,7 @@ ORDER BY account_id
 """
 
 _TRANSACTION_FILTERS = """
-WHERE ($type IS NULL OR t.type = $type)
+WHERE ($types IS NULL OR t.type IN $types)
   AND ($date_from IS NULL OR date(t.initiated_at) >= $date_from)
   AND ($date_to IS NULL OR date(t.initiated_at) <= $date_to)
 """

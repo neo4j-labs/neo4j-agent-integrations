@@ -1,7 +1,7 @@
-"""Phase 2 exit checks against the live graph (PRD section 8, Phase 2).
+"""Phase 2 exit checks against the live graph.
 
 Checks node counts, that every rule links to a chunk, and the hero traversals
-in PRD section 4. Skipped until ``make rebuild`` has built the graph.
+for the hero scenarios. Skipped until ``make rebuild`` has built the graph.
 """
 
 import csv
@@ -167,7 +167,7 @@ def test_every_rule_code_tag_matches_a_rule(query) -> None:
     assert rows == []
 
 
-# Hero traversals, PRD section 4
+# Hero traversals
 
 
 def test_scenario_a_wire_held_with_alert_and_waived_fees(query) -> None:

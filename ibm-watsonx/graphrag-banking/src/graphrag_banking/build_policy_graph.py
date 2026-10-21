@@ -2,7 +2,7 @@
 
 Runs a neo4j-graphrag ``Pipeline`` over ``data/policies/`` with no entity
 extraction, then creates the vector index and links each rule node to its
-chunks through ``Chunk.rule_codes`` (PRD section 5.3).
+chunks through ``Chunk.rule_codes``.
 
 Chunks from customer documents also get the ``CustomerChunk`` label, and the
 vector index covers only that label. Staff documents stay out of

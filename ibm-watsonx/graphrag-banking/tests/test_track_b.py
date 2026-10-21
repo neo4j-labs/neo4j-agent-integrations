@@ -101,9 +101,46 @@ def test_project_balances_not_covered_when_deposit_is_late() -> None:
     assert result["payments"][0]["covered"] is False
 
 
+def test_get_my_accounts_names_savings_for_overdraft_protection(monkeypatch) -> None:
+    def account(nickname: str, product_code: str) -> dict:
+        return {
+            "nickname": nickname,
+            "product": product_code,
+            "product_code": product_code,
+        }
+
+    records = [
+        account("Premium Checking", "CHK-PREM"),
+        account("Emergency Fund", "SAV-STD"),
+    ]
+    monkeypatch.setattr(tools, "_run", lambda context, query: records)
+    result = tools.get_my_accounts(None)
+    assert result["savings_for_overdraft_protection"] == ["Emergency Fund"]
+    records.pop()
+    assert tools.get_my_accounts(None)["savings_for_overdraft_protection"] == []
+
+
 def test_find_my_transactions_rejects_unknown_type() -> None:
     with pytest.raises(ValueError, match="Unknown transaction type"):
         tools.find_my_transactions(None, type="BOGUS")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("WIRE_OUT", ["WIRE_OUT"]),
+        (["WIRE_OUT", "ACH_OUT"], ["WIRE_OUT", "ACH_OUT"]),
+        ([], None),
+    ],
+)
+def test_transaction_types_normalises_type(value, expected) -> None:
+    assert tools._transaction_types(value) == expected
+
+
+def test_transaction_types_rejects_unknown_type_in_list() -> None:
+    with pytest.raises(ValueError, match="Unknown transaction type 'BOGUS'"):
+        tools._transaction_types(["WIRE_OUT", "BOGUS"])
 
 
 def test_find_my_transactions_rejects_bad_date() -> None:
@@ -124,6 +161,9 @@ def test_bind_hides_context_and_records_errors() -> None:
     schema = tool.tool_call_schema.model_json_schema()
     assert set(schema["properties"]) == {"payee", "type", "date_from", "date_to"}
     assert "customer_id" not in str(schema)
+    type_options = schema["properties"]["type"]["anyOf"]
+    assert {"type": "string"} in type_options
+    assert {"type": "array", "items": {"type": "string"}} in type_options
 
     result = tool.invoke({"type": "BOGUS"})
     assert result == {"error": "Unknown transaction type 'BOGUS'"}

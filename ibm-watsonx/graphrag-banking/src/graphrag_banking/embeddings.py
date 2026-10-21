@@ -1,7 +1,7 @@
 """Standalone embedding call shared by the retrieval tools and ingestion.
 
 This module must not import neo4j-graphrag. The tools import it directly, and it
-ships with them into watsonx Orchestrate in Phase 5 (PRD section 7.3).
+ships with them into watsonx Orchestrate.
 
 Each provider's SDK is imported inside that provider's branch, so a deployment
 only needs the SDK of the provider it uses. Phase 4 adds a ``watsonx`` branch.

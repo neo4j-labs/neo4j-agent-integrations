@@ -26,7 +26,7 @@ from graphrag_banking.facts import (
     to_decimal,
 )
 
-# Volumes include the hero records (PRD section 6.2).
+# Volumes include the hero records.
 NUM_CUSTOMERS = 200
 NUM_ACCOUNTS = 350
 NUM_COUNTERPARTIES = 300

@@ -1,6 +1,6 @@
 """Empty the database: delete all nodes, then drop constraints and indexes.
 
-Every rebuild starts from empty (PRD section 8). ``make rebuild`` runs this
+Every rebuild starts from empty. ``make rebuild`` runs this
 before ``make ingest``.
 """
 

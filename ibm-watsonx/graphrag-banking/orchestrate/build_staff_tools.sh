@@ -37,4 +37,4 @@ orchestrate tools import -k python \
   -r "$REQS" \
   -a banker_creds
 
-echo "Imported the 6 staff tools."
+echo "Imported the 7 staff tools."

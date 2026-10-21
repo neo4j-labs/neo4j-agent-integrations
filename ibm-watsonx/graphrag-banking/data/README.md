@@ -1,9 +1,11 @@
 # Data
 
+[`docs/schema.md`](../docs/schema.md) lists the graph these files load into.
+
 | Path | What it is | Committed |
 |---|---|---|
 | `policy_facts.yaml` | Canonical products, policies and rules. Schema in its header comment. | Yes |
-| `hero_fixtures.yaml` | Hand-written records for the hero scenarios in PRD section 4. | Yes |
+| `hero_fixtures.yaml` | Hand-written records for the hero scenarios in `eval/scenarios.yaml`. | Yes |
 | `policy_templates/` | Policy Markdown with `${placeholders}`. | Yes |
 | `policies/` | Rendered policy documents, written by `render-policies`. | Yes |
 | `generated/` | CSVs written by `generate-data`. Rebuilt on every `make ingest`. | No |

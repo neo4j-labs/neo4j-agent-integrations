@@ -1,4 +1,4 @@
-"""Load the structured and rule layers (PRD sections 5.1 and 5.2).
+"""Load the structured and rule layers.
 
 Creates the constraints and the payee full-text index, loads the rules from
 ``policy_facts.yaml``, then loads the CSVs in ``data/generated/`` and

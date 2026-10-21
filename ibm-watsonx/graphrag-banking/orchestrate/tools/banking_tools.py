@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import neo4j
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
@@ -84,7 +84,7 @@ def get_my_accounts() -> dict[str, Any]:
 @_described_by(banking.find_my_transactions)
 def find_my_transactions(
     payee: Optional[str] = None,
-    type: Optional[str] = None,
+    type: Optional[Union[str, list[str]]] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
 ) -> dict[str, Any]:

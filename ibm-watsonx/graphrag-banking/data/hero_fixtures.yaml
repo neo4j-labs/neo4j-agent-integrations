@@ -1,4 +1,4 @@
-# Hand-written records for the hero scenarios in PRD section 4.
+# Hand-written records for the hero scenarios in eval/scenarios.yaml.
 #
 # generate-data merges these into the background population. Background
 # records never use hero IDs (customers C-1xxx, accounts A-1xxx and A-2xxx,

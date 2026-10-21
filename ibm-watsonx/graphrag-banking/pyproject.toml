@@ -32,6 +32,7 @@ chat = "graphrag_banking.chat:main"
 baseline-rag = "graphrag_banking.baseline_vector_rag:main"
 eval-local = "graphrag_banking.eval_local:main"
 demo-walkthrough = "graphrag_banking.demo_walkthrough:main"
+fraud-demo-walkthrough = "graphrag_banking.fraud_demo_walkthrough:main"
 
 [build-system]
 requires = ["uv_build>=0.11.12,<0.12.0"]

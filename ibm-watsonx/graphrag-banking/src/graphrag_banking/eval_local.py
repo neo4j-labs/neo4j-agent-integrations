@@ -1,4 +1,4 @@
-"""Run eval/scenarios.yaml through the agent and score each answer (PRD Phase 3)."""
+"""Run eval/scenarios.yaml through the agent and score each answer."""
 
 import argparse
 import json

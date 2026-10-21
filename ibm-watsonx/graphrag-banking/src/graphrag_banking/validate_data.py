@@ -1,8 +1,8 @@
 """Check the generated CSVs and rendered policies against the facts and fixtures.
 
 Prints every failed check and exits non-zero if any check fails. The checks
-follow PRD Phase 1: referential integrity and controlled values, hero balances,
-the hero scenario facts in section 4, no conflicting background records, and
+cover referential integrity and controlled values, hero balances, the hero
+scenario facts, no conflicting background records, and
 policy documents that agree with policy_facts.yaml.
 """
 

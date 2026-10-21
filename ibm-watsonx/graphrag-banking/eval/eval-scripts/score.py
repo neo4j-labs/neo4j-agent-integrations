@@ -72,6 +72,49 @@ def score_run(run: dict[str, Any], scenario: dict[str, Any], year: int) -> dict:
     }
 
 
+def print_summary(
+    runs: list[dict[str, Any]],
+    agents: list[str],
+    ids: list[str],
+    runs_per_scenario: int,
+    mode: str,
+) -> None:
+    """One row per agent and scenario. A run passes only if it completed and every
+    check passed, so 'Runs passed' counts whole runs and 'Checks passed' counts the
+    individual facts and tool calls the checks looked for."""
+    rows = []
+    for agent in agents:
+        for sid in ids:
+            group = [r for r in runs if (r["agent"], r["scenario"]) == (agent, sid)]
+            checks = [c for r in group for c in r["checks"]]
+            rows.append(
+                (
+                    agent,
+                    sid,
+                    "PASS" if all(r["passed"] for r in group) else "FAIL",
+                    f"{sum(r['passed'] for r in group)} of {len(group)}",
+                    f"{sum(c['passed'] for c in checks)} of {len(checks)}",
+                )
+            )
+
+    headers = ("Agent", "Scenario", "Result", "Runs passed", "Checks passed")
+    widths = [max(len(str(row[i])) for row in [headers, *rows]) for i in range(5)]
+    rule = "  ".join("-" * w for w in widths)
+
+    def line(row: tuple[str, ...]) -> str:
+        return "  ".join(str(v).ljust(w) for v, w in zip(row, widths)).rstrip()
+
+    passed = sum(r["passed"] for r in runs)
+    print(f"\nSummary ({mode}, {runs_per_scenario} run(s) per scenario)")
+    print(line(headers))
+    print(rule)
+    for row in rows:
+        print(line(row))
+    print(rule)
+    print(f"Overall: {passed} of {len(runs)} runs passed")
+    print("A run passes only if it completed and every check passed.")
+
+
 def main() -> None:
     settings = load_settings()
     year = settings.demo_as_of.year
@@ -97,16 +140,7 @@ def main() -> None:
     }
 
     mode = runs[0]["mode"]
-    print(f"\nMode: {mode}, {runs_per_scenario} run(s) per scenario")
-    width = max(len(a) for a in agents)
-    print(f"{'Agent':<{width}}  " + "  ".join(f"{sid:<9}" for sid in ids))
-    for agent in agents:
-        cells = []
-        for sid in ids:
-            n = summary[agent][sid]
-            verdict = "PASS" if n == runs_per_scenario else "FAIL"
-            cells.append(f"{verdict} {n}/{runs_per_scenario}".ljust(9))
-        print(f"{agent:<{width}}  " + "  ".join(cells))
+    print_summary(runs, agents, ids, runs_per_scenario, mode)
 
     report = {
         "started_at": started_at.isoformat(),

@@ -5,7 +5,7 @@
 #   render-policies     fills the ${placeholders} in data/policy_templates/
 #   generate-data       charges fees and sets holds that match these rules
 #   validate-data       checks the CSVs and rendered documents against them
-#   load-structured     loads the rule layer (PRD section 5.2)
+#   load-structured     loads the rule layer
 #
 # Schema
 #   products[]          -> (:AccountProduct)

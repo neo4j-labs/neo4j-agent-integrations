@@ -1,5 +1,5 @@
-# TEMPORARY. This supervisor exists only for the Phase 1 routing check in
-# specs/real-orchestrate-plan.md. Import it by hand, run the check, then remove it:
+# TEMPORARY. This supervisor exists only for the routing check recorded in
+# docs/decision_log.md. Import it by hand, run the check, then remove it:
 #   orchestrate agents import -f orchestrate/routing_check_supervisor.yaml
 #   orchestrate agents remove -n routing_check_supervisor -k native
 # The file is kept so the check can be re-run. It is not part of wxo-setup.
