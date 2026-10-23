@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Loan fraud demo architecture</title>
+  <desc id="d">A relationship manager asks bank_supervisor in watsonx Orchestrate whether a loan can be approved. The supervisor routes the question to credit_analyst, fraud_investigator and banking_policy. Their tools run Cypher against Neo4j Aura, which holds the bank data, the connected groups found by Graph Data Science, and the policy rules linked to policy text. credit_analyst alone sees one application and recommends approval. With graph context the supervisor finds the hidden owner, the ring and the money loop, and recommends a fraud referral.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="560" fill="#ffffff"/>
+
+  <text x="20" y="32" font-size="18" font-weight="700" fill="#0f172a">Loan fraud demo</text>
+  <text x="20" y="50" font-size="12" fill="#475569">A supervisor agent routes one question to specialists that read connected facts from Neo4j Aura</text>
+
+  <!-- watsonx Orchestrate -->
+  <rect x="20" y="64" width="520" height="236" rx="10" fill="#eef3ff" stroke="#4a6fd8" stroke-width="1.5"/>
+  <text x="34" y="84" font-size="12" font-weight="700" fill="#2f4ba8">watsonx Orchestrate</text>
+
+  <rect x="34" y="100" width="72" height="148" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="70" y="156" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">Chat</text>
+  <text x="70" y="176" font-size="11" fill="#334155" text-anchor="middle">Dana, a</text>
+  <text x="70" y="190" font-size="11" fill="#334155" text-anchor="middle">relationship</text>
+  <text x="70" y="204" font-size="11" fill="#334155" text-anchor="middle">manager</text>
+
+  <rect x="134" y="100" width="122" height="148" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="195" y="140" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">bank_supervisor</text>
+  <text x="195" y="160" font-size="11" fill="#334155" text-anchor="middle">gpt-6-luna</text>
+  <text x="195" y="182" font-size="11" fill="#334155" text-anchor="middle">No tools of its own.</text>
+  <text x="195" y="196" font-size="11" fill="#334155" text-anchor="middle">Routes each question</text>
+  <text x="195" y="210" font-size="11" fill="#334155" text-anchor="middle">and writes one</text>
+  <text x="195" y="224" font-size="11" fill="#334155" text-anchor="middle">answer.</text>
+
+  <rect x="280" y="100" width="246" height="44" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="403" y="119" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">credit_analyst</text>
+  <text x="403" y="134" font-size="10.5" fill="#334155" text-anchor="middle">One application and the lending rules</text>
+
+  <rect x="280" y="152" width="246" height="44" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="403" y="171" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">fraud_investigator</text>
+  <text x="403" y="186" font-size="10.5" fill="#334155" text-anchor="middle">Owners, connected groups, money loops</text>
+
+  <rect x="280" y="204" width="246" height="44" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="403" y="223" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">banking_policy</text>
+  <text x="403" y="238" font-size="10.5" fill="#334155" text-anchor="middle">banking_policies knowledge base</text>
+
+  <rect x="134" y="262" width="392" height="28" rx="14" fill="#ffffff" stroke="#4a6fd8" stroke-dasharray="4 3"/>
+  <text x="330" y="280" font-size="11" fill="#334155" text-anchor="middle"><tspan font-weight="700" fill="#0f172a">banker_creds</tspan> connection, fixed to banker RM-07</text>
+
+  <line x1="106" y1="174" x2="134" y2="174" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="256" y1="122" x2="280" y2="122" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="256" y1="174" x2="280" y2="174" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="256" y1="226" x2="280" y2="226" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+
+  <!-- link to Aura -->
+  <line x1="540" y1="174" x2="590" y2="174" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="565" y="162" font-size="10" fill="#475569" text-anchor="middle">Cypher</text>
+  <text x="565" y="196" font-size="10" fill="#475569" text-anchor="middle">7 tools</text>
+
+  <!-- Neo4j Aura -->
+  <rect x="590" y="64" width="350" height="236" rx="10" fill="#e9f7f0" stroke="#1f9d6b" stroke-width="1.5"/>
+  <text x="604" y="84" font-size="12" font-weight="700" fill="#136b49">Neo4j Aura</text>
+
+  <rect x="604" y="96" width="322" height="58" rx="8" fill="#ffffff" stroke="#1f9d6b"/>
+  <text x="618" y="116" font-size="12.5" font-weight="700" fill="#0f172a">Bank data</text>
+  <text x="618" y="132" font-size="10.5" fill="#334155">People, businesses, accounts, transactions, loans,</text>
+  <text x="618" y="146" font-size="10.5" fill="#334155">applications, phones and devices, linked by ownership</text>
+
+  <rect x="604" y="162" width="322" height="58" rx="8" fill="#ffffff" stroke="#1f9d6b"/>
+  <text x="618" y="182" font-size="12.5" font-weight="700" fill="#0f172a">Connected groups</text>
+  <text x="618" y="198" font-size="10.5" fill="#334155">Graph Data Science links parties that share an identifier</text>
+  <text x="618" y="212" font-size="10.5" fill="#334155">and scores centrality. It runs before any question.</text>
+
+  <rect x="604" y="228" width="322" height="58" rx="8" fill="#ffffff" stroke="#1f9d6b"/>
+  <text x="618" y="248" font-size="12.5" font-weight="700" fill="#0f172a">Policy rules</text>
+  <text x="618" y="264" font-size="10.5" fill="#334155">FraudRule and lending rule nodes, each linked to the</text>
+  <text x="618" y="278" font-size="10.5" fill="#334155">policy text it came from, so answers cite a rule code.</text>
+
+  <!-- What the graph changes -->
+  <text x="20" y="328" font-size="14" font-weight="700" fill="#0f172a">What the graph context changes in the answer</text>
+
+  <rect x="20" y="342" width="300" height="168" rx="8" fill="#fdf0f0" stroke="#d14343"/>
+  <text x="34" y="366" font-size="13" font-weight="700" fill="#0f172a">credit_analyst alone</text>
+  <text x="34" y="382" font-size="11" fill="#7f1d1d">Context stops at one application</text>
+  <text x="34" y="406" font-size="11.5" fill="#334155">Revenue supports the $400,000 line.</text>
+  <text x="34" y="421" font-size="11.5" fill="#334155">Deposits of $610,000 look strong.</text>
+  <text x="34" y="436" font-size="11.5" fill="#334155">The amount is under the $500,000 limit.</text>
+  <text x="34" y="451" font-size="11.5" fill="#334155">Rules read: LEND-BUSLINE-REV and</text>
+  <text x="34" y="466" font-size="11.5" fill="#334155">AUTH-RM-LIMIT.</text>
+  <rect x="34" y="478" width="150" height="22" rx="11" fill="#d14343"/>
+  <text x="109" y="493" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle">Recommends approval</text>
+
+  <line x1="322" y1="426" x2="378" y2="426" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="350" y="410" font-size="10" fill="#475569" text-anchor="middle">graph</text>
+  <text x="350" y="422" font-size="10" fill="#475569" text-anchor="middle">context</text>
+
+  <rect x="380" y="342" width="560" height="168" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+  <text x="394" y="366" font-size="13" font-weight="700" fill="#0f172a">bank_supervisor</text>
+  <text x="394" y="382" font-size="11" fill="#136b49">Context follows links across four bankers' books</text>
+  <text x="394" y="406" font-size="11.5" fill="#334155"><tspan font-weight="700" fill="#0f172a">Hidden owner:</tspan> Hale owns Crestline, which owns Ortega, for 56 percent</text>
+  <text x="394" y="421" font-size="11.5" fill="#334155"><tspan font-weight="700" fill="#0f172a">Prior loss:</tspan> Hale Restoration LLC, with $186,400 written off</text>
+  <text x="394" y="436" font-size="11.5" fill="#334155"><tspan font-weight="700" fill="#0f172a">Ring:</tspan> shared phone +1-555-0610, device DEV-1001, group CG-0001</text>
+  <text x="394" y="451" font-size="11.5" fill="#334155"><tspan font-weight="700" fill="#0f172a">Money loop:</tspan> $455,000 of the $610,000 in deposits came from the ring</text>
+  <text x="394" y="466" font-size="11.5" fill="#334155"><tspan font-weight="700" fill="#0f172a">Rules cited:</tspan> KYC-UBO-25, FRAUD-SHARED-ID, FRAUD-CIRCULAR-FLOW</text>
+  <rect x="394" y="478" width="270" height="22" rx="11" fill="#1f9d6b"/>
+  <text x="529" y="493" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle">Do not approve. Refer to the fraud team.</text>
+
+  <text x="20" y="536" font-size="11.5" fill="#334155">Step 5 scores both answers fact by fact. In the live run, credit_analyst found 3 of 15 trace facts and bank_supervisor found 15 of 15.</text>
+</svg>

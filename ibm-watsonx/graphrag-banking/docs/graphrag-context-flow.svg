@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 544" width="960" height="544" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">How graph context reaches the model</title>
+  <desc id="d">A relationship manager asks whether a loan can be approved. bank_supervisor routes the question to its specialists. Their tools read three kinds of evidence from Neo4j Aura: a multi-hop traversal over ownership, shared identifiers and transactions, the stored connected group, and policy rules linked to their policy text. The results arrive together in the model's context, and the answer cites a rule for every red flag.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="544" fill="#ffffff"/>
+
+  <text x="20" y="32" font-size="18" font-weight="700" fill="#0f172a">How graph context reaches the model</text>
+  <text x="20" y="50" font-size="12" fill="#475569">One question, three kinds of graph evidence, and an answer that cites a rule for every red flag</text>
+
+  <!-- Question -->
+  <rect x="20" y="206" width="160" height="108" rx="8" fill="#eef3ff" stroke="#4a6fd8"/>
+  <text x="100" y="232" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">Question</text>
+  <text x="100" y="254" font-size="11" fill="#334155" text-anchor="middle">Dana asks whether</text>
+  <text x="100" y="268" font-size="11" fill="#334155" text-anchor="middle">Ortega's $400,000 line</text>
+  <text x="100" y="282" font-size="11" fill="#334155" text-anchor="middle">can be approved.</text>
+
+  <!-- Supervisor -->
+  <rect x="215" y="206" width="180" height="108" rx="8" fill="#eef3ff" stroke="#4a6fd8"/>
+  <text x="305" y="232" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">bank_supervisor</text>
+  <text x="305" y="254" font-size="11" fill="#334155" text-anchor="middle">Routes the question to</text>
+  <text x="305" y="268" font-size="11" fill="#334155" text-anchor="middle">credit_analyst and</text>
+  <text x="305" y="282" font-size="11" fill="#334155" text-anchor="middle">fraud_investigator.</text>
+
+  <line x1="180" y1="260" x2="214" y2="260" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Fan out -->
+  <path d="M396,260 L418,260 L418,124 L439,124" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="396" y1="260" x2="439" y2="260" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M396,260 L418,260 L418,396 L439,396" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Aura evidence -->
+  <text x="440" y="66" font-size="11" font-weight="700" fill="#136b49">Neo4j Aura, read-only Cypher through the tools</text>
+
+  <rect x="440" y="80" width="270" height="88" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+  <text x="454" y="102" font-size="12.5" font-weight="700" fill="#0f172a">Multi-hop traversal</text>
+  <text x="454" y="122" font-size="11" fill="#334155">OWNS chain from Hale to Crestline to Ortega</text>
+  <text x="454" y="137" font-size="11" fill="#334155">Shared Phone and Device nodes</text>
+  <text x="454" y="152" font-size="11" fill="#334155">Transactions that loop back to Ortega</text>
+
+  <rect x="440" y="216" width="270" height="88" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+  <text x="454" y="238" font-size="12.5" font-weight="700" fill="#0f172a">Stored connected group</text>
+  <text x="454" y="258" font-size="11" fill="#334155">get_connected_group returns CG-0001:</text>
+  <text x="454" y="273" font-size="11" fill="#334155">11 members, their centrality, and the</text>
+  <text x="454" y="288" font-size="11" fill="#334155">identifiers they share</text>
+
+  <rect x="440" y="352" width="270" height="88" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+  <text x="454" y="374" font-size="12.5" font-weight="700" fill="#0f172a">Policy rules and text</text>
+  <text x="454" y="394" font-size="11" fill="#334155">FraudRule nodes link FROM_CHUNK to the</text>
+  <text x="454" y="409" font-size="11" fill="#334155">policy text: KYC-UBO-25, FRAUD-SHARED-ID,</text>
+  <text x="454" y="424" font-size="11" fill="#334155">FRAUD-CIRCULAR-FLOW</text>
+
+  <!-- Fan in -->
+  <path d="M711,124 L732,124 L732,260 L752,260" fill="none" stroke="#475569" stroke-width="1.5"/>
+  <line x1="711" y1="260" x2="752" y2="260" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M711,396 L732,396 L732,260" fill="none" stroke="#475569" stroke-width="1.5"/>
+
+  <!-- Model context -->
+  <rect x="753" y="170" width="187" height="180" rx="8" fill="#fff6e8" stroke="#d98a1f"/>
+  <text x="846" y="196" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">Model context</text>
+  <text x="846" y="220" font-size="11" fill="#334155" text-anchor="middle">Rows from all three</text>
+  <text x="846" y="234" font-size="11" fill="#334155" text-anchor="middle">sources arrive together,</text>
+  <text x="846" y="248" font-size="11" fill="#334155" text-anchor="middle">with the links between</text>
+  <text x="846" y="262" font-size="11" fill="#334155" text-anchor="middle">them kept. The model</text>
+  <text x="846" y="276" font-size="11" fill="#334155" text-anchor="middle">reasons over connected</text>
+  <text x="846" y="290" font-size="11" fill="#334155" text-anchor="middle">facts, not separate</text>
+  <text x="846" y="304" font-size="11" fill="#334155" text-anchor="middle">text chunks.</text>
+
+  <!-- Answer -->
+  <line x1="846" y1="351" x2="846" y2="466" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="20" y="468" width="920" height="40" rx="8" fill="#1f9d6b"/>
+  <text x="480" y="486" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="middle">Answer: do not approve. Refer the application to the fraud team under FRAUD-REFERRAL.</text>
+  <text x="480" y="500" font-size="11" fill="#ffffff" text-anchor="middle">Each red flag names the rule it comes from.</text>
+
+  <text x="20" y="530" font-size="11.5" fill="#334155">credit_analyst alone reads one application and the lending rules. It misses the owner, the ring and the loop, and it recommends approval.</text>
+</svg>

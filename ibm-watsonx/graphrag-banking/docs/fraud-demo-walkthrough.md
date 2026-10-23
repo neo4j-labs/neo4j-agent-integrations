@@ -1,5 +1,9 @@
 # Loan Fraud Demo Walkthrough
 
+![Architecture: a supervisor agent routes one question to specialists that read connected facts from Neo4j Aura](fraud-demo-architecture.svg)
+
+The top half shows who does the work. `bank_supervisor` routes Dana's question to three specialists in watsonx Orchestrate. Their tools run Cypher against Neo4j Aura, which holds the bank data, the connected groups that Graph Data Science found, and the policy rules. The bottom half shows the result. `credit_analyst` alone sees one application and recommends approval. With graph context, the supervisor finds the hidden owner, the ring, and the money loop.
+
 This walkthrough runs the staff demo from start to finish. A relationship manager asks whether a loan can be approved. The application looks clean. The graph shows that it is part of a fraud ring.
 
 After you set the scene, the demo has five steps: the failure, the fix, the follow-up, how GraphRAG changed the answer, and the proof. The runner takes about 3 minutes. With the talking points, allow about 10 minutes.
@@ -157,6 +161,10 @@ Neo4j Aura holds the bank as one graph. Customers, people, businesses, accounts,
 ### Connected groups
 
 The key step in the rebuild is `build-groups`. It runs Neo4j Graph Data Science in an Aura Graph Analytics session, before any agent asks a question.
+
+![build-groups flow: project shared identifiers, filter normal links, find groups, score members, write the groups back to Aura](build-groups-flow.svg)
+
+The diagram shows the five stages of `build-groups` and what they do to the demo graph. Four businesses start out linked by a shared phone, and three of them by a shared device. The step ends with one `ConnectedGroup` node that holds the members, with a centrality score on each `IN_GROUP` link.
 
 - **Shared links:** The step projects people, customers, and businesses with the phones, emails, devices, and addresses they share. It adds ownership and director links. An identifier that only one party uses links nothing, so it is left out.
 - **Normal links:** Registered agent and coworking addresses are left out, because `FRAUD-REG-AGENT` says they are not red flags on their own. A cluster held together only by ownership is dropped, because an owner with several businesses is normal.
@@ -391,6 +399,10 @@ The answer does not name Victor Hale or Crestline, and gives no phone, device, o
 ---
 
 ## Step 5: How GraphRAG changed the answer
+
+![Flow: a question reaches bank_supervisor, the tools read three kinds of graph evidence from Aura, and the model answers from connected facts](graphrag-context-flow.svg)
+
+The diagram follows one question. `bank_supervisor` routes it, and the tools read three kinds of evidence from Aura: a multi-hop traversal, the stored connected group, and the policy rules with their text. The rows arrive in the model's context together, so the answer can cite a rule for every red flag.
 
 **What:** Now the difference gets measured. The same Scenario E prompt goes to `credit_analyst` and to `bank_supervisor`, and each answer is scored fact by fact. Only the agent with multi-hop graph context finds the hidden owner, the ring and the money loop.
 

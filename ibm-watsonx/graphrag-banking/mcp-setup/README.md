@@ -1,5 +1,13 @@
 # Neo4j integration with watsonx Orchestrate through MCP
 
+![Architecture: a watsonx Orchestrate agent reads a Neo4j graph through an MCP gateway](architecture.svg)
+
+The top row shows the request path. A question in Orchestrate chat reaches the
+LangGraph agent, which calls the AWS AgentCore gateway over MCP, and the
+gateway reaches the Neo4j finance MCP server and its Aura graph. The lower rows
+show what the graph adds. The agent reads the schema, retrieves connected
+entities with Cypher traversals, and answers from the result rows.
+
 This example integrates Neo4j into **watsonx Orchestrate** through the Model
 Context Protocol. It connects the Neo4j finance MCP server to Orchestrate as an
 **MCP toolkit**, then builds a small LangGraph agent on top of it.
@@ -296,6 +304,61 @@ Cypher:
 - What node labels and relationships are in the graph?
 
 ![Finance Graph MCP Agent answering in Chat](finance_agent_chat.png)
+
+### Ask it to find fraud
+
+The graph holds the signals that fraud rings leave behind: shared phones,
+devices and addresses, groups of connected entities, circular transfers, and
+compliance alerts. These questions send the agent after them. The Cypher
+behind each one was run against the graph, and the note says what it should
+find.
+
+**Shared identifiers across loan applicants**
+
+- Which devices were used to submit loan applications for more than one
+  business, and which businesses are they?
+  *`DEV-1001` was used by Ortega Builders, Keystone Paving and Summit Ridge
+  Supply.*
+- Which phone numbers are shared by more than one business or person?
+  *`+1-555-0610` belongs to Victor Hale and four businesses.*
+- Which addresses are shared by the most businesses, and what kind of address
+  is each one?
+  *Delaware registered-agent addresses and Illinois and Wisconsin coworking
+  spaces lead the list.*
+
+**Connected groups and ownership**
+
+- What are the largest connected groups, and which people and businesses are in
+  them?
+  *`CG-0001` has 11 members, including Victor Hale, Luis Ortega, Crestline
+  Holdings and Hale Restoration LLC.*
+- Which people own or direct more than one business in the same connected group?
+- Which businesses applied for a loan within a year of being registered, and
+  for how much?
+  *Cook-Phillips, registered 2025-08-24, has a 454,000 application in review.*
+
+**Money movement**
+
+- Which pairs of accounts send money back and forth to each other?
+  *Accounts `A-3001` and `A-3002` move 40,000 to 85,000 between them in both
+  directions.*
+- Which accounts made more than one outgoing wire to a payee they had never paid
+  before?
+- Which accounts have several transactions between 9,000 and 10,000, just under
+  a reporting threshold?
+
+**Alerts and policy**
+
+- Which compliance alerts are still open or escalated, and which transaction
+  raised each one?
+  *Alerts such as `AL-5000` and `AL-5021` are escalated wire reviews.*
+- How many alerts were raised under each compliance rule, split by status?
+- Which loan applications in review connect to a business that shares a device,
+  phone or address with another applicant?
+
+A follow-up such as "Show me the people and businesses behind that device" lets
+the agent walk the graph one more hop from its last answer. The agent prompt
+caps each query at `LIMIT 25`, so ask for the top results when a list is long.
 
 ## Troubleshooting
 
