@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upload the Neo4j knowledge source and its test agent to watsonx Orchestrate.
 # Run from the graphrag-banking folder, after deploy_lambda.sh:
-#   ./orchestrate/custom_knowledge_service/upload_to_orchestrate.sh
+#   ./custom_knowledge_service/upload_to_orchestrate.sh
 #
 # It does three things, and is safe to run again:
 #   1. Creates the neo4j_graph_search connection when the tenant has none. A
@@ -14,9 +14,9 @@
 # URL in the default AWS profile. The KNOWLEDGE_FILTER variable sets the
 # business name the service screens on every search. It defaults to Ortega.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 
-SERVICE_DIR=orchestrate/custom_knowledge_service
+SERVICE_DIR=custom_knowledge_service
 OUT=orchestrate/build/custom_knowledge_service
 APP_ID=neo4j_graph_search
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This demo is a bank support agent that runs in IBM watsonx Orchestrate. A signed-in customer asks about their own money, for example: "Why did my wire transfer fail yesterday, and will I be charged a penalty fee?"
+This demo shows the Neo4j and IBM watsonx integration story. It is a bank support agent that runs in **IBM watsonx Orchestrate** and answers from a Neo4j knowledge graph. A signed-in customer asks about their own money, for example: "Why did my wire transfer fail yesterday, and will I be charged a penalty fee?"
 
 Answering that question needs two kinds of data. The customer's accounts and transactions are database records. The bank's fee and hold rules are written policy documents. Plain vector search can find the right policy paragraph. It cannot tell which policy applies to this customer's transaction.
 
@@ -10,15 +10,41 @@ Neo4j stores both kinds of data in one knowledge graph and links each rule to th
 
 The same graph, tools, and instructions also run locally in plain Python.
 
-The Orchestrate part has two demos on the same graph. [Demo One](#orchestrate-demo-one-staff-and-fraud) is for bank staff. A relationship manager asks whether a loan can be approved, and the graph shows the application is part of a fraud ring. [Demo Two](#orchestrate-demo-two-customer-support) is the customer support agent described above.
+The **watsonx Orchestrate** part has two demos on the same graph. [Demo One](#orchestrate-demo-one-staff-and-fraud) is for bank staff. A relationship manager asks whether a loan can be approved, and the graph shows the application is part of a fraud ring. [Demo Two](#orchestrate-demo-two-customer-support) is the customer support agent described above.
+
+Two more examples show other ways Neo4j can integrate with Orchestrate. Orchestrate supplies the **agent builder**, the **chat**, the **managed connections**, and the **draft and live deployment**. Neo4j supplies the connected context that a text index cannot, such as which rule covers which product and which business sits in a fraud ring.
+
+- **MCP server integration:** The Neo4j MCP server joins Orchestrate as an **MCP toolkit** on a **managed connection**. An agent reads the schema and runs read-only Cypher, with no tool written for each question.
+- **Custom knowledge service integration:** Neo4j plugs into Orchestrate as a **custom service knowledge source**. A small service in front of the graph implements the Orchestrate request format, so any agent answers from the graph just by adding the knowledge source.
 
 This README has five parts:
 
-- **Overview:** This part covers what the demo shows, the hero scenarios, and how the graph and tools work.
+- **Overview:** This part covers what the demos show, the three ways the graph connects to Orchestrate, the hero scenarios, and how the graph and tools work.
 - **[Common setup](#common-setup):** These steps install the project and build the graph. Every path below needs them.
 - **[Running locally](#running-locally):** This part covers chatting with the agent, the vector-only baseline, and the evaluation, all in plain Python.
 - **[watsonx Orchestrate](#watsonx-orchestrate):** This part covers installing the ADK, connecting to your instance, the shared setup, the two demos, and scoring the Orchestrate agents with the evaluation.
 - **[More documentation](#more-documentation):** This part links to the presenter scripts, the graph schema, the reference pages, the troubleshooting guide, and the decision log.
+
+### Neo4j integration with watsonx Orchestrate through MCP
+
+[`mcp-setup/`](mcp-setup/README.md) integrates Neo4j into **watsonx Orchestrate** through the Model Context Protocol. Orchestrate registers the Neo4j finance MCP server as an **MCP toolkit**, so its tools appear next to every other tool an agent can use. The server runs behind an AWS AgentCore gateway that a Cognito OAuth client credentials flow protects. An Orchestrate **managed connection** holds the credentials and fetches the tokens, so no agent holds a secret.
+
+The integration point is the toolkit and its connection. The server exposes two tools, one for the graph schema and one for read-only Cypher, and Orchestrate imports both. A LangGraph agent, `finance_graph_agent`, runs in the **Orchestrate agent runtime** and uses the tools to answer questions such as "Which account products exist and how many accounts use each one?" New questions need no new tool. The folder has the connection script, the agent, a deploy script, and a local runner.
+
+### Neo4j integration with the watsonx Orchestrate custom knowledge service source
+
+[`custom_knowledge_service/`](custom_knowledge_service/README.md) integrates Neo4j into **watsonx Orchestrate** through its **custom service knowledge source**. Orchestrate calls out to a service that you host, and the Neo4j graph sits behind it. A small FastAPI service on AWS Lambda implements the Orchestrate **custom service** request and response format. It searches the policy chunks in Neo4j and, for a named business, runs the fraud screen, then returns passages with their rule codes.
+
+The integration point is the knowledge source itself. An Orchestrate **knowledge base** of type custom service holds the service URL and a **managed connection** with the key, so Orchestrate treats the graph like any other knowledge source. The test agent, `graph_knowledge_demo`, has no tools. It answers from that source alone, for example by listing the three fraud rules that Ortega Builders matches. Any other agent on the tenant can add the same source. The folder has the service, the Lambda build and deploy scripts, and the upload script.
+
+### Other agent demo scenarios
+
+The two **watsonx Orchestrate** demos use Python tools on a **managed connection**, with the graph as the source of truth. They run against the same graph as the local agent:
+
+- **[Demo One: Staff and fraud](#orchestrate-demo-one-staff-and-fraud):** `bank_supervisor` routes a relationship manager's loan question to a credit specialist, a fraud specialist, and a policy agent, as **multi-agent collaborators**. The scenarios are E to J.
+- **[Demo Two: Customer support](#orchestrate-demo-two-customer-support):** `banking_support` answers the signed-in customer from the graph, and `banking_baseline` answers from the policy documents alone, through the built-in **knowledge base**. The scenarios are A to D, and they follow below.
+
+The agent also runs locally in plain Python. See [Running locally](#running-locally).
 
 ### Choose your path
 

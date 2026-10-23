@@ -1,7 +1,7 @@
 # A small test agent for the Neo4j Custom service knowledge source. It has no
 # tools. Everything it says comes from the passages the service returns, so a
 # correct answer shows the knowledge source works.
-# Import with: ./orchestrate/custom_knowledge_service/upload_to_orchestrate.sh
+# Import with: ./custom_knowledge_service/upload_to_orchestrate.sh
 spec_version: v1
 kind: native
 name: graph_knowledge_demo

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create or update the Lambda function and its Function URL.
 # Run from the graphrag-banking folder, after build_lambda.sh:
-#   ./orchestrate/custom_knowledge_service/deploy_lambda.sh
+#   ./custom_knowledge_service/deploy_lambda.sh
 #
 # AWS credentials come from the default profile, or from AWS_PROFILE. The
 # shared key is KNOWLEDGE_SERVICE_API_KEY in .env. When .env has none, the

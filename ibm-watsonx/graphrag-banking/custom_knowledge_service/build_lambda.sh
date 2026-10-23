@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build orchestrate/build/knowledge_service.zip for AWS Lambda (python3.13, arm64).
 # Run from the graphrag-banking folder:
-#   ./orchestrate/custom_knowledge_service/build_lambda.sh
+#   ./custom_knowledge_service/build_lambda.sh
 set -euo pipefail
 
-SERVICE_DIR=orchestrate/custom_knowledge_service
+SERVICE_DIR=custom_knowledge_service
 OUT=orchestrate/build/knowledge_service
 ZIP="$PWD/orchestrate/build/knowledge_service.zip"
 

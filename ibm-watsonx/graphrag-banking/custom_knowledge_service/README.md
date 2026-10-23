@@ -1,6 +1,21 @@
-# Custom knowledge service
+# Neo4j integration with the watsonx Orchestrate custom knowledge service source
 
-This service lets watsonx Orchestrate use the Neo4j graph as a knowledge source. An Orchestrate agent asks the service a question over HTTPS. The service searches the graph and returns passages, and the agent answers from them.
+This example integrates Neo4j into **watsonx Orchestrate** through the **custom service** knowledge source. Orchestrate lets a knowledge base call out to a search service that you host. Here that service sits in front of a Neo4j graph, so Orchestrate agents use the graph as a knowledge source in the same way they use a built-in knowledge base.
+
+The integration has two halves. On the Orchestrate side, a **knowledge base** of type custom service holds the service URL, and a **managed connection** holds the API key. An agent adds the knowledge base, and Orchestrate sends each question to the service as an HTTPS request. On the Neo4j side, a small FastAPI service receives the request, searches the graph, and returns passages in the format Orchestrate expects. The agent answers from those passages. No tool is written, and no data is copied into Orchestrate.
+
+The graph search is what the integration adds. The service returns policy passages with their rule codes, and for a named business it adds the fraud screen, which comes from graph traversals that a text index cannot do.
+
+## Business value
+
+This example shows one way Neo4j integrates with **watsonx Orchestrate**. Orchestrate's built-in **knowledge bases** find the paragraph that matches a question. They cannot tell which rule applies to which product, or which business is linked to a fraud ring. Neo4j holds those links. This service puts both behind one Orchestrate **custom service knowledge source**:
+
+- **Graph answers with no tools.** The test agent has no tools. Adding the knowledge source is enough for it to answer from policy text and from graph traversals, such as the fraud rules a business matches.
+- **The data stays in Neo4j.** Nothing is copied into an Orchestrate index. Every query reads the current graph, so a change to a rule or a relationship shows in the next answer.
+- **Answers can be traced.** Each passage carries its score and its rule codes, so a reviewer can follow an answer back to the rule and the graph path behind it.
+- **One service serves many agents.** Any agent on the tenant can add the same knowledge source. There is no per-agent integration code.
+- **Orchestrate stays the control point.** The shared key lives in a managed connection, the agent follows Orchestrate's draft and live flow, and the service only reads.
+- **It is cheap to try.** The service runs on AWS Lambda behind a Function URL, with no server to keep running.
 
 ## Overview
 
@@ -58,10 +73,10 @@ You need `uv`, the AWS CLI with a default profile, the [Neo4j CLI](https://neo4j
 |---|---|---|
 | 1. Build the graph | `make rebuild` | The service fails on an empty graph |
 | 2. Check `.env` | `neo4j-cli query --env .env 'RETURN 1 AS ok' --format toon` | [Check the settings](#1-check-the-settings) |
-| 3. Build the zip | `./orchestrate/custom_knowledge_service/build_lambda.sh` | [Host it on AWS Lambda](#3-host-it-on-aws-lambda) |
-| 4. Deploy | `./orchestrate/custom_knowledge_service/deploy_lambda.sh` | It prints the Function URL |
+| 3. Build the zip | `./custom_knowledge_service/build_lambda.sh` | [Host it on AWS Lambda](#3-host-it-on-aws-lambda) |
+| 4. Deploy | `./custom_knowledge_service/deploy_lambda.sh` | It prints the Function URL |
 | 5. Test the URL | `curl` with the key, as shown in [Test the URL](#test-the-url) | Results here mean the service works |
-| 6. Upload to Orchestrate | `./orchestrate/custom_knowledge_service/upload_to_orchestrate.sh` | [Connect it to Orchestrate](#4-connect-it-to-orchestrate) |
+| 6. Upload to Orchestrate | `./custom_knowledge_service/upload_to_orchestrate.sh` | [Connect it to Orchestrate](#4-connect-it-to-orchestrate) |
 | 7. Ask in Chat | Pick `graph_knowledge_demo` and ask about Ortega Builders | [Test it in Chat](#5-test-it-in-chat) |
 
 Step 6 can instead be done by hand in the dashboard. The details are in [Option 2](#option-2-use-the-dashboard).
@@ -87,7 +102,7 @@ This step is optional. It proves the service works before you deploy it. Run:
 ```bash
 export KNOWLEDGE_SERVICE_API_KEY=$(openssl rand -hex 16)
 uv run --with fastapi --with uvicorn uvicorn app:app \
-  --app-dir orchestrate/custom_knowledge_service --port 8099
+  --app-dir custom_knowledge_service --port 8099
 ```
 
 Call it from a second terminal:
@@ -115,7 +130,7 @@ Lambda suits this demo. It costs almost nothing for a short trial, and it gives 
 The script downloads Linux arm64 wheels, so it works from a Mac:
 
 ```bash
-./orchestrate/custom_knowledge_service/build_lambda.sh
+./custom_knowledge_service/build_lambda.sh
 ```
 
 The zip is about 8 MB, well under the 50 MB limit for a direct upload.
@@ -125,7 +140,7 @@ The zip is about 8 MB, well under the 50 MB limit for a direct upload.
 Deploying creates a public URL in your AWS account. Deploy only when you are ready to connect Orchestrate, and delete it afterward.
 
 ```bash
-./orchestrate/custom_knowledge_service/deploy_lambda.sh
+./custom_knowledge_service/deploy_lambda.sh
 ```
 
 The script uses your default AWS profile. Set `AWS_PROFILE` to use another one. It copies the Neo4j, OpenAI, and demo settings from `.env` into the function's environment, adds the shared key from `.env`, and prints the Function URL. It prints no secret. Run it again after a code change and it updates the function.
@@ -157,10 +172,14 @@ A Custom service knowledge connection takes a server URL and one of Basic, API k
 The script creates the connection, the knowledge base, and a test agent, `graph_knowledge_demo`. It also deploys the agent. An import makes only a draft, and the Chat page lists deployed agents only.
 
 ```bash
-./orchestrate/custom_knowledge_service/upload_to_orchestrate.sh
+./custom_knowledge_service/upload_to_orchestrate.sh
 ```
 
 It reads the service URL from `KNOWLEDGE_SERVICE_URL` in `.env`, and falls back to the Function URL of the Lambda in your default AWS profile. It reads the shared key from `.env` only when it has to create the connection. The script leaves an existing `neo4j_graph_search` connection alone, so a connection made in the dashboard is reused. Run the script again after a change and it updates what it made.
+
+The agents overview in Orchestrate shows the agents on the tenant after the deploy, with live and draft agents counted separately.
+
+![Agents overview after the agent deploy](agents.png)
 
 Two settings change what it uploads:
 
@@ -263,7 +282,7 @@ The same value goes in two places: the Lambda's environment, which `deploy_lambd
 Lambda needs no image. Build one to run the service somewhere else, such as a container host. Build from the `graphrag-banking` folder, so the image can copy `src/`:
 
 ```bash
-docker build -f orchestrate/custom_knowledge_service/Dockerfile -t neo4j-knowledge-service .
+docker build -f custom_knowledge_service/Dockerfile -t neo4j-knowledge-service .
 docker run -p 8080:8080 --env-file .env \
   -e KNOWLEDGE_SERVICE_API_KEY=$KNOWLEDGE_SERVICE_API_KEY neo4j-knowledge-service
 ```
@@ -302,3 +321,4 @@ The `neo4j_graph_search` connection stays, because Orchestrate does not delete k
 | `upload_to_orchestrate.sh` | Creates the connection if needed, then imports the knowledge base, imports the agent, and deploys it |
 | `knowledge_connection.png` | Screenshot of the connection in the dashboard |
 | `chat_one.png` | Screenshot of the agent answering in Chat |
+| `agents.png` | Screenshot of the agents overview after the deploy |

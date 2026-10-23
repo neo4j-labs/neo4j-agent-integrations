@@ -1,12 +1,41 @@
-# MCP setup
+# Neo4j integration with watsonx Orchestrate through MCP
 
-Connect the Neo4j finance MCP server to watsonx Orchestrate, then build a small
-LangGraph agent on top of it.
+This example integrates Neo4j into **watsonx Orchestrate** through the Model
+Context Protocol. It connects the Neo4j finance MCP server to Orchestrate as an
+**MCP toolkit**, then builds a small LangGraph agent on top of it.
 
-The finance server runs behind an AWS AgentCore gateway. The gateway is
-protected by a Cognito OAuth client credentials flow. Orchestrate needs a
-connection that holds those credentials so it can fetch tokens when it calls the
-gateway.
+The integration has two halves. On the Neo4j side, the finance MCP server runs
+behind an AWS AgentCore gateway and exposes two tools, one for the graph schema
+and one for read-only Cypher. The gateway is protected by a Cognito OAuth client
+credentials flow. On the Orchestrate side, a **managed connection** holds those
+credentials so Orchestrate can fetch tokens when it calls the gateway, and the
+**MCP toolkit** registers the server's tools for agents to use. Once both
+exist, any Orchestrate agent can query the graph, and no tool is written for
+each question.
+
+## Business value
+
+This example shows one way Neo4j integrates with **watsonx Orchestrate**.
+Orchestrate gives a bank the **agent builder**, the **chat** interface, and the
+governance around **managed connections** and **deployment**. Neo4j gives those
+agents a connected view of the bank's data. The **MCP toolkit** joins the two:
+
+- **New questions need no new tools.** The agent reads the graph schema and
+  writes read-only Cypher. A question nobody planned for gets an answer
+  without a developer writing and importing another tool.
+- **Answers come from relationships.** Counts by product, customers with
+  several accounts, and accounts with no product are all graph queries. A text
+  index cannot answer them.
+- **The graph stays read-only.** The gateway exposes two tools, one for the
+  schema and one for read-only Cypher. Nothing in the demo can change the data.
+- **Credentials stay out of the agent.** The OAuth client secret lives in an
+  Orchestrate connection. Orchestrate fetches the token and injects it, so the
+  agent code holds no secret.
+- **Governance stays in Orchestrate.** The connection is managed, has separate
+  draft and live values, and lists the tools and agents that use it.
+- **One server serves many agents.** Any Orchestrate agent can use the same
+  toolkit, including the LangGraph agent built here, which runs in
+  Orchestrate's own runtime.
 
 ## What is here
 
@@ -223,6 +252,11 @@ before the deploy.
 
 The script is safe to re-run. After it runs, the agent also shows under View
 associations for `neo4j_mcp_finance`.
+
+The agents overview in Orchestrate shows the agents on the tenant after the
+deploy, with live and draft agents counted separately.
+
+![Agents overview after the agent deploy](agents.png)
 
 ### Test it in Orchestrate
 

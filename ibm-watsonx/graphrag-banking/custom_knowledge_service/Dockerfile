@@ -1,13 +1,13 @@
 # Build from the graphrag-banking folder, so the image can copy src/:
-#   docker build -f orchestrate/custom_knowledge_service/Dockerfile -t neo4j-knowledge-service .
+#   docker build -f custom_knowledge_service/Dockerfile -t neo4j-knowledge-service .
 FROM python:3.13-slim
 
 WORKDIR /app
-COPY orchestrate/custom_knowledge_service/requirements.txt .
+COPY custom_knowledge_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/graphrag_banking src/graphrag_banking
-COPY orchestrate/custom_knowledge_service/app.py .
+COPY custom_knowledge_service/app.py .
 ENV PYTHONPATH=/app/src
 
 # Settings come from environment variables. No .env file is copied in.
