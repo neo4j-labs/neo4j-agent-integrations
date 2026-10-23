@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Finance Graph MCP Agent architecture</title>
+  <desc id="d">A banker asks a question in watsonx Orchestrate chat. The finance_graph_agent calls an AWS AgentCore gateway over MCP. The gateway reaches the Neo4j finance MCP server, which reads the Neo4j Aura graph. Four steps show how the graph adds context: read the schema, traverse relationships with Cypher, ground the model in the result rows, and follow up from the last answer.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="560" fill="#ffffff"/>
+
+  <text x="20" y="32" font-size="18" font-weight="700" fill="#0f172a">Finance Graph MCP Agent</text>
+  <text x="20" y="50" font-size="12" fill="#475569">watsonx Orchestrate agent reading a Neo4j graph through an MCP gateway</text>
+
+  <!-- watsonx Orchestrate -->
+  <rect x="20" y="64" width="380" height="194" rx="10" fill="#eef3ff" stroke="#4a6fd8" stroke-width="1.5"/>
+  <text x="34" y="84" font-size="12" font-weight="700" fill="#2f4ba8">watsonx Orchestrate</text>
+
+  <rect x="34" y="100" width="100" height="86" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="84" y="132" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">Chat</text>
+  <text x="84" y="152" font-size="11" fill="#334155" text-anchor="middle">Banker asks</text>
+  <text x="84" y="166" font-size="11" fill="#334155" text-anchor="middle">a question</text>
+
+  <rect x="168" y="100" width="218" height="86" rx="8" fill="#ffffff" stroke="#4a6fd8"/>
+  <text x="277" y="126" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">finance_graph_agent</text>
+  <text x="277" y="146" font-size="11" fill="#334155" text-anchor="middle">LangGraph agent, OpenAI model</text>
+  <text x="277" y="162" font-size="11" fill="#334155" text-anchor="middle">Decides which tool to call</text>
+  <text x="277" y="176" font-size="11" fill="#334155" text-anchor="middle">and writes the answer</text>
+
+  <rect x="168" y="210" width="218" height="34" rx="17" fill="#ffffff" stroke="#4a6fd8" stroke-dasharray="4 3"/>
+  <text x="277" y="225" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">neo4j_mcp_finance connection</text>
+  <text x="277" y="238" font-size="10" fill="#334155" text-anchor="middle">Orchestrate injects the OAuth token</text>
+
+  <line x1="134" y1="143" x2="168" y2="143" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="277" y1="210" x2="277" y2="187" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+
+  <!-- AWS AgentCore -->
+  <rect x="420" y="64" width="200" height="194" rx="10" fill="#fff6e8" stroke="#d98a1f" stroke-width="1.5"/>
+  <text x="434" y="84" font-size="12" font-weight="700" fill="#9a5b05">AWS</text>
+
+  <rect x="436" y="100" width="168" height="86" rx="8" fill="#ffffff" stroke="#d98a1f"/>
+  <text x="520" y="126" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">AgentCore gateway</text>
+  <text x="520" y="146" font-size="11" fill="#334155" text-anchor="middle">Streamable HTTP</text>
+  <text x="520" y="162" font-size="11" fill="#334155" text-anchor="middle">Cognito OAuth client</text>
+  <text x="520" y="176" font-size="11" fill="#334155" text-anchor="middle">credentials</text>
+
+  <text x="520" y="236" font-size="10" fill="#334155" text-anchor="middle">Bearer token checked</text>
+  <text x="520" y="249" font-size="10" fill="#334155" text-anchor="middle">on every call</text>
+
+  <line x1="386" y1="143" x2="436" y2="143" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="411" y="136" font-size="10" fill="#475569" text-anchor="middle">MCP</text>
+
+  <!-- Neo4j -->
+  <rect x="640" y="64" width="300" height="194" rx="10" fill="#e9f7f0" stroke="#1f9d6b" stroke-width="1.5"/>
+  <text x="654" y="84" font-size="12" font-weight="700" fill="#136b49">Neo4j</text>
+
+  <rect x="656" y="100" width="146" height="86" rx="8" fill="#ffffff" stroke="#1f9d6b"/>
+  <text x="729" y="124" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">Finance MCP server</text>
+  <text x="729" y="146" font-size="10" fill="#334155" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace">get_neo4j_schema</text>
+  <text x="729" y="162" font-size="10" fill="#334155" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace">read_neo4j_cypher</text>
+  <text x="729" y="177" font-size="10" fill="#334155" text-anchor="middle">read-only</text>
+
+  <path d="M826,114 L826,176 A46,10 0 0 0 918,176 L918,114" fill="#ffffff" stroke="#1f9d6b"/>
+  <ellipse cx="872" cy="114" rx="46" ry="10" fill="#ffffff" stroke="#1f9d6b"/>
+  <text x="872" y="148" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle">Neo4j Aura</text>
+  <text x="872" y="164" font-size="10" fill="#334155" text-anchor="middle">Finance graph</text>
+
+  <line x1="604" y1="143" x2="656" y2="143" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="630" y="136" font-size="10" fill="#475569" text-anchor="middle">MCP</text>
+  <line x1="802" y1="143" x2="826" y2="143" stroke="#475569" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+
+  <text x="790" y="236" font-size="10" fill="#334155" text-anchor="middle">Customers, accounts, transactions, devices,</text>
+  <text x="790" y="249" font-size="10" fill="#334155" text-anchor="middle">connected groups, alerts and policies</text>
+
+  <!-- GraphRAG steps -->
+  <text x="20" y="290" font-size="14" font-weight="700" fill="#0f172a">How the graph adds context to the agent</text>
+
+  <g>
+    <rect x="20" y="304" width="215" height="106" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+    <circle cx="40" cy="326" r="10" fill="#1f9d6b"/>
+    <text x="40" y="330" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+    <text x="58" y="330" font-size="13" font-weight="700" fill="#0f172a">Read the schema</text>
+    <text x="34" y="352" font-size="11.5" fill="#334155">get_neo4j_schema returns the</text>
+    <text x="34" y="367" font-size="11.5" fill="#334155">labels, relationships and</text>
+    <text x="34" y="382" font-size="11.5" fill="#334155">properties, so the agent knows</text>
+    <text x="34" y="397" font-size="11.5" fill="#334155">the graph before it queries.</text>
+  </g>
+  <g>
+    <rect x="255" y="304" width="215" height="106" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+    <circle cx="275" cy="326" r="10" fill="#1f9d6b"/>
+    <text x="275" y="330" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+    <text x="293" y="330" font-size="13" font-weight="700" fill="#0f172a">Traverse, then retrieve</text>
+    <text x="269" y="352" font-size="11.5" fill="#334155">read_neo4j_cypher follows</text>
+    <text x="269" y="367" font-size="11.5" fill="#334155">links like SUBMITTED_FROM and</text>
+    <text x="269" y="382" font-size="11.5" fill="#334155">IN_GROUP across several hops</text>
+    <text x="269" y="397" font-size="11.5" fill="#334155">in a single query.</text>
+  </g>
+  <g>
+    <rect x="490" y="304" width="215" height="106" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+    <circle cx="510" cy="326" r="10" fill="#1f9d6b"/>
+    <text x="510" y="330" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+    <text x="528" y="330" font-size="13" font-weight="700" fill="#0f172a">Ground the model</text>
+    <text x="504" y="352" font-size="11.5" fill="#334155">Result rows carry the connected</text>
+    <text x="504" y="367" font-size="11.5" fill="#334155">entities into the model's</text>
+    <text x="504" y="382" font-size="11.5" fill="#334155">context. Answers rest on query</text>
+    <text x="504" y="397" font-size="11.5" fill="#334155">results, not on guesses.</text>
+  </g>
+  <g>
+    <rect x="725" y="304" width="215" height="106" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+    <circle cx="745" cy="326" r="10" fill="#1f9d6b"/>
+    <text x="745" y="330" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+    <text x="763" y="330" font-size="13" font-weight="700" fill="#0f172a">Follow the thread</text>
+    <text x="739" y="352" font-size="11.5" fill="#334155">Each follow-up starts from the</text>
+    <text x="739" y="367" font-size="11.5" fill="#334155">last answer and goes one more</text>
+    <text x="739" y="382" font-size="11.5" fill="#334155">hop out from the same device,</text>
+    <text x="739" y="397" font-size="11.5" fill="#334155">business or group.</text>
+  </g>
+  <line x1="236" y1="357" x2="254" y2="357" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="471" y1="357" x2="489" y2="357" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="706" y1="357" x2="724" y2="357" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Example traversal -->
+  <text x="20" y="442" font-size="12" font-weight="700" fill="#0f172a">Example: "Which devices were used by more than one business?", then a follow-up one hop further</text>
+
+  <g font-size="11" text-anchor="middle">
+    <rect x="20" y="460" width="110" height="46" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+    <text x="75" y="480" font-weight="700" fill="#0f172a">Device</text>
+    <text x="75" y="496" fill="#334155">DEV-1001</text>
+
+    <rect x="222" y="460" width="110" height="46" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+    <text x="277" y="480" font-weight="700" fill="#0f172a">LoanApplication</text>
+    <text x="277" y="496" fill="#334155">submitted from it</text>
+
+    <rect x="425" y="460" width="110" height="46" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+    <text x="480" y="480" font-weight="700" fill="#0f172a">Business</text>
+    <text x="480" y="496" fill="#334155">3 businesses</text>
+
+    <rect x="627" y="460" width="110" height="46" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+    <text x="682" y="480" font-weight="700" fill="#0f172a">ConnectedGroup</text>
+    <text x="682" y="496" fill="#334155">CG-0001</text>
+
+    <rect x="830" y="460" width="110" height="46" rx="8" fill="#e9f7f0" stroke="#1f9d6b"/>
+    <text x="885" y="480" font-weight="700" fill="#0f172a">Person</text>
+    <text x="885" y="496" fill="#334155">Victor Hale</text>
+  </g>
+
+  <g stroke="#475569" stroke-width="1.5" fill="none">
+    <line x1="222" y1="487" x2="131" y2="487" marker-end="url(#arrow)"/>
+    <line x1="425" y1="487" x2="333" y2="487" marker-end="url(#arrow)"/>
+    <line x1="536" y1="487" x2="626" y2="487" marker-end="url(#arrow)"/>
+    <line x1="830" y1="487" x2="738" y2="487" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="9.5" fill="#475569" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace">
+    <text x="176" y="480">SUBMITTED_FROM</text>
+    <text x="379" y="480">APPLIED_FOR</text>
+    <text x="581" y="480">IN_GROUP</text>
+    <text x="784" y="480">IN_GROUP</text>
+  </g>
+
+  <text x="20" y="534" font-size="11.5" fill="#334155">Each Cypher query joins several hops, and the rows go back to the model as context. Three businesses that look unrelated turn out to share a device and a group.</text>
+</svg>
