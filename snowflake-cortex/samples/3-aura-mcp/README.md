@@ -98,6 +98,18 @@ Or use SQL:
 ALTER AGENT NEO4J_MCP.PUBLIC.NEO4J_MOVIES_AGENT ADD MCP_SERVER = 'NEO4J_MCP.PUBLIC.NEO4J_AURA_MCP';
 ```
 
+If the account has a Snowflake Intelligence object, CoWork shows only the agents added to it. Check whether it has one:
+
+```sql
+SHOW SNOWFLAKE INTELLIGENCES;
+```
+
+If this returns an object, add the agent to it:
+
+```sql
+ALTER SNOWFLAKE INTELLIGENCE SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT ADD AGENT NEO4J_MCP.PUBLIC.NEO4J_MOVIES_AGENT;
+```
+
 Roles other than `ACCOUNTADMIN` need these grants to use the agent. Each user of such a role still connects the server once, see [6. Connect](#6-connect).
 
 <!-- code: GRANT_SQL -->
@@ -161,6 +173,7 @@ The Cypher can differ from run to run, but the answer should stay the same.
 | The agent asks you to authenticate the connector | The server is not connected for your user. See [6. Connect](#6-connect). |
 | `Insufficient privileges to operate on schema` on `CREATE EXTERNAL MCP SERVER` | Your role lacks `CREATE EXTERNAL MCP SERVER` on the schema, for example because another role owns it. Grant it, or use your own database as in [2. Database](#2-database). |
 | The agent or the MCP server is missing for a role | The role lacks one of the grants. See [5. Agent](#5-agent). |
+| The agent is missing in CoWork for every role | The account has a Snowflake Intelligence object, and the agent is not in it. See [5. Agent](#5-agent). |
 
 ## Clean up
 

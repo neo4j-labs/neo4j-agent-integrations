@@ -40,6 +40,12 @@ variable "snowflake_user" {
   type        = string
 }
 
+variable "snowflake_intelligence_name" {
+  description = "Snowflake Intelligence object to add the agent to, e.g. SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT. Set it only if SHOW SNOWFLAKE INTELLIGENCES returns one"
+  type        = string
+  default     = null
+}
+
 # --- Neo4j connection ---
 
 variable "neo4j_host" {

@@ -10,6 +10,7 @@ warehouse                   = "COMPUTE_WH"
 # Snowflake resources
 snowflake_user = "YOUR_SNOWFLAKE_USER" # the user who gets the USER role
 database_name  = "NEO4J_AGENT"
+# snowflake_intelligence_name = "SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT" # only if SHOW SNOWFLAKE INTELLIGENCES returns one
 
 # Neo4j connection
 neo4j_host     = "demo.neo4jlabs.com:7687"
