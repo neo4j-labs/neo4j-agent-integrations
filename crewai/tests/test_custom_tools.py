@@ -57,3 +57,35 @@ def test_company_query_uses_local_mcp_when_configured(monkeypatch):
 
     assert result == '{\n  "name": "Contoso"\n}'
     mcp_query.assert_awaited_once()
+
+
+def test_search_news_scores_only_company_chunks(monkeypatch):
+    """Global top-k from the vector index must not run before the company filter."""
+    monkeypatch.delenv("MCP_SERVER_COMMAND", raising=False)
+    monkeypatch.setattr(
+        custom_tools_module, "embed_query", AsyncMock(return_value=[0.0] * 768)
+    )
+    calls = []
+
+    class FakeDriver:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute_query(self, query, **params):
+            calls.append((query, params))
+            return [], None, None
+
+    monkeypatch.setattr(custom_tools_module, "get_driver", FakeDriver)
+
+    result = asyncio.run(custom_tools_module.search_news("Neo4j", "graph databases", limit=3))
+
+    assert result == "[]"
+    query, params = calls[0]
+    assert "db.index.vector.queryNodes" not in query
+    assert "vector.similarity.cosine(c.embedding_google, $embedding)" in query
+    assert "LIMIT $limit" in query
+    assert params["company"] == "Neo4j"
+    assert params["limit"] == 3
