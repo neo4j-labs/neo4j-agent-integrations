@@ -22,6 +22,7 @@ async def dcr_handler(request: Request):
     logging.info("[auth] dcr_handler: Received DCR request")
     try:
         body = await request.json()
+        logging.info(f"[auth] dcr_handler payload keys: {list(body.keys())}")
 
         software_statement = body.get("software_statement")
 
@@ -174,6 +175,8 @@ async def token_handler(request: Request):
     code = form.get("code")
     refresh_token = form.get("refresh_token")
     grant_type = form.get("grant_type", "authorization_code")
+    logging.info(f"[auth] token_handler invoked with grant_type: {grant_type}")
+    logging.info(f"[auth] token_handler form keys received: {list(form.keys())}")
 
     headers = {
         "Cache-Control": "no-store",
@@ -211,7 +214,24 @@ async def token_handler(request: Request):
                 "token_type": "bearer",
                 "expires_in": 3600
             }, headers=headers)
+        
+        elif grant_type == "client_credentials":
+            logging.info("[auth_routes] token_handler: Handling client_credentials grant (A2A)")
+            if not client_id or not client_secret:
+                return JSONResponse({"error": "invalid_request"}, status_code=400)
 
+            order_id = token_manager.verify_client_credentials(client_id, client_secret)
+            if not order_id:
+                return JSONResponse({"error": "invalid_client"}, status_code=401)
+
+            # Issue a headless token (using a synthetic email for the M2M session)
+            access_token = token_manager.generate_internal_jwt(client_id, "service_account@a2a.local", order_id)
+
+            return JSONResponse({
+                "access_token": access_token,
+                "token_type": "bearer",
+                "expires_in": 3600
+            }, headers=headers)
         else:
              return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
 

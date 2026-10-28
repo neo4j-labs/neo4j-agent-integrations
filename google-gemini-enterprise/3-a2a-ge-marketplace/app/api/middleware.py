@@ -26,7 +26,9 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
             "/auth/token",
             "/pubsub",  
             "/setup",
-            "/setup/save"
+            "/setup/save",
+            "/static",
+            "/robots.txt"
         ]
 
         if request.url.path in open_paths or (request.url.path == "/" and request.method == "GET"):
