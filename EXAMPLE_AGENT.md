@@ -95,17 +95,21 @@ def search_news(company_name: str, query: str, limit: int = 5) -> list:
             }
         ]
     """
+    # Score only this company's chunks. Querying the `news` vector index first
+    # would return the top-k chunks across all companies, and filtering those
+    # afterwards usually leaves few or no results.
+    # `embedding` is the 1536-dim property behind the `news` index.
     query_cypher = """
     MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
     MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-    CALL db.index.vector.queryNodes('news', $limit, $embedding)
-    YIELD node, score
-    WHERE node = c
+    WHERE c.embedding IS NOT NULL
+    WITH a, c, vector.similarity.cosine(c.embedding, $embedding) AS score
     RETURN a.title as title,
            a.date as date,
            c.text as text,
            score
     ORDER BY score DESC
+    LIMIT $limit
     """
     # Generate embedding from query
     embedding = embed_query(query)
