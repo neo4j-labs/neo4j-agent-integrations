@@ -151,7 +151,7 @@ const { text, steps } = await generateText({
   instructions: 'You are a graph database assistant. Run get-schema first if unfamiliar.',
   prompt:       'How many organizations are in the database?',
   tools:        mcpTools,
-  stopWhen:     isStepCount(10),   // replaces maxSteps, which AI SDK 6 removed
+  stopWhen:     isStepCount(10),
 });
 
 await mcpClient.close();

@@ -51,7 +51,7 @@ async function askGraph(agent, query) {
     instructions: agent.instruction,
     prompt:       query,
     tools:        agent.tools,
-    stopWhen:     isStepCount(10),  // replaces maxSteps, which AI SDK 6 removed
+    stopWhen:     isStepCount(10),
   });
   console.log(`\nResult: ${text}`);
   console.log(`[Completed in ${steps.length} step(s)]\n`);
