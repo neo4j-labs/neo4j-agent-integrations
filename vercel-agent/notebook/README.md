@@ -61,13 +61,18 @@ In every mode the script loads the saved conversation first, like the Next.js de
 prepareCall: async ({ options, prompt: _p, messages: _m, ...settings }) => ({
   ...settings,
   messages: [...(await session.loadSession()), { role: 'user', content: options.prompt }],
-  runtimeContext: options,               // lets onFinish know what to save
+  runtimeContext: options,               // lets session.onFinish() know what to save
 }),
-// hooks mode saves the whole turn; tools mode saves only the text; provider and middleware save it themselves
-onFinish: async (event) => { await session.onFinish()(event); },
+onEnd: async (event) => {
+  if (MODE === 'hooks') await session.onFinish()(event);                                    // the whole turn
+  if (MODE === 'tools') await session.onFinish()({ ...event, responseMessages: undefined }); // the text only
+  // provider and middleware save the turn inside the model wrapper
+},
 
 await agent.generate({ prompt: question, options: { prompt: question } });
 ```
+
+Hooks mode also saves each tool call and result as a `[tool-call] …` / `[tool-result] …` message. `loadSession()` leaves those out, so only the questions and answers come back.
 
 ---
 
@@ -83,7 +88,7 @@ await agent.generate({ prompt: question, options: { prompt: question } });
 | `MCP_BEARER_TOKEN`, or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | with MCP | Login for the MCP server. A token wins if both are set. |
 | `MEMORY_API_KEY` | scripts 3 and 4 | Your NAMS key, free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com). |
 | `MEMORY_WORKSPACE_ID` | optional | Use a specific NAMS workspace. |
-| `DEMO_USER_ID` | optional | Whose memory to use. Same id = same memories across runs. |
+| `DEMO_USER_ID` | optional | Whose memory to use. In script 4, same id = same memories across runs. Script 3 starts a new conversation every run. |
 | `NAMS_MODE` | script 4 | `provider`, `middleware`, `tools` or `hooks`. |
 
 **MCP login:** hosted Aura / NeoCompanion servers want a token (`MCP_BEARER_TOKEN`). Self-hosted servers usually want a username and password. On a login error, the scripts tell you which kind the server asked for.
@@ -105,7 +110,8 @@ Set `AI_PROVIDER` and the matching key. No code changes needed.
 
 ## Good to know
 
-- All scripts use AI SDK v7. Agent loops stop with `stopWhen: stepCountIs(N)`, which replaced the old `maxSteps`.
+- All scripts use AI SDK v7. Agent loops stop with `stopWhen: isStepCount(N)`, which replaced the old `maxSteps`.
 - `workspaceId` goes on the `MemoryClient`, not on `createConversation()`.
 - Script 4 also saves each reasoning step, the same trace the Next.js demo shows in its side panel.
+- In tools mode, `store_memory` can fail with 503 `user_partition_not_ready` while NAMS is still assigning an existing workspace's memory to users. The script logs the error and still saves the turn's text, so the next question still works.
 - `mcp.mjs` stops any database call after 30 seconds and cuts results over 50,000 characters. The model is told to write a smaller query instead of the script hanging.

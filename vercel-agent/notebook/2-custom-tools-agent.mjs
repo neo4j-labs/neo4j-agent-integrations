@@ -14,10 +14,10 @@
  *   node 2-custom-tools-agent.mjs
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
+// Load .env if there is one. Variables already set in the shell win.
+try { process.loadEnvFile(); } catch {}
 
-import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
+import { generateText, tool, jsonSchema, isStepCount } from 'ai';
 import neo4j from 'neo4j-driver';
 import { getModel } from './providers.mjs';
 import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
@@ -72,10 +72,10 @@ const model = await getModel();
 
 const { text, steps } = await generateText({
   model,
-  system:   'You are a helpful assistant with access to a Neo4j graph database containing company data. Use the available tools to answer questions.',
-  prompt:   'Which companies did Google invest in?',
-  tools:    { ...mcp.tools, getInvestments },  // custom tool merged with MCP tools
-  stopWhen: stepCountIs(10),
+  instructions: 'You are a helpful assistant with access to a Neo4j graph database containing company data. Use the available tools to answer questions.',
+  prompt:       'Which companies did Google invest in?',
+  tools:        { ...mcp.tools, getInvestments },  // custom tool merged with MCP tools
+  stopWhen:     isStepCount(10),
 });
 
 console.log('\nResult:', text);

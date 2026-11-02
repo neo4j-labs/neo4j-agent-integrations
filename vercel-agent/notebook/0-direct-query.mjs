@@ -8,8 +8,8 @@
  *   node 0-direct-query.mjs
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
+// Load .env if there is one. Variables already set in the shell win.
+try { process.loadEnvFile(); } catch {}
 
 import neo4j from 'neo4j-driver';
 

@@ -21,3 +21,19 @@
 .full-width-content {
     --content-extra-light-max-width: 100%;
 }
+
+/* Utility classes the components use. @neo4j-ndl/base no longer ships its n- utilities in the
+   prebuilt stylesheet, so the app defines the ones it needs. Colours come from the theme. */
+.n-flex { display: flex; }
+.n-flex-col { flex-direction: column; }
+.n-flex-row { flex-direction: row; }
+.n-items-start { align-items: flex-start; }
+.n-gap-4 { gap: 16px; }
+.n-w-full { width: 100%; }
+.n-mb-2 { margin-bottom: 8px; }
+.n-bg-neutral-bg-default { background-color: var(--theme-color-neutral-bg-default); }
+.n-bg-neutral-bg-weak { background-color: var(--theme-color-neutral-bg-weak); }
+.n-bg-warning-bg-weak { background-color: var(--theme-color-warning-bg-weak); }
+.n-bg-danger-bg-weak { background-color: var(--theme-color-danger-bg-weak); }
+.n-border-warning-border-weak { border-color: var(--theme-color-warning-border-weak); }
+.n-border-danger-border-weak { border-color: var(--theme-color-danger-border-weak); }

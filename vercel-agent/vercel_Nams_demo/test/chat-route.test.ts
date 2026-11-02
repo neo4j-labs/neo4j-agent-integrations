@@ -46,7 +46,7 @@ vi.mock('ai', () => ({
     return { __execute: execute };
   }),
   createUIMessageStreamResponse: vi.fn(() => new Response(null, { status: 200 })),
-  stepCountIs: vi.fn((n: number) => ({ __stepCountIs: n })),
+  isStepCount: vi.fn((n: number) => ({ __isStepCount: n })),
 }));
 
 vi.mock('@neo4j-labs/nams-ai-provider', () => ({
@@ -274,7 +274,7 @@ describe('POST /api/chat', () => {
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const responseMessages = [{ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
-    await holder.agentCtorArgs[0].onFinish({
+    await holder.agentCtorArgs[0].onEnd({
       text: 'hello',
       steps: [{ text: 'hello', toolCalls: [], toolResults: [] }],
       usage: undefined,
@@ -290,7 +290,7 @@ describe('POST /api/chat', () => {
     process.env.NAMS_MODE = 'tools';
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
-    await holder.agentCtorArgs[0].onFinish({
+    await holder.agentCtorArgs[0].onEnd({
       text: 'hello',
       steps: [],
       usage: undefined,
@@ -414,8 +414,8 @@ describe('POST /api/chat', () => {
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
-    const onFinish = holder.agentCtorArgs[0].onFinish;
-    await onFinish({
+    const onEnd = holder.agentCtorArgs[0].onEnd;
+    await onEnd({
       text: 'answer',
       steps: [{ text: 'looked things up', toolCalls: [{ toolName: 'query_memory' }], toolResults: [] }],
       usage: { inputTokens: 1, outputTokens: 1 },

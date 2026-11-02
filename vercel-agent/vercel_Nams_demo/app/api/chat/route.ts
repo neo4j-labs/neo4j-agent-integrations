@@ -3,13 +3,10 @@ import {
   ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  defaultSettingsMiddleware,
-  stepCountIs,
-  wrapLanguageModel,
+  isStepCount,
   type ModelMessage,
   type UIMessage,
   type ToolSet,
-  type PrepareStepFunction,
 } from 'ai';
 import {
   createNams,
@@ -28,15 +25,7 @@ const NAMS_MODES: readonly NamsMode[] = ['provider', 'middleware', 'tools', 'hoo
 
 // Optional: turn each saved memory into graph entities (tools mode only, one extra model call).
 const EXTRACTION_MODEL_ID = process.env.NAMS_EXTRACTION_MODEL?.trim();
-
-const extractionModel = EXTRACTION_MODEL_ID
-  ? wrapLanguageModel({
-    model: openai(EXTRACTION_MODEL_ID),
-    middleware: defaultSettingsMiddleware({
-      settings: { providerOptions: { openai: { strictJsonSchema: false } } },
-    }),
-  })
-  : undefined;
+const extractionModel = EXTRACTION_MODEL_ID ? openai(EXTRACTION_MODEL_ID) : undefined;
 
 function trim(text: string, max = 80): string {
   const s = text.replace(/\s+/g, ' ').trim();
@@ -200,13 +189,9 @@ export async function POST(req: Request) {
       model: resolvedModel,
       instructions: systemPrompt,
       tools,
-      ...(namsResult
-        ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) as unknown as PrepareStepFunction<ToolSet> }
-        : {}),
-      stopWhen: (namsResult || mcpResult) ? stepCountIs(MAX_STEPS) : stepCountIs(1),
-      onFinish: async ({ text, steps, usage, responseMessages }: {
-        text: string; steps: any[]; usage: any; responseMessages: any[];
-      }) => {
+      ...(namsResult ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) } : {}),
+      stopWhen: (namsResult || mcpResult) ? isStepCount(MAX_STEPS) : isStepCount(1),
+      onEnd: async ({ text, steps, usage, responseMessages }) => {
         try {
           const calls = steps.flatMap((s: any) => s.toolCalls ?? []).filter(Boolean);
           const queries = calls.filter((c: any) => c?.toolName === 'query_memory').length;

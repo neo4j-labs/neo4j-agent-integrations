@@ -34,10 +34,10 @@
  *   node 3-memory-agent.mjs
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
+// Load .env if there is one. Variables already set in the shell win.
+try { process.loadEnvFile(); } catch {}
 
-import { generateText, stepCountIs } from 'ai';
+import { generateText, isStepCount } from 'ai';
 import { MemoryClient } from '@neo4j-labs/agent-memory';
 import { getModel } from './providers.mjs';
 import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
@@ -46,7 +46,7 @@ import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
 const MEMORY_API_KEY = process.env.MEMORY_API_KEY;
 const MEMORY_WORKSPACE_ID = process.env.MEMORY_WORKSPACE_ID;
 const MEMORY_ENDPOINT = process.env.MEMORY_ENDPOINT; // optional: override default NAMS endpoint
-const DEMO_USER_ID   = process.env.DEMO_USER_ID || process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
+const DEMO_USER_ID   = process.env.DEMO_USER_ID || 'vercel-neo4j-notebook-agent';
 
 if (!MEMORY_API_KEY) {
   console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
@@ -136,10 +136,10 @@ async function runWithMemory(query) {
 
   const { text } = await generateText({
     model,
-    system:   systemWithContext,
-    prompt:   query,
-    tools:    mcp.tools,
-    stopWhen: stepCountIs(10),
+    instructions: systemWithContext,
+    prompt:       query,
+    tools:        mcp.tools,
+    stopWhen:     isStepCount(10),
   });
 
   console.log(`[AGENT]: ${text}`);

@@ -16,7 +16,8 @@ npm run dev                        # open http://localhost:3000
 ```
 
 - Get a free `MEMORY_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
-- Needs Node 22 or newer. A plain `npm install` works, no extra flags.
+- Needs Node 22.23.4 or newer, the minimum both NAMS packages declare. A plain `npm install` works, no extra flags.
+- `npm install` takes `@neo4j-labs/nams-ai-provider` 0.5.0 and `@neo4j-labs/agent-memory` 0.6.0 from npm. Don't use an older `agent-memory`: 0.5.0 sends a `threshold` field that hosted NAMS rejects, so every message search comes back empty.
 
 ---
 
@@ -59,7 +60,7 @@ const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
 // hooks: load the chat yourself, then save the turn yourself
 const session  = createNams({ apiKey }).hooks({ userId });
 const messages = [...(await session.loadSession()), { role: 'user', content: userText }];
-// ...run the model with `messages`, then in onFinish:
+// ...run the model with `messages`, then in onEnd:
 await session.onFinish({ prompt: userText })(event);
 ```
 
@@ -69,7 +70,7 @@ A few details:
 
 - **Every mode:** the browser sends only its newest message. The route loads the earlier turns from NAMS with `session.loadSession()`.
 - **tools mode:** small models sometimes skip memory. `enforceQueryMemory()` makes the model read memory first. The route saves each turn's text itself, so the chat doesn't depend on the model calling `store_memory`.
-- **hooks mode:** saves the conversation only, not separate long-term facts.
+- **hooks mode:** saves the conversation only, not separate long-term facts. It also saves each tool call and result as a `[tool-call] …` / `[tool-result] …` message tagged `namsKind`, and `loadSession()` leaves those out of the history it returns.
 - Each mode has its own system prompt in [`lib/constants.ts`](lib/constants.ts), so the model is never told about tools it doesn't have.
 - **Reasoning panel:** after each answer the route saves one reasoning step per agent step, in order, before the reply finishes. The panel reads them right after.
 
@@ -129,7 +130,7 @@ To see the saved reasoning steps: `curl "http://localhost:3000/api/reasoning?use
 ### Automated tests
 
 ```bash
-npm test     # 32 tests, no real keys needed
+npm test     # 33 tests, no real keys needed
 ```
 
 They check each mode's wiring against a fake version of the package.
@@ -172,7 +173,7 @@ test/                        route tests (vitest)
 
 These come from the NAMS service and the package, not from this app:
 
-- **Users can see each other's long-term facts in a shared workspace.** Long-term facts belong to the workspace, not the user. For a clean demo, use a fresh workspace (`MEMORY_WORKSPACE_ID`).
+- **Long-term facts saved before the per-user change are not recalled.** Each fact is now stored under the user who said it, and only that user gets it back. Older facts have no user, so the app skips them. Set `workspaceGraph: true` in the NAMS config to also recall those shared facts. Another user's facts are never recalled.
 
 Please report problems at [neo4j-labs/agent-memory](https://github.com/neo4j-labs/agent-memory).
 

@@ -6,11 +6,11 @@
  *
  *   AI_PROVIDER=openai    (default)  → OPENAI_API_KEY required
  *   AI_PROVIDER=google               → GOOGLE_GENERATIVE_AI_API_KEY required
- *                                      npm install @ai-sdk/google
  *   AI_PROVIDER=anthropic            → ANTHROPIC_API_KEY required
- *                                      npm install @ai-sdk/anthropic
  *   AI_PROVIDER=mistral              → MISTRAL_API_KEY required
- *                                      npm install @ai-sdk/mistral
+ *
+ * The Google, Anthropic and Mistral packages are optional dependencies, so
+ * `npm install` adds them unless you pass --omit=optional.
  *
  * Optionally set AI_MODEL to override the provider default:
  *   AI_MODEL=gpt-5.4-mini
@@ -18,8 +18,8 @@
 
 const PROVIDER_DEFAULTS = {
   openai:    'gpt-5.4-mini',
-  google:    'gemini-2.0-flash',
-  anthropic: 'claude-3-5-sonnet-20241022',
+  google:    'gemini-flash-latest',
+  anthropic: 'claude-opus-5-5',
   mistral:   'mistral-large-latest',
 };
 
