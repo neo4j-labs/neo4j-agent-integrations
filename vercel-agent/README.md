@@ -88,20 +88,21 @@ Five small scripts. Each adds one idea, from a plain database query up to an age
 | `1-mcp-agent.mjs` | An AI agent that queries Neo4j through an MCP server |
 | `2-custom-tools-agent.mjs` | The same agent plus your own Cypher tools |
 | `3-memory-agent.mjs` | Memory done by hand: load before the answer, save after |
-| `4-nams-provider-agent.mjs` | Memory done by the `nams-ai-provider` package, in any of its four modes (`NAMS_MODE`) |
+| `4-nams-provider-agent.mjs` | Memory done by the `nams-ai-provider` package, in any of its four modes (pass one as an argument) |
 
 Setup and settings: [`notebook/README.md`](./notebook/README.md).
 
 ### B) Next.js chat app — [`vercel_Nams_demo/`](./vercel_Nams_demo/)
 
-A chat app that remembers you after a page reload. It can switch between all four memory modes with `NAMS_MODE`:
+A chat app that remembers you after a page reload. When you run `npm run dev`, pick one of the four memory modes, or turn memory off:
 
-| `NAMS_MODE` | Who takes care of memory |
+| Mode | Who takes care of memory |
 |-------------|--------------------------|
 | `provider` (default) | A wrapper around the AI model: adds memories before each answer, saves the turn after |
 | `middleware` | The same wrapper, placed on a model you already have |
 | `tools` | The model itself, by calling `query_memory` and `store_memory` |
 | `hooks` | The app's own code: loads the saved chat before each answer, saves every turn after |
+| `off` (answer `n` to `Memory on?`) | No memory: each message is answered on its own, and nothing is loaded or saved |
 
 It can also query your Neo4j database through MCP. Setup: [`vercel_Nams_demo/README.md`](./vercel_Nams_demo/README.md).
 
@@ -159,7 +160,7 @@ await mcpClient.close();
 
 **Example output** (`node 1-mcp-agent.mjs`; tool names depend on the MCP server):
 ```
-LLM: openai / gpt-5.4-mini
+LLM: openai / gpt-5.6-luna
 [neo4j-mcp] Connected (basic auth) — tools: get-schema, list-gds-procedures, read-cypher, write-cypher
 Agent:  neo4j_explorer
 Tools:  get-schema, list-gds-procedures, read-cypher, write-cypher
@@ -334,7 +335,7 @@ const model = createNamsProvider({
   apiKey:       process.env.MEMORY_API_KEY,
   baseProvider: openai,
   scope:        { userId: 'user-1' },
-}).languageModel('gpt-5.4-mini');
+}).languageModel('gpt-5.6-luna');
 
 const { text } = await generateText({ model, prompt: 'What did we discuss last time?' });
 ```
@@ -342,7 +343,7 @@ const { text } = await generateText({ model, prompt: 'What did we discuss last t
 **Middleware mode** does the same thing for a model you already have:
 
 ```js
-const model = createNams({ apiKey }).wrap(openai('gpt-5.4-mini'), { userId: 'user-1' });
+const model = createNams({ apiKey }).wrap(openai('gpt-5.6-luna'), { userId: 'user-1' });
 ```
 
 **Tools mode** lets the model decide, and you can see each memory call:
@@ -354,7 +355,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId: 'user-1' }, mcpConfig);
 
 const agent = new ToolLoopAgent({
-  model:       openai('gpt-5.4-mini'),
+  model:       openai('gpt-5.6-luna'),
   tools,
   prepareStep: enforceQueryMemory({ graceSteps: 2 }),   // make sure it reads memory first
   stopWhen:    isStepCount(10),
@@ -370,7 +371,7 @@ A model can forget to *save*. The demo doesn't rely on it for the chat itself: i
 const session = createNams({ apiKey }).hooks({ userId: 'user-1' });
 
 const { text } = await generateText({
-  model:    openai('gpt-5.4-mini'),
+  model:    openai('gpt-5.6-luna'),
   messages: [...(await session.loadSession()), { role: 'user', content: prompt }],
   onEnd:    session.onFinish({ prompt }),
 });

@@ -22,7 +22,7 @@ cp .env.example .env   # fill in your keys
 npm install
 ```
 
-A plain `npm install` works. If it ever fails with `ERESOLVE`, delete `node_modules/` and `package-lock.json` and install again.
+Needs Node.js 20.12 or newer (the scripts read `.env` with the built-in `process.loadEnvFile`). A plain `npm install` works. If it ever fails with `ERESOLVE`, delete `node_modules/` and `package-lock.json` and install again.
 
 ---
 
@@ -35,9 +35,9 @@ node 2-custom-tools-agent.mjs
 node 3-memory-agent.mjs
 node 4-nams-provider-agent.mjs                     # provider mode (default)
 
-NAMS_MODE=middleware node 4-nams-provider-agent.mjs
-NAMS_MODE=tools      node 4-nams-provider-agent.mjs
-NAMS_MODE=hooks      node 4-nams-provider-agent.mjs
+node 4-nams-provider-agent.mjs middleware
+node 4-nams-provider-agent.mjs tools
+node 4-nams-provider-agent.mjs hooks
 ```
 
 Script 4 asks two questions. The second one ("which company was I researching?") only works if memory recalled the first. Run it again and it still works, because the memory is stored in NAMS, not in the script.
@@ -46,7 +46,7 @@ Script 4 asks two questions. The second one ("which company was I researching?")
 
 ## The four memory modes (script 4)
 
-| `NAMS_MODE` | Who takes care of memory |
+| Argument | Who takes care of memory |
 |---|---|
 | `provider` (default) | A wrapper around the AI model adds memories before each answer and saves the turn after. |
 | `middleware` | The same wrapper, placed on a model you already have. |
@@ -82,14 +82,15 @@ Hooks mode also saves each tool call and result as a `[tool-call] …` / `[tool-
 |---|---|---|
 | `OPENAI_API_KEY` | all AI scripts | Your OpenAI key (or the key for `AI_PROVIDER`). |
 | `AI_PROVIDER` | optional | `openai` (default), `google`, `anthropic` or `mistral`. |
-| `AI_MODEL` | optional | Model to use. Default `gpt-5.4-mini` on OpenAI. |
+| `AI_MODEL` | optional | Model to use. Default `gpt-5.6-luna` on OpenAI. |
 | `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | scripts 0 and 2 | Direct database login. |
-| `MCP_URL` or `MCP_PORT` | scripts 1–3, optional for 4 | Where the Neo4j MCP server is. |
+| `MCP_URL` or `MCP_PORT` | scripts 1–3, optional for 4 | Where the Neo4j MCP server is. For a local official neo4j-mcp v2, use `MCP_URL=http://localhost:8443/db/companies/mcp`. |
+| `MCP_NEO4J_URI` | official neo4j-mcp v2 only | The Bolt URI the server connects to, sent as `X-Neo4j-MCP-URI`. For the public demo, `neo4j+s://demo.neo4jlabs.com:7687`. |
 | `MCP_BEARER_TOKEN`, or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | with MCP | Login for the MCP server. A token wins if both are set. |
 | `MEMORY_API_KEY` | scripts 3 and 4 | Your NAMS key, free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com). |
 | `MEMORY_WORKSPACE_ID` | optional | Use a specific NAMS workspace. |
 | `DEMO_USER_ID` | optional | Whose memory to use. In script 4, same id = same memories across runs. Script 3 starts a new conversation every run. |
-| `NAMS_MODE` | script 4 | `provider`, `middleware`, `tools` or `hooks`. |
+Script 4 takes its mode as a command-line argument (`node 4-nams-provider-agent.mjs hooks`), not from `.env`.
 
 **MCP login:** hosted Aura / NeoCompanion servers want a token (`MCP_BEARER_TOKEN`). Self-hosted servers usually want a username and password. On a login error, the scripts tell you which kind the server asked for.
 

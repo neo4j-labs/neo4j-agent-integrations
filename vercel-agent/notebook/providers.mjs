@@ -13,11 +13,11 @@
  * `npm install` adds them unless you pass --omit=optional.
  *
  * Optionally set AI_MODEL to override the provider default:
- *   AI_MODEL=gpt-5.4-mini
+ *   AI_MODEL=gpt-5.6-luna
  */
 
 const PROVIDER_DEFAULTS = {
-  openai:    'gpt-5.4-mini',
+  openai:    'gpt-5.6-luna',
   google:    'gemini-flash-latest',
   anthropic: 'claude-opus-5-5',
   mistral:   'mistral-large-latest',

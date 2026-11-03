@@ -1,5 +1,8 @@
 {
   "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
     "direct-query": "node 0-direct-query.mjs",
     "mcp-agent": "node 1-mcp-agent.mjs",

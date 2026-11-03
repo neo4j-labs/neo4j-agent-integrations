@@ -12,7 +12,7 @@ All the memory code comes from one npm package, [`@neo4j-labs/nams-ai-provider`]
 cd vercel-agent/vercel_Nams_demo
 npm install
 cp .env.local.example .env.local   # add MEMORY_API_KEY and OPENAI_API_KEY
-npm run dev                        # open http://localhost:3000
+npm run dev                        # pick a memory mode (or memory off), then open http://localhost:3000
 ```
 
 - Get a free `MEMORY_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
@@ -21,16 +21,17 @@ npm run dev                        # open http://localhost:3000
 
 ---
 
-## The four memory modes
+## The four memory modes, and memory off
 
-Set `NAMS_MODE` in `.env.local` and restart the server. All four modes save to the same place, so you can switch between them without losing anything.
+When you run `npm run dev`, the terminal first asks `Memory on? [Y/n]`. Enter or `y` keeps memory on and shows the mode menu. Press Enter there for `provider`, or type a number or name. Type `n` to turn memory off instead. That skips the menu: each message is answered on its own, nothing is loaded or saved, and earlier messages in the chat aren't sent. The choice applies to that run only and isn't saved to a file. `NAMS_MODE` is not read from `.env.local` or the shell. Non-interactive shells skip the prompts and use `provider`. All four memory modes save to the same place, so you can switch between them without losing anything. The header shows the active mode, such as `Memory: provider` or `Memory off`.
 
-| `NAMS_MODE` | Who takes care of memory | Memory calls shown in the chat? |
+| Mode | Who takes care of memory | Memory calls shown in the chat? |
 |---|---|---|
 | `provider` (default) | A wrapper around the AI model. It adds memories before each answer and saves the turn after. | No |
 | `middleware` | The same wrapper, placed on a model you already have. | No |
 | `tools` | The AI model itself, by calling two tools: `query_memory` and `store_memory`. | Yes |
 | `hooks` | This app's own code. It loads the saved chat before each answer and saves every turn after. | No |
+| `off` (answer `n` to `Memory on?`) | No memory. Each message is answered on its own, and nothing is loaded or saved. | No |
 
 **Which one should I pick?**
 
@@ -38,6 +39,7 @@ Set `NAMS_MODE` in `.env.local` and restart the server. All four modes save to t
 - Already have a model object? Use **middleware**.
 - Want to *see* the memory reads and writes? Use **tools**.
 - Want every turn saved, whatever the model decides? Use **hooks**.
+- Don't want memory at all? Answer `n` to `Memory on?`.
 
 Any other value makes the chat return an error, so a typo can't quietly turn memory off.
 
@@ -49,10 +51,10 @@ import { openai } from '@ai-sdk/openai';
 
 // provider: build the model through NAMS
 const model = createNamsProvider({ apiKey, baseProvider: openai, scope: { userId } })
-  .languageModel('gpt-5.4-mini');
+  .languageModel('gpt-5.6-luna');
 
 // middleware: wrap a model you already have
-const wrapped = createNams({ apiKey }).wrap(openai('gpt-5.4-mini'), { userId });
+const wrapped = createNams({ apiKey }).wrap(openai('gpt-5.6-luna'), { userId });
 
 // tools: give the model memory tools (plus any database tools)
 const { tools, close } = await createNams({ apiKey }).toolsWithMcp({ userId });
@@ -99,9 +101,8 @@ Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-A
 |---|---|---|
 | `MEMORY_API_KEY` | Yes | Your NAMS key. Without it, every chat request fails. |
 | `OPENAI_API_KEY` | Yes | Your OpenAI key. |
-| `NAMS_MODE` | No | `provider` (default), `middleware`, `tools` or `hooks`. |
 | `MEMORY_WORKSPACE_ID` | No | Use a specific NAMS workspace. |
-| `OPENAI_MODEL` | No | Model to use. Default `gpt-5.4-mini`. |
+| `OPENAI_MODEL` | No | Model to use. Default `gpt-5.6-luna`. |
 | `NAMS_EXTRACTION_MODEL` | No | Tools mode only: also turns each saved fact into graph entities. Costs one extra model call. |
 | `MCP_URL` / `MCP_PORT` | No | Neo4j MCP server (see above). |
 | `MCP_BEARER_TOKEN` or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | No | Login for the MCP server. |
@@ -111,7 +112,7 @@ Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-A
 
 ## Try it
 
-For each mode, set `NAMS_MODE`, restart `npm run dev`, then:
+For each mode, run `npm run dev` and pick it from the menu, then:
 
 1. Send: *"My favourite colour is blue."*
 2. Reload the page (the chat window empties).
@@ -157,7 +158,7 @@ test/                        route tests (vitest)
 - Clearing your browser's site data makes you a new user.
 - In tools mode, check that the Reasoning panel shows a `store_memory` step.
 
-**The model never uses memory tools (tools mode).** Check the log says `tools=2` or more. If it does, try a bigger model: `OPENAI_MODEL=gpt-5.4`.
+**The model never uses memory tools (tools mode).** Check the log says `tools=2` or more. If it does, try a bigger model: `OPENAI_MODEL=gpt-5.6-terra`.
 
 **The MCP connection fails.** An `HTTP 401` usually means the wrong *kind* of login (token vs. username/password). The log names the kind the server wants.
 
