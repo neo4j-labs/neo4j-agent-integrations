@@ -35,7 +35,7 @@
  */
 
 // Load .env if there is one. Variables already set in the shell win.
-try { process.loadEnvFile(); } catch {}
+try { process.loadEnvFile(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
 
 import { generateText, isStepCount } from 'ai';
 import { MemoryClient } from '@neo4j-labs/agent-memory';
