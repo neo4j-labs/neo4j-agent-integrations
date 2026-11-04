@@ -2,12 +2,12 @@
 
 ## Overview
 
-**Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using four distinct patterns:
+**Google ADK** (Agent Development Kit) is a powerful framework for building generative AI agents. This integration repository demonstrates how to build context-aware, enterprise-grade agents by connecting Google ADK to Neo4j using five distinct patterns:
 
 
 **1. Operational Database Access (via MCP):** Allows the agent to query, introspect, and interact with your primary Neo4j knowledge graph using the [Neo4j MCP server](https://neo4j.com/docs/mcp/current/).  
 **2. Persistent Agent Memory (via ADK MemoryService):** Equips the agent with stateful, long-term memory using `neo4j-agent-memory`, automatically extracting and storing conversational facts and entities into a dedicated Neo4j memory graph.  
-**3. Managed Agent Memory (via NAMS):** Offloads memory infrastructure entirely using the cloud-managed [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs), accessible via REST API or directly as an MCP tool.  
+**3. Managed Agent Memory (via NAMS):** Offloads memory infrastructure entirely using the cloud-managed [Neo4j Agent Memory Service (NAMS)](https://memory.neo4jlabs.com/docs), accessible via REST API, ADK callbacks, or as an MCP tool.  
 **4. Semantic Retrieval (via neo4j-graphrag):** Gives the agent vector, full-text, and hybrid search over unstructured content in the graph using [`neo4j-graphrag`](https://neo4j.com/docs/neo4j-graphrag-python/current/), with retrievers exposed as ADK tools.  
 **5. Hosted Agents (via Aura Agent MCP):** Connects to a managed [Aura Agent](https://neo4j.com/docs/aura/aura-agent/) — configured and hosted in the Aura Console — as an MCP tool, so ADK orchestrates an agent that does its own reasoning over the graph.  
 
@@ -21,7 +21,8 @@ Examples target **ADK 2.0**, which introduces graph-based workflows alongside th
 **Deterministic Workflows:** Use ADK 2.0 `Workflow` graphs to put generated Cypher through validation and routing that the model cannot skip.  
 **GraphRAG Retrieval:** Combine vector similarity with graph traversal so retrieved text arrives with the surrounding relationships, dates, and verifiable source IDs.  
 **Hosted Agent Delegation:** Call a managed Aura Agent over MCP so graph reasoning stays with the graph, and updating its ontology in the Console changes behaviour with no code change
-**Stateful Conversations:** Utilize Neo4j as a persistent memory layer to cure LLM "context amnesia."  
+**Stateful Conversations:** Utilize Neo4j as a persistent memory layer, so the agent remembers users across sessions.  
+**Memory Callbacks:** Recall and save memory on every turn using ADK callbacks.  
 **Multi-Stage Extraction:** Automatically extract entities, facts, and user preferences from conversations into a structured knowledge graph.  
 
 
@@ -90,10 +91,11 @@ gcloud services enable aiplatform.googleapis.com --project YOUR_PROJECT_ID
 The following snippets illustrate the core concepts of connecting an ADK agent to Neo4j. For a complete, runnable example, see the Example Notebook below.  
 
 **1. Connecting the MCP Toolset**  
-To allow your ADK agent to query Neo4j, initialize the MCP server and bind it to an ADK McpToolset. Here, we use HTTP mode for persistent background execution.  
+To allow your ADK agent to query Neo4j, initialize the MCP server and bind it to an ADK McpToolset. Here, the server runs in HTTP mode.  
 ```python
 import base64
-from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 
 # Create HTTP Basic Auth header
 credentials = base64.b64encode(b"username:password").decode()
@@ -111,15 +113,15 @@ mcp_tools = McpToolset(
 ```
 
 **2. Initializing the Agent with Persistent Memory**  
-To give the agent long-term context, initialize the Neo4j MemoryClient and provide the agent with the PreloadMemoryTool. The agent is wrapped in an `App`, the ADK 2.0 container that carries plugins and runtime configuration.  
+Initialize the Neo4j `MemoryClient` and wrap it in `Neo4jMemoryService`, the ADK-compliant memory service. [ADK callbacks](https://adk.dev/callbacks/) handle memory on every turn: `before_agent_callback` recalls into state that the instruction reads, and `after_agent_callback` saves the turn. The agent is wrapped in an `App`, the ADK 2.0 container that carries plugins and runtime configuration.  
 
 ```python
 from google.adk import Agent
 from google.adk.apps import App
 from google.adk.plugins import ReflectAndRetryToolPlugin
-from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from neo4j_agent_memory import MemoryClient, MemorySettings
 from neo4j_agent_memory.config.settings import Neo4jConfig, ExtractionConfig, ExtractorType
+from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
 
 # 1. Configure the Memory Graph Connection
 settings = MemorySettings(
@@ -133,15 +135,37 @@ settings = MemorySettings(
 memory_client = MemoryClient(settings)
 await memory_client.connect()
 
-# 2. Construct the Agent
+neo4j_memory_service = Neo4jMemoryService(memory_client=memory_client, user_id="user_1")
+
+# 2. Recall before each turn, save after it
+async def recall_memory(callback_context):
+    query = callback_context.user_content.parts[0].text
+    result = await neo4j_memory_service.search_memory(query, limit=5, threshold=0.3)
+    found = ["- " + "".join(p.text or "" for p in m.content.parts) for m in result.memories]
+    callback_context.state["temp:memories"] = "\n".join(found) or "None."
+
+async def save_memory(callback_context):
+    session = callback_context.session
+    turn = [e for e in session.events if e.invocation_id == callback_context.invocation_id]
+    await neo4j_memory_service.add_events_to_memory(
+        app_name=session.app_name, user_id=session.user_id,
+        session_id=session.id, events=turn,
+    )
+
+# 3. Construct the Agent
 agent = Agent(
     model="gemini-3-flash",
     name="neo4j_explorer",
-    instruction="You are a helpful graph database assistant.",
-    tools=[mcp_tools, PreloadMemoryTool()]  # Combine MCP capabilities with Memory recall
+    instruction=(
+        "You are a helpful graph database assistant.\n"
+        "Relevant memories about this user:\n{temp:memories?}"
+    ),
+    tools=[mcp_tools],
+    before_agent_callback=recall_memory,
+    after_agent_callback=save_memory,
 )
 
-# 3. Wrap it in an App. ReflectAndRetryToolPlugin feeds tool errors back to the
+# 4. Wrap it in an App. ReflectAndRetryToolPlugin feeds tool errors back to the
 #    model, which lets it correct Cypher that references a wrong label or property.
 app = App(
     name="neo4j_app",
@@ -151,22 +175,15 @@ app = App(
 ```
 
 **3. Executing with Stateful Memory Tracking**
-Inject the Neo4jMemoryService into the Google ADK Runner. This ensures that every conversation is automatically synced to your Neo4j memory graph in the background.  
+Attach the memory service to the Runner and run as usual.  
 
 ```python
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from neo4j_agent_memory.integrations.google_adk import Neo4jMemoryService
 
 session_service = InMemorySessionService()
 session = await session_service.create_session(state={}, app_name=app.name, user_id="user_1")
-
-# Initialize the ADK-compliant Memory Service
-neo4j_memory_service = Neo4jMemoryService(
-    memory_client=memory_client,
-    user_id="user_1",
-)
 
 # Attach the memory service to the Runner. In ADK 2.0 the Runner takes the App container.
 runner = Runner(
@@ -184,14 +201,10 @@ async for event in events:
         for part in event.content.parts:
             if part.text:
                 print(part.text)
-
-# Save the conversational state and extracted entities back to Neo4j
-fresh_session = await session_service.get_session(session_id=session.id, app_name=app.name, user_id="user_1")
-await neo4j_memory_service.add_session_to_memory(fresh_session)
 ```
 
 **4. Deterministic Text-to-Cypher with a Workflow**  
-When a query must be validated before it runs, an ADK 2.0 `Workflow` makes the pipeline structural rather than a prompt instruction. The model writes Cypher, a function node runs `EXPLAIN` to check it without executing, and a route decides what happens next.  
+An ADK 2.0 `Workflow` runs a fixed sequence of steps. The model writes Cypher, a function node runs `EXPLAIN` to check it without executing, and a route decides what happens next.  
 
 ```python
 from google.adk import Agent, Event, Workflow
