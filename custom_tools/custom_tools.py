@@ -166,18 +166,22 @@ async def search_news(company_name: str, query: str, limit: int = 5) -> str:
     """
     Vector search for news articles about a company.
     """
+    # Score only the chunks of articles that mention the company. Calling the
+    # vector index here would return the top-k chunks across *all* companies
+    # first, and filtering those afterwards usually leaves few or no results.
+    # `embedding_google` is the property behind the `news_google` index.
     query_cypher = """
     MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
     MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-    CALL db.index.vector.queryNodes('news_google', $limit, $embedding)
-    YIELD node, score
-    WHERE node = c
+    WHERE c.embedding_google IS NOT NULL
+    WITH a, c, vector.similarity.cosine(c.embedding_google, $embedding) AS score
     RETURN a.title as title,
            a.date as date,
            a.siteName as site,
            c.text as text,
            score
     ORDER BY score DESC
+    LIMIT $limit
     """
     try:
         embedding = await embed_query(query)

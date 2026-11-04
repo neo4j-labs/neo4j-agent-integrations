@@ -204,16 +204,17 @@ RETURN o.name as name,
 LIMIT 1
 ```
 
-**Vector search news articles:**
+**Vector search news articles about a company:**
 ```cypher
 MATCH (o:Organization {name: $company})<-[:MENTIONS]-(a:Article)
 MATCH (a)-[:HAS_CHUNK]->(c:Chunk)
-CALL db.index.vector.queryNodes('news', 5, $embedding)
-YIELD node, score
-WHERE node = c
+WITH a, c, vector.similarity.cosine(c.embedding, $embedding) AS score
 RETURN a.title, a.date, c.text, score
 ORDER BY score DESC
+LIMIT 5
 ```
+
+This scores only the company's chunks. Calling `db.index.vector.queryNodes('news', 5, $embedding)` and then filtering with `WHERE node = c` would take the top 5 chunks across all companies first, so it usually returns few or no results for a given company.
 
 ## Contributing
 
