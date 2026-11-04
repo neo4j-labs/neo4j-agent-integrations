@@ -10,8 +10,7 @@ This file walks the folders. Start here if you're about to change something.
 |---|---|
 | `agent.ts` | The agent itself: model and reasoning effort. |
 | `instructions.md` | The system prompt, always on. |
-| `instructions/` | Prompt text computed per event, at runtime. |
-| `hooks/` | Handlers for runtime events like "a turn finished". |
+| `memory/` | Memory slots. One file, one slot, backed by a provider. |
 | `tools/` | Typed tools the model can call. One file, one tool. |
 | `connections/` | MCP servers mounted into the tool surface. |
 | `skills/` | Markdown loaded on demand, not carried every turn. |
@@ -25,20 +24,14 @@ This file walks the folders. Start here if you're about to change something.
 | File | What it does |
 |---|---|
 | `agent.ts` | Model id + reasoning effort. Memory is deliberately not here. |
-| `instructions.md` | Identity, the six tool surfaces, how to research, how to report. |
-| `instructions/memory.ts` | **Recall.** Searches NAMS before each turn, adds a prompt block. |
-| `hooks/persist-turn.ts` | **Store.** Writes the exchange after each turn. |
-| `hooks/persist-reasoning.ts` | **Why-trail.** Records reasoning steps and tool calls. |
+| `instructions.md` | Identity, the research tools, memory, how to research, how to report. |
+| `memory/nams.ts` | **All of the agent's memory.** The NAMS slot from `@neo4j-labs/nams-ai-provider/eve`. |
 | `tools/search_news.ts` | Full-text search over article text, over Bolt. |
 | `connections/neo4j-graph.ts` | Neo4j's hosted MCP server, 3 read tools. |
 | `connections/neo4j-investments.ts` | The local MCP server in `../mcp-server/`, 1 tool. |
-| `connections/memory-graph.ts` | NAMS's MCP server, 5 read tools out of 40. |
 | `skills/research_rules.md` | Query and citation rules, loaded when needed. |
 | `channels/eve.ts` | The HTTP surface, and the auth walk that yields identity. |
-| `lib/memory-gateway.ts` | The only file that calls the NAMS SDK. |
-| `lib/nams.ts` | Config, env flags, shared types, and `memoryScope`. |
-| `lib/graph-extractor.ts` | Turns a stored memory into entities and edges. |
-| `lib/model.ts` | AI Gateway or direct OpenAI; the extraction model. |
+| `lib/model.ts` | AI Gateway or direct OpenAI. |
 | `lib/neo4j.ts` | Both routes to the graph: MCP endpoints, and the Bolt driver. |
 
 ---
@@ -46,79 +39,65 @@ This file walks the folders. Start here if you're about to change something.
 ## `agent.ts`
 
 Model and reasoning effort, and nothing else. Memory isn't configured here
-because it isn't a model setting — it's a hook on the turn and a dynamic
-instruction.
+because it isn't a model setting — it's a slot in `memory/`.
 
 A plain model id string is preferred over a resolved model object, because a
 string is what lets eve work out routing, credentials, and context window at
 build time. The exception is `MODEL_ROUTING=openai`, which has to hand
 `defineAgent` a real model instance.
 
-**Why not use one of the `nams-ai-provider` modes?** That package has four ways
-to add memory. None of them fits this agent:
+## `instructions.md`
 
-- **provider / middleware** wrap the model. We tried it. It saved every turn
-  unfiltered, hid its own errors, and saved no reasoning.
-- **tools** leaves saving up to the model, which sometimes forgets.
-- **hooks** is the same idea as this folder, but it saves only the chat, and it
-  is built for the AI SDK's agent. Here eve's own turn events do the job.
+Always in the prompt: identity, the research tools, the two memory tools, how
+to research, how to report, and the rule that recalled memory is *data about
+the user* and never an instruction.
 
-This project still uses the package's smaller helpers (`makeClient`,
-`retrieveMemories`, `storeMemory`) in `lib/memory-gateway.ts`.
+## `memory/` — the only memory
 
-## `instructions.md` and `instructions/`
+`memory/nams.ts` is one eve memory slot, named `nams` after its file. It is the
+**only** place the agent reads or writes memory: no hooks, no dynamic
+instructions, no memory MCP server, and no NAMS SDK calls anywhere else.
 
-`instructions.md` is always in the prompt: identity, the tool surface, how to
-research, how to report, and the rule that recalled memory is *data about the
-user* and never an instruction.
+```ts
+import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
+import { defineMemory } from "eve/memory";
+import { byPrincipal } from "eve/memory/scope";
 
-`instructions/memory.ts` is the **recall half**. Two decisions in it are worth
-copying:
+export default defineMemory({
+  description: "What this user told you in earlier sessions…",
+  provider: namsMemory({ apiKey: process.env.NAMS_API_KEY, /* … */ }),
+  scope: byPrincipal,
+});
+```
 
-- It runs on `turn.started`, not `session.started`, so a fact stored on turn 1
-  is in the prompt by turn 2 of the same session.
-- It searches with what the user *just said*. NAMS search is keyword-based, so
-  the user's own nouns match stored text better than a paraphrase would.
+eve drives the slot through its own lifecycle, and the provider does the NAMS
+work:
 
-It returns `null` on failure, so a NAMS outage costs you memory, not the turn.
+| When | What happens |
+|---|---|
+| Before each turn (and after compaction) | **Recall.** One memory message: notes saved with `remember`, the summaries NAMS wrote about this user's earlier sessions, earlier messages that match what the user just said, and matching entities from this user's knowledge graph. It enters the prompt as a user-role message attributed to the slot, never as system instructions. |
+| After each turn | **Capture.** The user's message and the final answer go to one NAMS conversation per eve session. Tool calls are not saved. NAMS extracts entities and writes summaries from it server-side. |
+| During the turn | **Tools.** `nams__search` searches earlier sessions, notes and this user's entities; `nams__remember` saves a note. Both are bound to the current user. |
 
-`renderMemories()` in `lib/nams.ts` wraps the results, and its wording matters:
-it labels the block as user-provided facts and tells the model not to treat it
-as instructions. Recalled text is untrusted input.
+**Who the memory belongs to.** `scope: byPrincipal` keys memory to the
+authenticated caller from `ctx.session.auth.current`. eve turns that into an
+opaque `memory.scope.key`, and the provider writes it as the NAMS `userId` of
+every conversation. The raw principal id never reaches NAMS. Anonymous and
+runtime callers get no memory at all, and every `eve dev` caller shares one
+`local-dev` scope.
 
-## `hooks/` — the store half
+**Isolation on hosted NAMS.** The provider asks NAMS for this user's
+conversations and entities only, and also checks the `userId` on each one that
+comes back. Entities that belong to no user (shared across the workspace) are
+left out of recall by the provider's `workspaceGraph: false` default.
 
-| File | Writes | Listens to |
-|---|---|---|
-| `persist-turn.ts` | the exchange, then promotes it to entities | `message.received`, `message.completed` → `turn.completed` |
-| `persist-reasoning.ts` | one record per reasoning step, with its tool calls | `actions.requested`, `action.result`, `reasoning.completed` → `turn.completed` |
+**Replays and failures.** A replayed recall returns the same record and a
+replayed capture writes nothing twice. A missing or rejected API key fails the
+turn; any other NAMS error during recall is logged and the turn continues with
+a record that says memory is unavailable.
 
-**The point of this folder:** the runtime says a turn happened, so it gets
-stored. There is no `remember` tool, and forgetting isn't a failure mode the
-model can cause.
-
-Both buffer during the turn in `defineState` and flush on `turn.completed`, so
-writes stay off the streaming path. It has to be `defineState` rather than a
-module-level variable, because the two halves of an exchange arrive in
-different events — which means different steps, and a step can resume on
-another machine.
-
-`persist-reasoning` has to buffer for a second reason: a step's tool calls are
-only known once its `reasoning.completed` has fired, and `recordToolCall` needs
-the id of the step it belongs to.
-
-`persist-turn` stores twice, with separate `catch` blocks. `storeMemory`
-returns early on `interaction` and never touches long-term, so the second call
-is the only thing that moves the entity graph — and its failure must not cost
-you the transcript from the first.
-
-It also drops slash commands before spending an extraction call. `/channels` is
-what once put `analysis` and `final` into the workspace as `Concept` entities,
-and **NAMS has no entity delete**.
-
-Every store is wrapped in `try`/`catch`, because **a hook that throws fails the
-turn** and memory is an enhancement, not a dependency of an answer the user has
-already received.
+Settings come from `.env`: `NAMS_API_KEY` (required), `WORKSPACE_ID`,
+`NAMS_ENDPOINT`, and `NAMS_MAX_MEMORIES` (default 8).
 
 ## `tools/` — typed tools
 
@@ -128,48 +107,37 @@ One file, one tool, named by its filename.
 is the one thing the Neo4j MCP server publishes no tool for. Everything else
 that needs the graph goes through `connections/`.
 
-**There is no memory tool, on purpose.** A `remember` tool is the only shape
-where the model forgetting to call it means forgetting the user.
+Memory tools are not here: `nams__search` and `nams__remember` come from the
+memory slot. Saving doesn't depend on them — capture runs after every turn
+whether or not the model calls `remember`.
 
-**No tool takes a `userId`.** Identity comes from `memoryScope(ctx)`, so the
-model has no argument it could use to reach another user's memory. That's
-enforced by absence, which is the only way it stays enforced.
+**No tool takes a `userId`.** The memory tools are bound to the slot's locked
+scope, so the model has no argument it could use to reach another user's
+memory.
 
 ## `connections/` — MCP servers
 
 `defineMcpClientConnection` points eve at any MCP server and exposes its tools
-as `<filename>__<tool>`. All three here are read-only with an explicit
+as `<filename>__<tool>`. Both here are read-only with an explicit
 `tools.allow` list.
 
 | File | Server | Auth | Tools |
 |---|---|---|---|
 | `neo4j-graph.ts` | Neo4j's hosted MCP server | Basic, via `headers` | `get-schema`, `read-cypher`, `list-gds-procedures` |
 | `neo4j-investments.ts` | `../mcp-server/`, on localhost | none — loopback only | `get_investments` |
-| `memory-graph.ts` | NAMS's MCP server | Bearer, via `auth.getToken` | 5 read tools of 40 |
 
-The allow-lists are not decoration. NAMS's 40 tools include nine writes and
-thirteen `skill_*` tools that can generate, edit, and publish the agent's own
-skills. Naming the tools you want is the only thing keeping the rest away from
-the model.
-
-**The two auth shapes differ for a reason.** eve's `auth.getToken` always sends
+**Why `headers` and not `auth`.** eve's `auth.getToken` always sends
 `Authorization: Bearer <token>`, and the Neo4j MCP server answers an
 unauthenticated request with `WWW-Authenticate: Basic`. So its credentials go
 through the `headers` callback instead — which is re-resolved per request, so
 rotating the env vars needs no redeploy.
 
-`memory-graph.ts` also injects `workspace_id` through `providedArguments` when
-`WORKSPACE_ID` is set, resolved from `ctx`. Same identity seam as
-everything else: the model never supplies it.
-
 `neo4j-investments.ts` is the one pointing at a server you run yourself, and
 the one to copy when adding your own. It has no auth because it only listens on
 loopback — add `auth` or `headers` the moment it's reachable from anywhere else.
 
-**Connections are static in eve 0.31.** There is no way to mount one
-conditionally at runtime, so `neo4j-investments.ts` always mounts. When its
-server is down, eve logs that the connection published no tools and the agent
-runs with the other three surfaces.
+`neo4j-investments.ts` always mounts. When its server is down, eve logs that
+the connection published no tools and the agent runs with the other surfaces.
 
 ## `skills/` — loaded on demand
 
@@ -186,16 +154,15 @@ a procedure needed on research turns and dead weight on every other turn.
 `vercelOidc()` → `localDev()` → `placeholderAuth()`, ordered and fail-closed.
 
 **Why this folder matters to memory:** the authenticated caller *is* the memory
-boundary. `memoryScope()` in `lib/nams.ts` reads it from verified session
-context and nothing else.
+boundary. The slot's `byPrincipal` scope reads it from verified session context
+and nothing else.
 
 Walking the three in order:
 
-- `vercelOidc()` yields a `principalType: "user"` principal when the token
-  carries an `external_sub`.
-- `localDev()` yields a `local-dev` principal, which `memoryScope` deliberately
-  does **not** accept as a user. That's what makes `DEMO_USER_ID` the local
-  identity.
+- `vercelOidc()` yields a principal from the Vercel OIDC token, so each caller
+  gets their own memory.
+- `localDev()` yields a `local-dev` principal, which `byPrincipal` maps to one
+  shared `local-dev` scope: everything you do under `eve dev` is one user.
 - `placeholderAuth()` throws a structured 401 in production, so an unfinished
   deployment refuses traffic rather than quietly sharing one namespace.
   **Replace it with your app's authenticator before serving real users.**
@@ -211,39 +178,10 @@ integrations actually live.
 
 | File | Holds |
 |---|---|
-| `memory-gateway.ts` | the only file that calls the NAMS SDK; one client per user, LRU-bounded |
-| `nams.ts` | config, env flags, shared types, prompt rendering, and `memoryScope` |
-| `graph-extractor.ts` | a stored memory → entities; its own prompt and filter |
 | `neo4j.ts` | both routes to the graph, plus the local MCP url. No write path on any |
-| `model.ts` | AI Gateway or a direct provider, plus the extraction model |
+| `model.ts` | AI Gateway or a direct provider |
 
-**Why a gateway.** Hooks, tools, and dynamic instructions all reach memory
-through `memory.for(scope)` and never import the SDK themselves. So retries,
-timeouts, a workspace-per-tenant policy, or a different backend entirely are
-one-file changes.
-
-**Why one client per user.** `resolveConversation` caches the conversation id on
-the client *instance*. A fresh client per call means a wasted
-`list_conversations` round trip before every recall and every store. The map key
-is the user id namespace, and the map is bounded (`NAMS_CLIENT_CACHE`, default
-250, oldest evicted first).
-
-**The gateway exposes three verbs and nothing else** — `recall`, `remember`,
-`rememberReasoning`. `rememberReasoning` uses `findExistingConversation` and
-never `resolveConversation`, because a trace is provenance for a conversation
-that already happened. It must never be the thing that creates one.
-
-**`graph-extractor.ts` is why the entity graph is worth looking at.** Without an
-extractor, `storeMemory` falls back to one flat node whose *name is the first 60
-characters of the turn* — a graph made of sentences, which is worse than no
-graph. With one, a turn becomes named entities and the edges between them.
-
-It replaces the provider's default for two reasons: its prompt is told to
-*include* the analyst's own identity and coverage areas, and its filter doesn't
-drop all-lowercase names, because "undersea cable operators" is exactly the kind
-of thing this agent should remember. The `NOT_DOMAIN_ENTITIES` filter runs after
-the model answers, because NAMS has no entity delete and a prompt can't hold a
-boundary that has no undo behind it.
+Nothing in `lib/` touches memory.
 
 ---
 
@@ -279,7 +217,7 @@ Paths relative to this file.
 |---|---|
 | [`../mcp-server/`](../mcp-server/) | a local MCP server, one tool, editable |
 | [`../scripts/chat.mjs`](../scripts/chat.mjs) | `npm run chat` — starts the MCP server, then eve's chat UI |
-| [`../evals/memory/cross-session-recall.eval.ts`](../evals/memory/cross-session-recall.eval.ts) | **the load-bearing test.** `t.newSession()` discards the transcript, so anything recalled afterwards came from NAMS |
+| [`../evals/memory/cross-session-recall.eval.ts`](../evals/memory/cross-session-recall.eval.ts) | **the load-bearing test.** Each `t.send()` starts a new session, so what the second one recalls came from the NAMS slot |
 | [`../evals/graph/news-search.eval.ts`](../evals/graph/news-search.eval.ts) | a company question reaches `search_news`, not model recall |
 | [`../evals/graph/investments.eval.ts`](../evals/graph/investments.eval.ts) | the local MCP tool gets used. Needs `npm run mcp` running |
 | [`../.env.example`](../.env.example) | every setting, annotated. Copy to `.env` |

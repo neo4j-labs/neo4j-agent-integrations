@@ -3,13 +3,10 @@ import {
   ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  defaultSettingsMiddleware,
-  stepCountIs,
-  wrapLanguageModel,
+  isStepCount,
   type ModelMessage,
   type UIMessage,
   type ToolSet,
-  type PrepareStepFunction,
 } from 'ai';
 import {
   createNams,
@@ -19,24 +16,18 @@ import {
   resolveConversation,
   type NamsMode,
 } from '@neo4j-labs/nams-ai-provider';
-import { HOOKS_SYSTEM_PROMPT, SYSTEM_PROMPT, TRANSPARENT_SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
+import { HOOKS_SYSTEM_PROMPT, NO_MEMORY_SYSTEM_PROMPT, SYSTEM_PROMPT, TRANSPARENT_SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
 import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError, guardTools } from '@/lib/neo4j-mcp';
 
 const MAX_STEPS = 10;
-const MODEL_ID = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
+const MODEL_ID = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
 const NAMS_MODES: readonly NamsMode[] = ['provider', 'middleware', 'tools', 'hooks'];
+type ChatMode = NamsMode | 'off';
+const CHAT_MODES: readonly ChatMode[] = [...NAMS_MODES, 'off'];
 
 // Optional: turn each saved memory into graph entities (tools mode only, one extra model call).
 const EXTRACTION_MODEL_ID = process.env.NAMS_EXTRACTION_MODEL?.trim();
-
-const extractionModel = EXTRACTION_MODEL_ID
-  ? wrapLanguageModel({
-    model: openai(EXTRACTION_MODEL_ID),
-    middleware: defaultSettingsMiddleware({
-      settings: { providerOptions: { openai: { strictJsonSchema: false } } },
-    }),
-  })
-  : undefined;
+const extractionModel = EXTRACTION_MODEL_ID ? openai(EXTRACTION_MODEL_ID) : undefined;
 
 function trim(text: string, max = 80): string {
   const s = text.replace(/\s+/g, ' ').trim();
@@ -85,13 +76,14 @@ export async function POST(req: Request) {
     : '';
   if (!userText.trim()) return json({ error: 'The request has no user message.' }, 400);
 
-  const apiKey = process.env.MEMORY_API_KEY ?? '';
-  if (!apiKey) return json({ error: 'MEMORY_API_KEY is not set. Check your .env.local file.' }, 503);
-
-  const mode = ((process.env.NAMS_MODE ?? 'provider').trim()) as NamsMode;
-  if (!NAMS_MODES.includes(mode)) {
-    return json({ error: `Unknown NAMS_MODE "${mode}". Use ${NAMS_MODES.join(', ')}.` }, 503);
+  const mode = ((process.env.NAMS_MODE ?? 'provider').trim()) as ChatMode;
+  if (!CHAT_MODES.includes(mode)) {
+    return json({ error: `Unknown NAMS_MODE "${mode}". Use ${CHAT_MODES.join(', ')}.` }, 503);
   }
+  const memoryOn = mode !== 'off';
+  const apiKey = process.env.MEMORY_API_KEY ?? '';
+  if (memoryOn && !apiKey) return json({ error: 'MEMORY_API_KEY is not set. Check your .env.local file.' }, 503);
+
   const mcpEnabled = isMcpConfigured();
   const useExtraction = mode === 'tools' && Boolean(extractionModel);
 
@@ -113,9 +105,9 @@ export async function POST(req: Request) {
       ? createNams(memoryConfig).wrap(openai(MODEL_ID), scope)
       : openai(MODEL_ID);
 
-  // Every mode reads earlier turns through the hooks session. Start now, it overlaps the MCP connect.
-  const session = createNams(nams).hooks(scope);
-  const historyPromise = session.loadSession();
+  // Memory modes read earlier turns through the hooks session. Start now, it overlaps the MCP connect.
+  const session = memoryOn ? createNams(nams).hooks(scope) : undefined;
+  const historyPromise: Promise<ModelMessage[]> = session ? session.loadSession() : Promise.resolve([]);
 
   // Every mode except tools connects MCP on its own.
   const mcpResult = mode !== 'tools' && mcpEnabled
@@ -153,9 +145,10 @@ export async function POST(req: Request) {
   );
   const hasDbTools = dbToolNames.length > 0;
   // Only tools mode has memory tools, so only its prompts mention them.
-  const basePrompt = mode === 'tools'
-    ? SYSTEM_PROMPT
-    : mode === 'hooks' ? HOOKS_SYSTEM_PROMPT : TRANSPARENT_SYSTEM_PROMPT;
+  const basePrompt = !memoryOn ? NO_MEMORY_SYSTEM_PROMPT
+    : mode === 'tools' ? SYSTEM_PROMPT
+      : mode === 'hooks' ? HOOKS_SYSTEM_PROMPT
+        : TRANSPARENT_SYSTEM_PROMPT;
   const systemPrompt = hasDbTools
     ? `${basePrompt}\n\n${buildDbToolsPrompt(dbToolNames, { memoryTools: mode === 'tools' })}`
     : basePrompt;
@@ -170,7 +163,7 @@ export async function POST(req: Request) {
   );
 
   const history = await historyPromise;
-  console.log(`[chat]   restored ${history.length} earlier turns from NAMS`);
+  if (memoryOn) console.log(`[chat]   restored ${history.length} earlier turns from NAMS`);
   const earlierTurns = body.trigger === 'regenerate-message' ? withoutRerunTurn(history, userText) : history;
   const messages: ModelMessage[] = [...earlierTurns, { role: 'user', content: userText }];
 
@@ -200,13 +193,9 @@ export async function POST(req: Request) {
       model: resolvedModel,
       instructions: systemPrompt,
       tools,
-      ...(namsResult
-        ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) as unknown as PrepareStepFunction<ToolSet> }
-        : {}),
-      stopWhen: (namsResult || mcpResult) ? stepCountIs(MAX_STEPS) : stepCountIs(1),
-      onFinish: async ({ text, steps, usage, responseMessages }: {
-        text: string; steps: any[]; usage: any; responseMessages: any[];
-      }) => {
+      ...(namsResult ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) } : {}),
+      stopWhen: (namsResult || mcpResult) ? isStepCount(MAX_STEPS) : isStepCount(1),
+      onEnd: async ({ text, steps, usage, responseMessages }) => {
         try {
           const calls = steps.flatMap((s: any) => s.toolCalls ?? []).filter(Boolean);
           const queries = calls.filter((c: any) => c?.toolName === 'query_memory').length;
@@ -220,11 +209,11 @@ export async function POST(req: Request) {
 
           // Provider and middleware save the turn inside the model wrapper; the other two save it here.
           // Save before the trace so a new user gets one conversation, not two.
-          if (mode === 'hooks') await session.onFinish({ prompt: userText })({ text, responseMessages });
+          if (session && mode === 'hooks') await session.onFinish({ prompt: userText })({ text, responseMessages });
           // Text only: tools-mode tool results are memory hits, and saving those again degrades recall.
-          if (mode === 'tools') await session.onFinish({ prompt: userText })({ text });
+          if (session && mode === 'tools') await session.onFinish({ prompt: userText })({ text });
 
-          await saveTrace(steps);
+          if (memoryOn) await saveTrace(steps);
         } finally {
           await closeConnections();
         }

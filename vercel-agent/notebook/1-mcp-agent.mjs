@@ -17,10 +17,10 @@
  *   node 1-mcp-agent.mjs
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
+// Load .env if there is one. Variables already set in the shell win.
+try { process.loadEnvFile(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
 
-import { generateText, stepCountIs } from 'ai';
+import { generateText, isStepCount } from 'ai';
 import { getModel } from './providers.mjs';
 import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
 import { GRAPH_SYSTEM_PROMPT } from './prompts.mjs';
@@ -47,11 +47,11 @@ function createAgent({ model, name, instruction, tools }) {
 async function askGraph(agent, query) {
   console.log(`Query: ${query}`);
   const { text, steps } = await generateText({
-    model:    agent.model,
-    system:   agent.instruction,
-    prompt:   query,
-    tools:    agent.tools,
-    stopWhen: stepCountIs(10),  // AI SDK v6: replaces maxSteps
+    model:        agent.model,
+    instructions: agent.instruction,
+    prompt:       query,
+    tools:        agent.tools,
+    stopWhen:     isStepCount(10),
   });
   console.log(`\nResult: ${text}`);
   console.log(`[Completed in ${steps.length} step(s)]\n`);

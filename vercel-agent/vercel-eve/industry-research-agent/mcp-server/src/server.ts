@@ -2,14 +2,10 @@
 // `npm run mcp` serves it at localhost:8100/mcp. Set MCP_TRANSPORT=stdio for desktop apps.
 // Logs go to stderr, because stdio mode uses stdout for messages.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  type Tool,
-} from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import { closeDriver, describeTarget, getInvestments } from "./neo4j.js";
 
 // eve doesn't start this, so load .env ourselves.
@@ -26,49 +22,22 @@ const PORT = Number(process.env.INVESTMENTS_MCP_PORT?.trim() || 8100);
 const PATH = process.env.INVESTMENTS_MCP_PATH?.trim() || "/mcp";
 const TRANSPORT = process.env.MCP_TRANSPORT?.trim().toLowerCase() === "stdio" ? "stdio" : "http";
 
-const TOOLS: Tool[] = [
-  {
-    name: "get_investments",
-    description:
-      "Look up the investors in a company by its exact name. " +
-      "Returns the id, name, and type (Person or Organization) of each investor. " +
-      "Use this for who invested in a company, who its backers are, and its funding relationships.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        company: {
-          type: "string",
-          description: "Exact company name as it appears in the graph, e.g. 'Neo4j'.",
-        },
+function buildServer(): McpServer {
+  const server = new McpServer({ name: NAME, version: VERSION });
+
+  server.registerTool(
+    "get_investments",
+    {
+      description:
+        "Look up the investors in a company by its exact name. " +
+        "Returns the id, name, and type (Person or Organization) of each investor. " +
+        "Use this for who invested in a company, who its backers are, and its funding relationships.",
+      inputSchema: {
+        company: z.string().trim().min(1).describe("Exact company name as it appears in the graph, e.g. 'Neo4j'."),
       },
-      required: ["company"],
     },
-  },
-];
-
-function buildServer(): Server {
-  const server = new Server({ name: NAME, version: VERSION }, { capabilities: { tools: {} } });
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    if (req.params.name !== "get_investments") {
-      return {
-        content: [{ type: "text", text: `Unknown tool: ${req.params.name}` }],
-        isError: true,
-      };
-    }
-
-    const company = (req.params.arguments ?? {}).company;
-    if (typeof company !== "string" || company.trim() === "") {
-      return {
-        content: [{ type: "text", text: "get_investments needs a company name." }],
-        isError: true,
-      };
-    }
-
-    return { content: [{ type: "text", text: await getInvestments(company.trim()) }] };
-  });
+    async ({ company }) => ({ content: [{ type: "text", text: await getInvestments(company) }] }),
+  );
 
   return server;
 }

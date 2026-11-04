@@ -115,11 +115,11 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
           : { width: '480px', height: '100%', display: 'flex', flexDirection: 'column' }}
       >
         <div
-          className="n-p-4 n-flex n-flex-col n-grow n-overflow-y-auto"
+          className="n-flex n-flex-col"
           style={fluid ? { flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' } : undefined}
         >
           {copyError && (
-            <div className="n-bg-warning-bg-weak n-border n-border-warning-border-weak n-rounded-lg n-p-2 n-mb-2">
+            <div className="n-bg-warning-bg-weak n-border-warning-border-weak n-mb-2">
               <Typography variant="body-small">{copyError}</Typography>
             </div>
           )}
@@ -127,11 +127,11 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
           {messages.length === 0 ? (
             <div className="n-flex n-flex-col n-gap-4">
               {errorMessage && (
-                <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3">
+                <div className="n-bg-danger-bg-weak n-border-danger-border-weak">
                   <Typography variant="body-small">⚠ {errorMessage}</Typography>
                 </div>
               )}
-              <div className="n-flex n-flex-col n-gap-12">
+              <div className="n-flex n-flex-col">
                 <Typography variant="display">Hi, how can I help you today?</Typography>
                 <div className="n-flex n-flex-col n-gap-4">
                   <Typography variant="body-medium">Suggestions</Typography>
@@ -142,7 +142,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
               </div>
             </div>
           ) : (
-            <div className="n-flex n-flex-col n-gap-4 n-pb-4">
+            <div className="n-flex n-flex-col n-gap-4">
               {messages.map((msg, idx) => {
                 const isLast         = idx === messages.length - 1;
                 const isLive         = isStreaming && isLast;
@@ -163,7 +163,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
                     {msg.role === 'user' ? (
                       <UserBubble avatarProps={{ name: 'U', type: 'letters' }}>{getMsgText(msg)}</UserBubble>
                     ) : (
-                      <div className="n-w-full n-flex n-flex-col n-gap-2">
+                      <div className="n-w-full n-flex n-flex-col">
                         {hasOverlay && (
                           <div style={{ marginBottom: 4 }}>
                             {/* Thinking indicator */}
@@ -204,7 +204,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
                         <Response isAnimating={isLive}>{getMsgText(msg)}</Response>
 
                         {(!isStreaming || !isLast) && (
-                          <div className="n-flex n-flex-row n-gap-1.5">
+                          <div className="n-flex n-flex-row">
                             <CleanIconButton size="small" description="Re-run" onClick={() => regenerate()}>
                               <ArrowPathIconOutline />
                             </CleanIconButton>
@@ -222,7 +222,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
               {status === 'submitted' && <Thinking isThinking />}
 
               {status === 'error' && (
-                <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3 n-flex n-items-start n-justify-between n-gap-2">
+                <div className="n-bg-danger-bg-weak n-border-danger-border-weak n-flex n-items-start">
                   <Typography variant="body-small">⚠ {errorMessage ?? 'Something went wrong.'}</Typography>
                   <CleanIconButton size="small" description="Retry" onClick={() => regenerate()}>
                     <ArrowPathIconOutline />
@@ -235,7 +235,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
           )}
         </div>
 
-        <div className="n-px-4 n-pt-4 n-pb-1 n-mt-auto full-width-content">
+        <div className="full-width-content">
           <Prompt
             value={input}
             onChange={e => setInput(e.target.value)}

@@ -5,7 +5,7 @@ import AppHeader from '@/components/AppHeader';
 import ChatComponent from '@/components/chat/ChatComponent';
 
 export default function HomePage() {
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {

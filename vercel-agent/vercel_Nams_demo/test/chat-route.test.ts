@@ -46,7 +46,7 @@ vi.mock('ai', () => ({
     return { __execute: execute };
   }),
   createUIMessageStreamResponse: vi.fn(() => new Response(null, { status: 200 })),
-  stepCountIs: vi.fn((n: number) => ({ __stepCountIs: n })),
+  isStepCount: vi.fn((n: number) => ({ __isStepCount: n })),
 }));
 
 vi.mock('@neo4j-labs/nams-ai-provider', () => ({
@@ -142,7 +142,7 @@ describe('POST /api/chat', () => {
         scope: { userId: 'u1', conversationId: undefined },
       }),
     );
-    expect(holder.languageModel).toHaveBeenCalledWith('gpt-5.4-mini');
+    expect(holder.languageModel).toHaveBeenCalledWith('gpt-5.6-luna');
     expect(holder.wrap).not.toHaveBeenCalled();
 
     const agentArgs = holder.agentCtorArgs[0];
@@ -165,7 +165,7 @@ describe('POST /api/chat', () => {
     );
 
     const agentArgs = holder.agentCtorArgs[0];
-    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.4-mini' });
+    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.6-luna' });
     expect(agentArgs.tools).toEqual({ query_memory: {}, store_memory: {} });
   });
 
@@ -178,14 +178,14 @@ describe('POST /api/chat', () => {
     expect(holder.createNamsProvider).not.toHaveBeenCalled();
     expect(holder.createNams).toHaveBeenCalledWith({ apiKey: 'test-key', workspaceId: undefined });
     expect(holder.wrap).toHaveBeenCalledWith(
-      { __brand: 'openai-model', modelId: 'gpt-5.4-mini' },
+      { __brand: 'openai-model', modelId: 'gpt-5.6-luna' },
       { userId: 'u1', conversationId: undefined },
     );
 
     const agentArgs = holder.agentCtorArgs[0];
     expect(agentArgs.model).toEqual({
       __brand: 'middleware-wrapped-model',
-      wraps: { __brand: 'openai-model', modelId: 'gpt-5.4-mini' },
+      wraps: { __brand: 'openai-model', modelId: 'gpt-5.6-luna' },
     });
     expect(agentArgs.tools).toBeUndefined();
   });
@@ -215,7 +215,7 @@ describe('POST /api/chat', () => {
     expect(holder.toolsWithMcp).not.toHaveBeenCalled();
 
     const agentArgs = holder.agentCtorArgs[0];
-    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.4-mini' });
+    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.6-luna' });
     expect(agentArgs.tools).toBeUndefined();
     expect(agentArgs.prepareStep).toBeUndefined();
     expect(agentArgs.instructions).toContain('restored from NAMS');
@@ -274,7 +274,7 @@ describe('POST /api/chat', () => {
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
     const responseMessages = [{ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
-    await holder.agentCtorArgs[0].onFinish({
+    await holder.agentCtorArgs[0].onEnd({
       text: 'hello',
       steps: [{ text: 'hello', toolCalls: [], toolResults: [] }],
       usage: undefined,
@@ -290,7 +290,7 @@ describe('POST /api/chat', () => {
     process.env.NAMS_MODE = 'tools';
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
-    await holder.agentCtorArgs[0].onFinish({
+    await holder.agentCtorArgs[0].onEnd({
       text: 'hello',
       steps: [],
       usage: undefined,
@@ -320,6 +320,41 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: expect.stringContaining('Unknown NAMS_MODE "session"') });
     expect(holder.agentCtorArgs).toHaveLength(0);
+  });
+
+  it('off mode uses the plain model with MCP tools and never touches NAMS, so it needs no key', async () => {
+    process.env.NAMS_MODE = 'off';
+    delete process.env.MEMORY_API_KEY;
+    holder.isMcpConfigured.mockReturnValue(true);
+    holder.getNeo4jMcpTools.mockResolvedValue({ tools: { 'read-cypher': {} }, close: vi.fn() });
+
+    const res = await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    expect(res.status).toBe(200);
+    expect(holder.createNams).not.toHaveBeenCalled();
+    expect(holder.createNamsProvider).not.toHaveBeenCalled();
+    expect(holder.loadSession).not.toHaveBeenCalled();
+
+    const agentArgs = holder.agentCtorArgs[0];
+    expect(agentArgs.model).toEqual({ __brand: 'openai-model', modelId: 'gpt-5.6-luna' });
+    expect(agentArgs.tools).toEqual({ 'read-cypher': {} });
+    expect(agentArgs.instructions).not.toContain('NAMS');
+  });
+
+  it('off mode saves nothing after the turn, even when the agent ran steps', async () => {
+    process.env.NAMS_MODE = 'off';
+
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+    await holder.agentCtorArgs[0].onEnd({
+      text: 'hello',
+      steps: [{ text: 'hello', toolCalls: [{ toolName: 'read-cypher' }], toolResults: [] }],
+      usage: undefined,
+      responseMessages: [],
+    });
+
+    expect(holder.sessionOnFinish).not.toHaveBeenCalled();
+    expect(holder.sessionSave).not.toHaveBeenCalled();
+    expect(holder.makeClient).not.toHaveBeenCalled();
   });
 
   it('falls back to NAMS-only tools when the MCP connection fails in tools mode', async () => {
@@ -414,8 +449,8 @@ describe('POST /api/chat', () => {
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
-    const onFinish = holder.agentCtorArgs[0].onFinish;
-    await onFinish({
+    const onEnd = holder.agentCtorArgs[0].onEnd;
+    await onEnd({
       text: 'answer',
       steps: [{ text: 'looked things up', toolCalls: [{ toolName: 'query_memory' }], toolResults: [] }],
       usage: { inputTokens: 1, outputTokens: 1 },

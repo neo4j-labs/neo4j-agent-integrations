@@ -91,6 +91,15 @@ turn is saved after you answer.
     properties, relationships — need the database tools below. If no database
     tools are listed, say so plainly rather than guessing.`;
 
+// Memory off: nothing is loaded or saved, so each message is answered on its own.
+export const NO_MEMORY_SYSTEM_PROMPT = `\
+You are a helpful assistant. Memory is off in this mode: you do not remember
+earlier messages or earlier chats, and each message is answered on its own.
+Never claim to remember the user or to have saved anything.
+
+Questions about data in the Neo4j graph need the database tools below. If no
+database tools are listed, say so plainly rather than guessing.`;
+
 // Hooks mode: earlier turns arrive as chat history and there are no memory tools.
 export const HOOKS_SYSTEM_PROMPT = `\
 You are a helpful assistant with persistent memory powered by NAMS (Neo4j Agent Memory System).

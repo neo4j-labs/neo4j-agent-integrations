@@ -1,9 +1,7 @@
 // Picks how to reach the model: Vercel AI Gateway, or OpenAI directly.
-import { gateway } from "ai";
-import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { openai } from "@ai-sdk/openai";
 
-export const MODEL_ID = process.env.AGENT_MODEL ?? "openai/gpt-5.4";
+export const MODEL_ID = process.env.AGENT_MODEL ?? "openai/gpt-5.6-terra";
 
 function hasGatewayCredential(): boolean {
   return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
@@ -15,13 +13,7 @@ export const MODEL_ROUTING: "gateway" | "openai" = (() => {
   return !hasGatewayCredential() && process.env.OPENAI_API_KEY ? "openai" : "gateway";
 })();
 
-export function baseModel(id: string = MODEL_ID): LanguageModelV4 {
-  if (MODEL_ROUTING === "openai") {
-    return openai(id.replace(/^openai\//, "")) as LanguageModelV4;
-  }
-  return gateway(id) as LanguageModelV4;
-}
-
-export function extractionModel(): LanguageModelV4 {
-  return baseModel(process.env.NAMS_EXTRACTION_MODEL?.trim() || MODEL_ID);
+/** The model object for direct OpenAI. The gateway route passes MODEL_ID as is. */
+export function baseModel() {
+  return openai(MODEL_ID.replace(/^openai\//, ""));
 }

@@ -1,7 +1,7 @@
 /**
  * 4-nams-provider-agent.mjs — memory through @neo4j-labs/nams-ai-provider.
  *
- * NAMS_MODE picks how memory is added:
+ * The first argument picks how memory is added (default: provider):
  *   provider   (default) memory is added around every model call
  *   middleware same, on a model you already have
  *   tools      the model calls query_memory / store_memory itself
@@ -9,13 +9,13 @@
  *
  * In every mode the earlier turns are loaded from NAMS, as in ../vercel_Nams_demo.
  *
- * Run:  NAMS_MODE=hooks node 4-nams-provider-agent.mjs
+ * Run:  node 4-nams-provider-agent.mjs hooks
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
+// Load .env if there is one. Variables already set in the shell win.
+try { process.loadEnvFile(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
 
-import { ToolLoopAgent, stepCountIs } from 'ai';
+import { ToolLoopAgent, isStepCount } from 'ai';
 import {
   createNams,
   createNamsProvider,
@@ -34,8 +34,8 @@ import {
 
 // ── Configuration
 const MAX_STEPS = 10;
-const MODE      = (process.env.NAMS_MODE || 'provider').trim();
-const USER_ID   = process.env.DEMO_USER_ID || process.env.DEMO_AGENT_ID || 'vercel-neo4j-notebook-agent';
+const MODE      = (process.argv[2] || 'provider').trim();
+const USER_ID   = process.env.DEMO_USER_ID || 'vercel-neo4j-notebook-agent';
 
 const apiKey = process.env.MEMORY_API_KEY;
 if (!apiKey) {
@@ -44,7 +44,7 @@ if (!apiKey) {
 }
 
 if (!['provider', 'middleware', 'tools', 'hooks'].includes(MODE)) {
-  console.error(`ERROR: unknown NAMS_MODE "${MODE}". Use provider, middleware, tools, or hooks.`);
+  console.error(`ERROR: unknown mode "${MODE}". Use provider, middleware, tools, or hooks.`);
   process.exit(1);
 }
 
@@ -117,7 +117,7 @@ const agent = new ToolLoopAgent({
   instructions: systemPrompt,
   tools,
   ...(namsResult ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) } : {}),
-  // Send the saved history plus this turn, and hand the prompt on to onFinish.
+  // Send the saved history plus this turn, and hand the prompt on to onEnd.
   prepareCall: async ({ options, prompt: _prompt, messages: _messages, ...settings }) => {
     const history = await session.loadSession();
     console.log(`  [nams] restored ${history.length} earlier turns`);
@@ -127,8 +127,8 @@ const agent = new ToolLoopAgent({
       runtimeContext: options,
     };
   },
-  stopWhen: tools ? stepCountIs(MAX_STEPS) : stepCountIs(1),
-  onFinish: async (event) => {
+  stopWhen: tools ? isStepCount(MAX_STEPS) : isStepCount(1),
+  onEnd: async (event) => {
     const { steps, usage } = event;
 
     // Provider and middleware save the turn inside the model wrapper; the other two save it here.

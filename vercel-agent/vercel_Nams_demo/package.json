@@ -3,32 +3,31 @@
     "version": "1.0.0",
     "private": true,
     "scripts": {
-        "dev": "next dev",
+        "dev": "node scripts/dev.mjs",
         "build": "next build",
         "start": "next start",
         "test": "vitest run",
         "test:watch": "vitest"
     },
     "dependencies": {
-        "@ai-sdk/mcp": "^2.0.34",
-        "@ai-sdk/openai": "^4.0.44",
-        "@ai-sdk/react": "^4.0.73",
-        "@neo4j-labs/agent-memory": "0.5.0",
-        "@neo4j-labs/nams-ai-provider": "0.3.0",
-        "@neo4j-ndl/base": "^4.17.5",
-        "@neo4j-ndl/react": "^4.18.9",
-        "@tanstack/react-table": "^8.21.3",
-        "ai": "^7.0.70",
-        "next": "^16.3.1",
-        "react": "^19.2.8",
-        "react-dom": "^19.2.8",
-        "zod": "^4.0.0"
+        "@ai-sdk/mcp": "^2.0.88",
+        "@ai-sdk/openai": "^4.0.106",
+        "@ai-sdk/react": "^4.0.163",
+        "@neo4j-labs/agent-memory": "0.6.0",
+        "@neo4j-labs/nams-ai-provider": "0.5.0",
+        "@neo4j-ndl/base": "^5.1.2",
+        "@neo4j-ndl/react": "^5.1.5",
+        "ai": "^7.0.159",
+        "next": "^16.4.3",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "zod": "^4.6.7"
     },
     "devDependencies": {
-        "@types/node": "^20",
+        "@types/node": "^22",
         "@types/react": "^19",
         "@types/react-dom": "^19",
         "typescript": "^5",
-        "vitest": "^4.1.11"
+        "vitest": "^5.0.5"
     }
 }

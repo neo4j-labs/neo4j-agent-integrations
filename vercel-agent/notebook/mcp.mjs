@@ -2,10 +2,19 @@
 // Auth: MCP_BEARER_TOKEN, or MCP_NEO4J_USERNAME + MCP_NEO4J_PASSWORD
 // (falling back to NEO4J_USERNAME / NEO4J_PASSWORD). The token wins if both are set.
 // URL: MCP_URL, or http://localhost:${MCP_PORT}/mcp.
+// MCP_NEO4J_URI: the Bolt URI a self-hosted official neo4j-mcp v2 server should connect to.
+// It is sent as the X-Neo4j-MCP-URI header, and MCP_URL must then end in /db/<database>/mcp.
 
 import { createMCPClient } from '@ai-sdk/mcp';
 
 export function getMcpConfig() {
+  const config = buildMcpConfig();
+  const neo4jUri = process.env.MCP_NEO4J_URI?.trim();
+  if (!config || !neo4jUri) return config;
+  return { ...config, headers: { ...config.headers, 'X-Neo4j-MCP-URI': neo4jUri } };
+}
+
+function buildMcpConfig() {
   const port = process.env.MCP_PORT?.trim();
   const url  = process.env.MCP_URL?.trim() || (port ? `http://localhost:${port}/mcp` : '');
   if (!url) return null;
