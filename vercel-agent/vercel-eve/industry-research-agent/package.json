@@ -11,6 +11,7 @@
   "scripts": {
     "chat": "node scripts/chat.mjs",
     "mcp": "tsx mcp-server/src/server.ts",
+    "ontology": "tsx scripts/ontology.ts",
     "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",

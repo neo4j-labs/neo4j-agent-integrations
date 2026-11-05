@@ -87,7 +87,7 @@ Hooks mode also saves each tool call and result as a `[tool-call] …` / `[tool-
 | `MCP_URL` or `MCP_PORT` | scripts 1–3, optional for 4 | Where the Neo4j MCP server is. For a local official neo4j-mcp v2, use `MCP_URL=http://localhost:8443/db/companies/mcp`. |
 | `MCP_NEO4J_URI` | official neo4j-mcp v2 only | The Bolt URI the server connects to, sent as `X-Neo4j-MCP-URI`. For the public demo, `neo4j+s://demo.neo4jlabs.com:7687`. |
 | `MCP_BEARER_TOKEN`, or `MCP_NEO4J_USERNAME` + `MCP_NEO4J_PASSWORD` | with MCP | Login for the MCP server. A token wins if both are set. |
-| `MEMORY_API_KEY` | scripts 3 and 4 | Your NAMS key, free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com). |
+| `NAMS_API_KEY` | scripts 3 and 4 | Your NAMS key, free at [memory.neo4jlabs.com](https://memory.neo4jlabs.com). |
 | `MEMORY_WORKSPACE_ID` | optional | Use a specific NAMS workspace. |
 | `DEMO_USER_ID` | optional | Whose memory to use. In script 4, same id = same memories across runs. Script 3 starts a new conversation every run. |
 Script 4 takes its mode as a command-line argument (`node 4-nams-provider-agent.mjs hooks`), not from `.env`.

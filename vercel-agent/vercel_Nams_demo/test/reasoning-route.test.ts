@@ -1,12 +1,4 @@
-/**
- * GET /api/reasoning — reads the reasoning trace via @neo4j-labs/nams-ai-provider.
- *
- * Contract points:
- *  - userId is required; MEMORY_API_KEY must be configured
- *  - makeClient()/findExistingConversation() are called with {apiKey, workspaceId}
- *  - no existing conversation → { steps: [] }, not an error
- *  - client failures surface as 500, not an unhandled rejection
- */
+/** GET /api/reasoning: reads the reasoning trace; covers missing input, empty traces and client failures. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,7 +18,7 @@ const req = (url: string) => new Request(url);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.MEMORY_API_KEY = 'test-key';
+  process.env.NAMS_API_KEY = 'test-key';
   delete process.env.MEMORY_WORKSPACE_ID;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -41,8 +33,8 @@ describe('GET /api/reasoning', () => {
     expect(holder.makeClient).not.toHaveBeenCalled();
   });
 
-  it('returns 503 when MEMORY_API_KEY is not set', async () => {
-    delete process.env.MEMORY_API_KEY;
+  it('returns 503 when NAMS_API_KEY is not set', async () => {
+    delete process.env.NAMS_API_KEY;
 
     const res = await GET(req('http://localhost/api/reasoning?userId=u1'));
 

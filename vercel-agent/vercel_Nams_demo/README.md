@@ -11,11 +11,11 @@ All the memory code comes from one npm package, [`@neo4j-labs/nams-ai-provider`]
 ```bash
 cd vercel-agent/vercel_Nams_demo
 npm install
-cp .env.local.example .env.local   # add MEMORY_API_KEY and OPENAI_API_KEY
+cp .env.local.example .env.local   # add NAMS_API_KEY and OPENAI_API_KEY
 npm run dev                        # pick a memory mode (or memory off), then open http://localhost:3000
 ```
 
-- Get a free `MEMORY_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
+- Get a free `NAMS_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
 - Needs Node 22.23.4 or newer, the minimum both NAMS packages declare. A plain `npm install` works, no extra flags.
 - `npm install` takes `@neo4j-labs/nams-ai-provider` 0.5.0 and `@neo4j-labs/agent-memory` 0.6.0 from npm. Don't use an older `agent-memory`: 0.5.0 sends a `threshold` field that hosted NAMS rejects, so every message search comes back empty.
 
@@ -99,7 +99,7 @@ Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-A
 
 | Variable | Needed? | What it does |
 |---|---|---|
-| `MEMORY_API_KEY` | Yes | Your NAMS key. Without it, every chat request fails. |
+| `NAMS_API_KEY` | Yes | Your NAMS key. Without it, every chat request fails. |
 | `OPENAI_API_KEY` | Yes | Your OpenAI key. |
 | `MEMORY_WORKSPACE_ID` | No | Use a specific NAMS workspace. |
 | `OPENAI_MODEL` | No | Model to use. Default `gpt-5.6-luna`. |
@@ -166,7 +166,7 @@ test/                        route tests (vitest)
 
 **"read-cypher took longer than 30s".** The model wrote a query that was too heavy for the server. It usually retries with a smaller one. If it keeps happening, ask a narrower question.
 
-**`MEMORY_API_KEY is not set`.** Add the key to `.env.local` and restart.
+**`NAMS_API_KEY is not set`.** Add the key to `.env.local` and restart.
 
 ---
 

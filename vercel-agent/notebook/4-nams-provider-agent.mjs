@@ -1,16 +1,5 @@
-/**
- * 4-nams-provider-agent.mjs — memory through @neo4j-labs/nams-ai-provider.
- *
- * The first argument picks how memory is added (default: provider):
- *   provider   (default) memory is added around every model call
- *   middleware same, on a model you already have
- *   tools      the model calls query_memory / store_memory itself
- *   hooks      this script loads the conversation and saves each turn
- *
- * In every mode the earlier turns are loaded from NAMS, as in ../vercel_Nams_demo.
- *
- * Run:  node 4-nams-provider-agent.mjs hooks
- */
+// Memory through @neo4j-labs/nams-ai-provider, in the mode given as the first argument.
+// Run: node 4-nams-provider-agent.mjs [provider|middleware|tools|hooks]
 
 // Load .env if there is one. Variables already set in the shell win.
 try { process.loadEnvFile(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
@@ -37,9 +26,9 @@ const MAX_STEPS = 10;
 const MODE      = (process.argv[2] || 'provider').trim();
 const USER_ID   = process.env.DEMO_USER_ID || 'vercel-neo4j-notebook-agent';
 
-const apiKey = process.env.MEMORY_API_KEY;
+const apiKey = process.env.NAMS_API_KEY;
 if (!apiKey) {
-  console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
+  console.error('ERROR: NAMS_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
   process.exit(1);
 }
 

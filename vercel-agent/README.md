@@ -254,7 +254,7 @@ npm install @neo4j-labs/agent-memory
 ```js
 import { MemoryClient } from '@neo4j-labs/agent-memory';
 
-const memoryClient = new MemoryClient({ apiKey: process.env.MEMORY_API_KEY });
+const memoryClient = new MemoryClient({ apiKey: process.env.NAMS_API_KEY });
 const { id: convId } = await memoryClient.shortTerm.createConversation({ userId: DEMO_USER_ID });
 
 async function buildContext(query) {
@@ -332,7 +332,7 @@ import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 
 const model = createNamsProvider({
-  apiKey:       process.env.MEMORY_API_KEY,
+  apiKey:       process.env.NAMS_API_KEY,
   baseProvider: openai,
   scope:        { userId: 'user-1' },
 }).languageModel('gpt-5.6-luna');

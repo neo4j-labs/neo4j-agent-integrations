@@ -8,7 +8,7 @@ This file walks the folders. Start here if you're about to change something.
 
 | Folder | What eve does with it |
 |---|---|
-| `agent.ts` | The agent itself: model and reasoning effort. |
+| `agent.ts` | The agent itself: model, reasoning effort, and eve's default tools switched off. |
 | `instructions.md` | The system prompt, always on. |
 | `memory/` | Memory slots. One file, one slot, backed by a provider. |
 | `tools/` | Typed tools the model can call. One file, one tool. |
@@ -23,9 +23,9 @@ This file walks the folders. Start here if you're about to change something.
 
 | File | What it does |
 |---|---|
-| `agent.ts` | Model id + reasoning effort. Memory is deliberately not here. |
+| `agent.ts` | Model id + reasoning effort; `defaultTools: false`. Memory is deliberately not here. |
 | `instructions.md` | Identity, the research tools, memory, how to research, how to report. |
-| `memory/nams.ts` | **All of the agent's memory.** The NAMS slot from `@neo4j-labs/nams-ai-provider/eve`. |
+| `memory/nams.ts` | **All of the agent's memory.** The NAMS slot from `@neo4j-labs/nams-ai-provider/eve`, wrapped so it also saves reasoning steps. |
 | `tools/search_news.ts` | Full-text search over article text, over Bolt. |
 | `connections/neo4j-graph.ts` | Neo4j's hosted MCP server, 3 read tools. |
 | `connections/neo4j-investments.ts` | The local MCP server in `../mcp-server/`, 1 tool. |
@@ -33,13 +33,21 @@ This file walks the folders. Start here if you're about to change something.
 | `channels/eve.ts` | The HTTP surface, and the auth walk that yields identity. |
 | `lib/model.ts` | AI Gateway or direct OpenAI. |
 | `lib/neo4j.ts` | Both routes to the graph: MCP endpoints, and the Bolt driver. |
+| `lib/nams-reasoning.ts` | Wraps the memory provider so each turn's reasoning steps and tool calls are saved to NAMS. |
 
 ---
 
 ## `agent.ts`
 
-Model and reasoning effort, and nothing else. Memory isn't configured here
-because it isn't a model setting — it's a slot in `memory/`.
+Model, reasoning effort, and `defaultTools: false`. Memory isn't configured
+here because it isn't a model setting — it's a slot in `memory/`.
+
+`defaultTools: false` removes the tools eve gives every agent by default
+(`bash`, `read_file`, `write_file`, `web_fetch`, `web_search`, `agent`), so the
+model can only use the research tools and memory that `instructions.md`
+describes. Left on, `web_search` answers "what's new" questions from the live
+web instead of the graph. eve's catalog tools (`eve__search`, `eve__skill`) stay,
+because they are how the model finds the MCP tools and loads the skill.
 
 A plain model id string is preferred over a resolved model object, because a
 string is what lets eve work out routing, credentials, and context window at
@@ -56,16 +64,21 @@ the user* and never an instruction.
 
 `memory/nams.ts` is one eve memory slot, named `nams` after its file. It is the
 **only** place the agent reads or writes memory: no hooks, no dynamic
-instructions, no memory MCP server, and no NAMS SDK calls anywhere else.
+instructions, and no memory MCP server. The one NAMS call outside the package is
+`lib/nams-reasoning.ts`, which the slot wraps around the provider.
 
 ```ts
 import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
 import { defineMemory } from "eve/memory";
 import { byPrincipal } from "eve/memory/scope";
+import { withReasoningTrace } from "../lib/nams-reasoning";
 
 export default defineMemory({
   description: "What this user told you in earlier sessions…",
-  provider: namsMemory({ apiKey: process.env.NAMS_API_KEY, /* … */ }),
+  provider: withReasoningTrace(
+    namsMemory({ apiKey: process.env.NAMS_API_KEY, /* … */ }),
+    { apiKey: process.env.NAMS_API_KEY, /* … */ },
+  ),
   scope: byPrincipal,
 });
 ```
@@ -76,7 +89,8 @@ work:
 | When | What happens |
 |---|---|
 | Before each turn (and after compaction) | **Recall.** One memory message: notes saved with `remember`, the summaries NAMS wrote about this user's earlier sessions, earlier messages that match what the user just said, and matching entities from this user's knowledge graph. It enters the prompt as a user-role message attributed to the slot, never as system instructions. |
-| After each turn | **Capture.** The user's message and the final answer go to one NAMS conversation per eve session. Tool calls are not saved. NAMS extracts entities and writes summaries from it server-side. |
+| After each turn | **Capture.** The user's message and the final answer go to one NAMS conversation per eve session. NAMS extracts entities and writes summaries (observations, reflections) from it server-side, on its own schedule. |
+| After each turn, after capture | **Reasoning trace.** `withReasoningTrace` saves one reasoning step per model call to the same conversation: the model's reasoning summary (or its narration), the tools it called, and what they returned, with each tool call attached to its step. The final answer is a `direct response` step. This is what the NAMS dashboard's reasoning view shows. |
 | During the turn | **Tools.** `nams__search` searches earlier sessions, notes and this user's entities; `nams__remember` saves a note. Both are bound to the current user. |
 
 **Who the memory belongs to.** `scope: byPrincipal` keys memory to the
@@ -97,7 +111,8 @@ turn; any other NAMS error during recall is logged and the turn continues with
 a record that says memory is unavailable.
 
 Settings come from `.env`: `NAMS_API_KEY` (required), `WORKSPACE_ID`,
-`NAMS_ENDPOINT`, and `NAMS_MAX_MEMORIES` (default 8).
+`NAMS_ENDPOINT`, `NAMS_MAX_MEMORIES` (default 8), and `NAMS_REASONING`
+(`off` stops saving reasoning steps).
 
 ## `tools/` — typed tools
 
@@ -180,8 +195,9 @@ integrations actually live.
 |---|---|
 | `neo4j.ts` | both routes to the graph, plus the local MCP url. No write path on any |
 | `model.ts` | AI Gateway or a direct provider |
+| `nams-reasoning.ts` | `withReasoningTrace()`: after the provider captures a turn, finds that session's NAMS conversation and records the turn's reasoning steps and tool calls on it |
 
-Nothing in `lib/` touches memory.
+`nams-reasoning.ts` is the only file in `lib/` that touches memory.
 
 ---
 
@@ -217,6 +233,7 @@ Paths relative to this file.
 |---|---|
 | [`../mcp-server/`](../mcp-server/) | a local MCP server, one tool, editable |
 | [`../scripts/chat.mjs`](../scripts/chat.mjs) | `npm run chat` — starts the MCP server, then eve's chat UI |
+| [`../scripts/ontology.ts`](../scripts/ontology.ts) | `npm run ontology` — activates the industry-research ontology on the NAMS workspace, so extracted entities are typed `Company`, `Person`, `FundingRound`, `Sector` |
 | [`../evals/memory/cross-session-recall.eval.ts`](../evals/memory/cross-session-recall.eval.ts) | **the load-bearing test.** Each `t.send()` starts a new session, so what the second one recalls came from the NAMS slot |
 | [`../evals/graph/news-search.eval.ts`](../evals/graph/news-search.eval.ts) | a company question reaches `search_news`, not model recall |
 | [`../evals/graph/investments.eval.ts`](../evals/graph/investments.eval.ts) | the local MCP tool gets used. Needs `npm run mcp` running |

@@ -160,8 +160,11 @@ public demo graph — leave them alone.
 Check it compiled:
 
 ```bash
-npx eve info        # expect: 0 errors, 1 skill, 7 tools
+npx eve info        # expect: 0 errors, 1 skill, 1 tool
 ```
+
+The one tool is `search_news`. The MCP and memory tools are added when a
+session starts, so `eve info` doesn't count them.
 
 ---
 
@@ -249,7 +252,7 @@ made.
 ```
 industry-research-agent/
 ├── agent/
-│   ├── agent.ts                    model and reasoning effort, nothing else
+│   ├── agent.ts                    model, reasoning effort, eve's default tools off
 │   ├── instructions.md             the system prompt
 │   ├── channels/
 │   │   └── eve.ts                  HTTP entry point; decides who the caller is
@@ -270,7 +273,8 @@ industry-research-agent/
 │       ├── server.ts               serves the get_investments tool
 │       └── neo4j.ts                the Cypher behind it
 ├── scripts/
-│   └── chat.mjs                    npm run chat
+│   ├── chat.mjs                    npm run chat
+│   └── ontology.ts                 npm run ontology: typed entities for the workspace
 └── evals/                          tests you run with npx eve eval
 ```
 
@@ -293,15 +297,20 @@ tools. This agent has one slot, backed by `namsMemory()`:
 import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
 import { defineMemory } from "eve/memory";
 import { byPrincipal } from "eve/memory/scope";
+import { withReasoningTrace } from "../lib/nams-reasoning";
+
+const connection = {
+  apiKey: process.env.NAMS_API_KEY || undefined,
+  workspaceId: process.env.WORKSPACE_ID || undefined,
+  endpoint: process.env.NAMS_ENDPOINT || undefined,
+};
 
 export default defineMemory({
   description: "What this user told you in earlier sessions…",
-  provider: namsMemory({
-    apiKey: process.env.NAMS_API_KEY || undefined,
-    workspaceId: process.env.WORKSPACE_ID || undefined,
-    endpoint: process.env.NAMS_ENDPOINT || undefined,
-    maxMemories: Number(process.env.NAMS_MAX_MEMORIES ?? 8),
-  }),
+  provider: withReasoningTrace(
+    namsMemory({ ...connection, maxMemories: Number(process.env.NAMS_MAX_MEMORIES ?? 8) }),
+    { ...connection, enabled: process.env.NAMS_REASONING?.trim().toLowerCase() !== "off" },
+  ),
   scope: byPrincipal,
 });
 ```
@@ -323,11 +332,12 @@ flowchart TB
         model["2 · model loop<br/>may call nams__search, nams__remember"]
         capture["3 · capture<br/>turn.completed"]
         recall -- "one memory message,<br/>user role" --> model
-        model -- "user message +<br/>final answer" --> capture
+        model -- "user message, final answer,<br/>reasoning steps + tool calls" --> capture
     end
 
     subgraph nams["NAMS · everything stored under userId = memory.scope.key"]
         convs[("conversations<br/>one per eve session,<br/>plus one for notes")]
+        steps[("reasoning steps<br/>+ tool calls, per conversation")]
         summaries[("summaries<br/>of earlier sessions")]
         entities[("entities<br/>this user's knowledge graph")]
         convs -. "extracted by NAMS,<br/>server-side" .-> summaries
@@ -337,16 +347,21 @@ flowchart TB
     recall -- "reads notes, matching earlier messages,<br/>summaries and entities" --> nams
     model -- "nams__search reads,<br/>nams__remember adds a note" --> nams
     capture -- "adds the turn to this<br/>session's conversation" --> convs
+    capture -- "withReasoningTrace" --> steps
 ```
 
 | Phase | When | What the provider does |
 |---|---|---|
 | Recall | before every turn, and after compaction | one memory message: notes, summaries of earlier sessions, earlier messages matching the user's words, and matching entities from the user's knowledge graph |
-| Capture | after every turn | writes the user's message and the final answer (not the tool calls) to this session's NAMS conversation |
+| Capture | after every turn | writes the user's message and the final answer to this session's NAMS conversation |
+| Reasoning trace | after capture | `withReasoningTrace` (`agent/lib/nams-reasoning.ts`) records one reasoning step per model call on that conversation, with the tools it called and their results; the final answer is a `direct response` step |
 | Tools | during the turn | `nams__search` (earlier sessions, notes and the user's entities) and `nams__remember` (save a note) |
 
-There are no memory hooks, no dynamic instructions, and no other NAMS calls
-anywhere in the project. That file is the whole integration.
+There are no memory hooks and no dynamic instructions. Besides the package, the
+only NAMS calls are in `agent/lib/nams-reasoning.ts`, which the slot wraps
+around the provider because `namsMemory()` saves messages but not reasoning.
+Observations and reflections are written by NAMS itself from the saved
+messages, server-side and not immediately, so nothing in the agent writes them.
 
 Things to know if you copy this:
 
@@ -369,6 +384,10 @@ Things to know if you copy this:
 ## How the agent reaches data
 
 Three research surfaces, all read-only, plus the memory slot's two tools.
+eve's own default tools (`bash`, file tools, `web_fetch`, `web_search`) are
+switched off in `agent/agent.ts` with `defaultTools: false`, so nothing else is
+reachable. Without that, a question like "what's new on Neo4j?" goes to the
+live web instead of the graph.
 
 | Surface | Where it comes from | Tools |
 |---|---|---|
@@ -511,6 +530,28 @@ The slot's options in `agent/memory/nams.ts` decide:
 | `crossSessionLimit` | `3` | earlier sessions read per recall; `0` turns it off |
 | `maxMemories` | `8` (`NAMS_MAX_MEMORIES`) | most lines in the recalled record |
 | `workspaceGraph` | `false` | also recall the workspace's shared entities, the ones that belong to no user — only for a single-tenant workspace |
+
+`NAMS_REASONING=off` turns off the reasoning trace that `withReasoningTrace`
+adds; the slot itself is unchanged.
+
+### Type the memory graph with an ontology
+
+By default NAMS extracts entities with its generic `NAMS Default` ontology
+(Person, Organization, Concept, …). `scripts/ontology.ts` gives the workspace
+this domain's nouns and verbs instead: `Company`, `Person`, `FundingRound` and
+`Sector`, joined by `INVESTED_IN`, `CEO_OF`, `RAISED`, `OPERATES_IN`, `COVERS`
+and `TRACKS`.
+
+```bash
+npm run ontology -- --dry-run            # print it and what's active now; writes nothing
+npm run ontology                         # create (or revise) it and activate it
+npm run ontology -- --restore-default    # back to NAMS Default
+```
+
+The ontology belongs to the whole workspace, not to this agent, and applies only
+to extraction from then on: entities extracted earlier keep their types. It is
+`strict` by default, so extraction keeps only the declared types; pass
+`--permissive` to keep others too. Nothing in the agent changes.
 
 ### Swap the memory backend
 

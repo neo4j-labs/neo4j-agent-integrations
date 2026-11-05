@@ -14,8 +14,8 @@ export async function GET(req: Request) {
 
   if (!userId) return json({ error: 'Missing userId' }, 400);
 
-  const apiKey = process.env.MEMORY_API_KEY ?? '';
-  if (!apiKey) return json({ error: 'MEMORY_API_KEY not set' }, 503);
+  const apiKey = process.env.NAMS_API_KEY ?? '';
+  if (!apiKey) return json({ error: 'NAMS_API_KEY not set' }, 503);
 
   const config = {
     apiKey,

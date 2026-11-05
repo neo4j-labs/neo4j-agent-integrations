@@ -81,8 +81,8 @@ export async function POST(req: Request) {
     return json({ error: `Unknown NAMS_MODE "${mode}". Use ${CHAT_MODES.join(', ')}.` }, 503);
   }
   const memoryOn = mode !== 'off';
-  const apiKey = process.env.MEMORY_API_KEY ?? '';
-  if (memoryOn && !apiKey) return json({ error: 'MEMORY_API_KEY is not set. Check your .env.local file.' }, 503);
+  const apiKey = process.env.NAMS_API_KEY ?? '';
+  if (memoryOn && !apiKey) return json({ error: 'NAMS_API_KEY is not set. Check your .env.local file.' }, 503);
 
   const mcpEnabled = isMcpConfigured();
   const useExtraction = mode === 'tools' && Boolean(extractionModel);
@@ -207,8 +207,7 @@ export async function POST(req: Request) {
           if (usage) console.log(`[chat]   tokens in=${usage.inputTokens} out=${usage.outputTokens}`);
           if (text) console.log(`[chat]   response="${trim(text)}"`);
 
-          // Provider and middleware save the turn inside the model wrapper; the other two save it here.
-          // Save before the trace so a new user gets one conversation, not two.
+          // Hooks and tools modes save the turn here (before the trace, so a new user gets one conversation).
           if (session && mode === 'hooks') await session.onFinish({ prompt: userText })({ text, responseMessages });
           // Text only: tools-mode tool results are memory hits, and saving those again degrades recall.
           if (session && mode === 'tools') await session.onFinish({ prompt: userText })({ text });

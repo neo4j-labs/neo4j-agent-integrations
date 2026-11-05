@@ -80,7 +80,7 @@ beforeEach(() => {
   holder.finalText = 'answer';
   holder.finalFinishReason = 'stop';
 
-  process.env.MEMORY_API_KEY = 'test-key';
+  process.env.NAMS_API_KEY = 'test-key';
   delete process.env.MEMORY_WORKSPACE_ID;
   delete process.env.NAMS_MODE;
 
@@ -122,8 +122,8 @@ describe('POST /api/chat', () => {
     expect(holder.agentCtorArgs).toHaveLength(0);
   });
 
-  it('returns 503 when MEMORY_API_KEY is not set', async () => {
-    delete process.env.MEMORY_API_KEY;
+  it('returns 503 when NAMS_API_KEY is not set', async () => {
+    delete process.env.NAMS_API_KEY;
 
     const res = await POST(chatRequest({ message: userMessage('hi') }));
 
@@ -324,7 +324,7 @@ describe('POST /api/chat', () => {
 
   it('off mode uses the plain model with MCP tools and never touches NAMS, so it needs no key', async () => {
     process.env.NAMS_MODE = 'off';
-    delete process.env.MEMORY_API_KEY;
+    delete process.env.NAMS_API_KEY;
     holder.isMcpConfigured.mockReturnValue(true);
     holder.getNeo4jMcpTools.mockResolvedValue({ tools: { 'read-cypher': {} }, close: vi.fn() });
 

@@ -1,38 +1,5 @@
-/**
- * 3-memory-agent.mjs — Neo4j Agent with @neo4j-labs/agent-memory (low-level client)
- *
- * The hand-rolled version of memory: you own the before/after hooks. For the
- * packaged equivalent — the same memory wired in as a provider, middleware, or
- * a pair of tools — see 4-nams-provider-agent.mjs, which is what the Next.js
- * demo in ../vercel_Nams_demo runs.
- *
- * Demonstrates persistent memory using the official Neo4j Agent Memory Service
- * (NAMS) via the @neo4j-labs/agent-memory TypeScript client. Memory is split into:
- *
- *   Short-term  — conversation messages, reflections, observations (scoped to a
- *                 conversation session via shortTerm.createConversation)
- *   Long-term   — named entities (facts, topics, research findings) stored
- *                 persistently and searchable via longTerm.searchEntities
- *
- * Pattern:
- *   BEFORE query — retrieve conversation context + relevant long-term entities,
- *                  inject into system prompt
- *   AFTER  query — save user + assistant messages to short-term memory; save
- *                  key findings as long-term entities
- *
- * The two-turn demo shows memory in action:
- *   Turn 1 — establishes research context (Google analysis)
- *   Turn 2 — follow-up; injected context lets the agent know which company was
- *             discussed without being told again.
- *
- * Prerequisites:
- *   - MCP_URL (hosted) or MCP_PORT (local neo4j-mcp-server), plus MCP auth vars
- *   - MEMORY_API_KEY set (get a free key at memory.neo4jlabs.com)
- *   - All other env vars set (copy .env.example → .env)
- *
- * Run:
- *   node 3-memory-agent.mjs
- */
+// Memory by hand with @neo4j-labs/agent-memory: load context before each answer, save after.
+// Run: node 3-memory-agent.mjs (needs NAMS_API_KEY and the MCP_* vars in .env)
 
 // Load .env if there is one. Variables already set in the shell win.
 try { process.loadEnvFile(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
@@ -43,23 +10,20 @@ import { getModel } from './providers.mjs';
 import { getMcpTools, isMcpConfigured, explainMcpError } from './mcp.mjs';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const MEMORY_API_KEY = process.env.MEMORY_API_KEY;
+const NAMS_API_KEY = process.env.NAMS_API_KEY;
 const MEMORY_WORKSPACE_ID = process.env.MEMORY_WORKSPACE_ID;
 const MEMORY_ENDPOINT = process.env.MEMORY_ENDPOINT; // optional: override default NAMS endpoint
 const DEMO_USER_ID   = process.env.DEMO_USER_ID || 'vercel-neo4j-notebook-agent';
 
-if (!MEMORY_API_KEY) {
-  console.error('ERROR: MEMORY_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
+if (!NAMS_API_KEY) {
+  console.error('ERROR: NAMS_API_KEY is not set. Get a free key at https://memory.neo4jlabs.com');
   process.exit(1);
 }
 
 // ── NAMS memory client ────────────────────────────────────────────────────────
-// workspaceId belongs on the client — it is sent as the X-Workspace-Id header on
-// every request. Passing it to createConversation() does nothing: that call only
-// accepts { userId, metadata }. Leave MEMORY_WORKSPACE_ID unset for the default
-// workspace attached to the API key.
+// workspaceId goes on the client; unset = the key's own workspace.
 const memoryClient = new MemoryClient({
-  apiKey: MEMORY_API_KEY,
+  apiKey: NAMS_API_KEY,
   ...(MEMORY_WORKSPACE_ID ? { workspaceId: MEMORY_WORKSPACE_ID } : {}),
   ...(MEMORY_ENDPOINT     ? { endpoint:    MEMORY_ENDPOINT }     : {}),
 });
