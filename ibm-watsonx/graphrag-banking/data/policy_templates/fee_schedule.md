@@ -1,0 +1,39 @@
+# Fee Schedule
+
+Effective ${pol_fees_effective_date}. This schedule lists the fees for deposit accounts. A fee is charged only on products it applies to, and some products waive it. The product terms are in Account Products and Tiers.
+
+## Monthly maintenance fees
+
+- ${chk_std_name}: ${chk_std_monthly_fee} per month.
+- ${chk_prem_name}: ${chk_prem_monthly_fee} per month.
+- ${sav_std_name}: ${sav_std_monthly_fee} per month.
+
+Each product's waiver conditions are in Account Products and Tiers.
+
+## Wire transfer fees
+
+Rule code: FEE-WIRE-OUT
+Rule code: FEE-WIRE-IN
+
+- Outgoing domestic wire: ${fee_wire_out_amount} per wire.
+- Incoming wire: ${fee_wire_in_amount} per wire.
+
+The outgoing wire fee is charged when the wire is sent. ${chk_prem_name} accounts are not charged either wire fee.
+
+## Returned wire fee
+
+Rule code: FEE-WIRE-RETURN
+
+When the receiving bank returns an outgoing wire, for example because the beneficiary account number is wrong or the account is closed, we charge a returned-wire fee of ${fee_wire_return_amount}. The returned funds are credited back to your account.
+
+The returned-wire fee applies only to wires that were sent and then returned. It is not charged for a wire that is held for review or cancelled before it is sent. ${chk_prem_name} accounts are not charged the returned-wire fee.
+
+## Returned deposited item fee
+
+Rule code: FEE-DEPOSIT-RETURN
+
+If a check you deposit is returned unpaid by the paying bank, we charge ${fee_deposit_return_amount} and reverse the deposit. This fee applies to all deposit accounts.
+
+## Overdraft fees
+
+Overdraft fees and Overdraft Protection transfer fees are described in the Overdraft Policy.

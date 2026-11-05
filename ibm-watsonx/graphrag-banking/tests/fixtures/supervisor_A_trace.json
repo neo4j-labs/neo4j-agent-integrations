@@ -1,0 +1,29 @@
+[
+ {
+  "id": "b5c820fdadb48aed",
+  "name": "POST /orchestrate/runs",
+  "startTime": "2026-10-19T23:06:25.904Z",
+  "output": {
+   "message": "not a collaborator answer"
+  },
+  "metadata": {
+   "attributes": {}
+  }
+ },
+ {
+  "id": "36ee2e6738f9afd0",
+  "name": "collaborator",
+  "startTime": "2026-10-19T23:06:27.000Z",
+  "output": {
+   "thread_id": "92284e08-f932-49fa-a324-9abad14583b3",
+   "message": "Your wire to **Acme Corp** on **October 7** for **$5,000** is not a failure, it is being **held for review**.  \n\n**Why it’s held**  \nThe bank’s *Payment Screening and Compliance Review* policy says that the first outgoing wire to a new payee that is over **$3,000** is placed on hold for a standard compliance review. The review usually finishes within one business day. While a wire is held, it is not considered sent, so it has not failed and no “returned‑wire” fee applies.\n\n**Fees**  \nThe *Fee Schedule* policy lists two possible wire fees:\n\n* **Outgoing wire fee – $30** – waived for Premium Checking accounts.  \n* **Returned‑wire fee – $35** – waived for Premium Checking accounts and not charged for wires that are held for review.\n\nBecause your account is a **Premium Checking** product, the outgoing wire fee is already waived, and the held status means no returned‑wire fee will be charged.  \n\n**Bottom line**  \n- The wire is on hold, not failed.  \n- You will **not be charged any penalty or wire fee** for this transaction.  \n\nThe hold should be cleared by the next business day, after which the wire will be sent to Acme Corp. If you need the payment to go through sooner, you could contact the bank to request an expedited review, but there is no additional cost for doing so."
+  },
+  "metadata": {
+   "attributes": {
+    "collaborator.name": "banking_support",
+    "collaborator.id": "7c8842e1-058e-4d6b-b3d3-c3656bd6f9e3",
+    "agent.is_collaborator": "true"
+   }
+  }
+ }
+]

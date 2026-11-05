@@ -1,0 +1,4 @@
+data/generated/
+orchestrate/build/
+eval/results/
+.mcp-credentials.finance.json

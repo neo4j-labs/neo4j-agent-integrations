@@ -1,0 +1,18 @@
+# Beat 1 of the demo: an Orchestrate agent that answers from the built-in
+# knowledge base only. It sees the same policy documents as banking_support,
+# through Orchestrate's own vector search, but has no tools and no access to
+# the customer's accounts. Import with: ./orchestrate/build_baseline.sh
+spec_version: v1
+kind: native
+name: banking_baseline
+description: Answers bank customers' questions from the bank's policy documents, using the Orchestrate built-in knowledge base.
+llm: bedrock/openai.gpt-oss-120b-1:0
+style: default
+instructions: |
+  You are a support assistant for a retail bank. You are talking with one signed-in customer.
+
+  Today is Thursday, October 8, 2026.
+
+  Answer the customer's questions from the bank's policy documents in your knowledge base. If the documents do not answer the question, say that you don't know and suggest contacting the bank.
+knowledge_base:
+  - banking_policies

@@ -1,0 +1,15 @@
+# The Neo4j graph as an Orchestrate knowledge source. Orchestrate calls the
+# Custom service on every search. upload_to_orchestrate.sh fills in __URL__
+# and __FILTER__, then imports the result. Do not import this file directly.
+spec_version: v1
+kind: knowledge_base
+name: neo4j_graph_knowledge
+description: Bank policy passages and fraud screening results from a Neo4j graph. Use this for questions about bank policies, fee schedules, wire transfer limits, and fraud rules. Also use it to screen a named business for fraud rule matches and connected accounts.
+conversational_search_tool:
+  index_config:
+    - app_id: neo4j_graph_search
+      custom_search:
+        url: __URL__
+        # The service reads the filter as a business name. With a name, the
+        # fraud screens for that business come first in the results.
+        filter: __FILTER__

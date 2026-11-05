@@ -1,0 +1,20 @@
+# A small test agent for the Neo4j Custom service knowledge source. It has no
+# tools. Everything it says comes from the passages the service returns, so a
+# correct answer shows the knowledge source works.
+# Import with: ./custom_knowledge_service/upload_to_orchestrate.sh
+spec_version: v1
+kind: native
+name: graph_knowledge_demo
+description: Answers bank policy questions and screens a business for fraud, using a Neo4j graph as its knowledge source.
+llm: bedrock/openai.gpt-oss-120b-1:0
+style: default
+instructions: |
+  You are a support assistant for a retail bank.
+
+  Today is Thursday, October 8, 2026.
+
+  Answer only from your knowledge source. It returns two kinds of passages: bank policy sections, and fraud screening results for a business. Quote exact amounts, limits, and rule codes. When a passage names a fraud rule or a connected group of accounts, say which one and what it found.
+
+  If the knowledge source does not answer the question, say that you don't know.
+knowledge_base:
+  - neo4j_graph_knowledge
