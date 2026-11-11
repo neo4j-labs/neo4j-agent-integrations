@@ -35,7 +35,6 @@ const LIMITS = {
   query: 500,
   entities: 10,
   traced: 5,
-  /** Conversations whose owner is looked up one by one, per turn. */
   lookups: 20,
   sessions: 3,
   messagesPerSession: 4,
@@ -48,7 +47,6 @@ const LIMITS = {
 type Scope = { scopeKey: string; slot: string; sessionId: string };
 type ToolDefinition = MemoryToolSet[string];
 
-/** Wraps a NAMS eve provider so a named entity brings back the older sessions that mention it. */
 export function withTraceBack(provider: MemoryProvider, options: TraceBackOptions = {}): MemoryProvider {
   const enabled = options.enabled !== false;
   const recallWindow = options.recallWindow ?? 3;
@@ -62,7 +60,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
     return client;
   };
 
-  /** conversationId → owner check result, so an old session is looked up once. */
   const owners = new Map<string, Conversation | null>();
   const recalls = new Map<string, MemoryRecallResult>();
 
@@ -82,7 +79,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
     }
   }
 
-  /** Older sessions of this user that mention an entity the text names. */
   async function traceBack(scope: Scope, text: string, skipRecent: number): Promise<TracedSession[]> {
     const query = text.replace(/\s+/g, " ").trim().slice(0, LIMITS.query);
     if (!query) return [];
@@ -97,7 +93,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
       nams.shortTerm.listConversations({ userId: scope.scopeKey, limit: LIMITS.listed }),
     ]);
 
-    // This user's sessions, newest first. The ones the provider already reads are skipped.
     const ownSessions = listed
       .filter((c) => isOwnSession(c, scope))
       .sort((a, b) => lastActive(b) - lastActive(a));
@@ -106,7 +101,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
       ownSessions.filter((c) => c.metadata?.session !== scope.sessionId).slice(0, skipRecent).map((c) => c.id),
     );
 
-    // conversationId → the entities it mentions and the message ids that mention them.
     const hits = new Map<string, { entities: Set<string>; messageIds: Set<string>; contents: string[] }>();
     let lookups = 0;
     for (const [i, history] of histories.entries()) {
@@ -115,7 +109,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
         if (!id || recent.has(id)) continue;
         let conversation = known.get(id) ?? (owners.has(id) ? owners.get(id) ?? null : undefined);
         if (conversation === undefined) {
-          // Older than the listed page, or another user's: check who owns it.
           if (lookups >= LIMITS.lookups) continue;
           lookups++;
           conversation = await ownerOf(nams, id);
@@ -131,7 +124,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
       }
     }
 
-    // The sessions naming the most of the user's entities first, then the newest.
     const ranked = [...hits.entries()]
       .sort(([a, x], [b, y]) => y.entities.size - x.entities.size || lastActive(known.get(b)!) - lastActive(known.get(a)!))
       .slice(0, LIMITS.sessions);
@@ -147,7 +139,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
     }));
   }
 
-  /** The mentioning messages, each user message with the reply that followed it. */
   async function excerpt(nams: MemoryClient, id: string, messageIds: Set<string>, contents: string[]): Promise<TracedMessage[]> {
     const read = await nams.shortTerm.getConversation(id, { limit: LIMITS.read }).catch((error) => {
       console.warn(`[nams] trace-back: could not read conversation ${id}, using mention text`, error);
@@ -163,13 +154,11 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
     }
     const out: TracedMessage[] = [...picked].sort((a, b) => a - b)
       .map((i) => ({ role: messages[i].role, content: messages[i].content }));
-    // Mentions outside the first page of the conversation keep their own text, unlabelled.
     if (out.length === 0) out.push(...contents.map((content) => ({ role: "message", content })));
     return unique(out, (m) => m.content.trim()).slice(0, LIMITS.messagesPerSession);
   }
 
   async function recall(ctx: Parameters<MemoryProvider["recall"]["turn.started"]>[0]): Promise<MemoryRecallResult> {
-    // eve can replay a recall operation; answer it the same way.
     if (recalls.has(ctx.operationId)) return recalls.get(ctx.operationId);
 
     const clean = withoutFrameworkInput(ctx);
@@ -227,7 +216,6 @@ export function withTraceBack(provider: MemoryProvider, options: TraceBackOption
   });
 }
 
-/** The recall message: older sessions quoted as data, grouped by session. */
 export function format(sessions: readonly TracedSession[]): string {
   const blocks = sessions.map((s) => [
     `Older session${s.lastActive ? ` (last active ${s.lastActive})` : ""}, mentions ${s.entities.join(", ")}:`,
@@ -242,7 +230,6 @@ export function format(sessions: readonly TracedSession[]): string {
   ].join("\n");
 }
 
-/** Whether the text names the entity: its whole name as words, case and punctuation ignored. */
 export function names(text: string, entity: string): boolean {
   const name = normalize(entity);
   if (name.replace(/ /g, "").length < 3) return false;
@@ -276,7 +263,6 @@ function scopeOf(ctx: MemoryOperationContext): Scope {
   return { scopeKey: ctx.memory.scope.key, slot: ctx.memory.slot, sessionId: ctx.session.id };
 }
 
-/** A session conversation namsMemory() wrote for this user and slot (not the notes one). */
 function isOwnSession(c: Conversation, scope: Scope): boolean {
   return c.userId === scope.scopeKey &&
     c.metadata?.source === SOURCE &&
@@ -316,7 +302,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Adds to a memo, evicting the oldest entry past LIMITS.memo. */
 function remember<K, V>(memo: Map<K, V>, key: K, value: V): void {
   memo.set(key, value);
   if (memo.size > LIMITS.memo) memo.delete(memo.keys().next().value as K);

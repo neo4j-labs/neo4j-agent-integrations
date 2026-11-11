@@ -1,4 +1,3 @@
-// `npm run ontology`: activates the Industry Research ontology on the NAMS workspace.
 import {
   MemoryClient,
   NotSupportedError,
@@ -10,20 +9,16 @@ import { join } from "node:path";
 try {
   process.loadEnvFile(join(import.meta.dirname, "..", ".env"));
 } catch (err) {
-  // No .env is fine: use the shell environment.
   if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has("--dry-run");
-// strict: extraction produces only the types declared below.
 const validationMode = args.has("--permissive") ? "permissive" : "strict";
 
 const DOMAIN_ID = "industry-research";
-/** The system ontology a workspace starts with. */
 const DEFAULT_ID = "nams-default";
 
-/** The research domain's nouns (entity types) and verbs (relationships). */
 const ONTOLOGY: OntologyDocument = {
   domain: {
     id: DOMAIN_ID,
@@ -42,7 +37,6 @@ const ONTOLOGY: OntologyDocument = {
     { type: "CEO_OF", source: "Person", target: "Company" },
     { type: "RAISED", source: "Company", target: "FundingRound" },
     { type: "OPERATES_IN", source: "Company", target: "Sector" },
-    // The analyst using the agent: "I cover the graph database sector, and I track Neo4j."
     { type: "COVERS", source: "Person", target: "Sector" },
     { type: "TRACKS", source: "Person", target: "Company" },
   ],
@@ -60,7 +54,6 @@ const client = new MemoryClient({
   workspaceId: process.env.WORKSPACE_ID?.trim() || undefined,
 });
 
-/** One line naming the workspace's active ontology, or saying there is none. */
 async function describeActive(): Promise<string> {
   try {
     const active = await client.ontology.getActive();

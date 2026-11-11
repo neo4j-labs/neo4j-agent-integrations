@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// `npm run chat`: starts the local MCP server (if it isn't running), then `eve dev`.
-// Extra args go to eve, e.g. `npm run chat -- --tools full`.
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +16,6 @@ const MCP_URL = process.env.INVESTMENTS_MCP_URL?.trim() || "http://localhost:810
 const dim = (text) => `\x1b[2m${text}\x1b[0m`;
 const yellow = (text) => `\x1b[33m${text}\x1b[0m`;
 
-/** Is the MCP server up? Any reply below 500 counts. */
 async function reachable(timeoutMs = 1000) {
   try {
     const response = await fetch(MCP_URL, {
@@ -44,7 +41,6 @@ if (await reachable()) {
     { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
   );
 
-  // Keep server logs out of the chat UI; show them only if it dies.
   let stderr = "";
   mcp.stderr.on("data", (chunk) => {
     stderr += chunk;
@@ -59,7 +55,6 @@ if (await reachable()) {
     if (code) console.warn(yellow(`\n  MCP server exited (${code}):\n${stderr.trim()}`));
   });
 
-  // The agent works without it, so a timeout only warns.
   const deadline = Date.now() + 8000;
   let up = false;
   while (Date.now() < deadline) {
@@ -89,7 +84,6 @@ const eve = spawn(
   { cwd: root, stdio: "inherit" },
 );
 
-// Let eve handle Ctrl+C; stop the MCP server once eve exits.
 process.on("SIGINT", () => {});
 process.on("SIGTERM", () => {});
 

@@ -32,7 +32,6 @@ export default defineMemory({
       enabled: process.env.NAMS_REASONING?.trim().toLowerCase() !== "off",
     },
   ),
-  // eve dev hashes a new snapshot path into the default namespace on every run; pin it so memory survives restarts.
   namespace: (ctx) => defaultNamespace({ ...ctx, appRoot: "industry-research-agent" }),
   scope: byPrincipal,
 });

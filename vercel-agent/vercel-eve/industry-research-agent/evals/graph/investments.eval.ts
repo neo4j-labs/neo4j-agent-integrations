@@ -1,6 +1,5 @@
 import { defineEval } from "eve/evals";
 
-// Needs the local MCP server running (`npm run mcp` or `npm run chat`).
 export default defineEval({
   description: "A 'who invested in X' question goes to the local investments MCP server.",
   tags: ["graph"],

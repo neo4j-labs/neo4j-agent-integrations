@@ -31,7 +31,6 @@ interface StepRecord {
 const LIMITS = { task: 500, reasoning: 2000, result: 500, toolResult: 2000, listed: 200, memo: 500 };
 const DEFAULT_ENDPOINT = "https://memory.neo4jlabs.com/v1";
 
-/** Wraps the NAMS provider to save each turn as a reasoning trace. */
 export function withReasoningTrace(provider: MemoryProvider, options: ReasoningTraceOptions = {}): MemoryProvider {
   if (options.enabled === false) return provider;
 
@@ -46,7 +45,6 @@ export function withReasoningTrace(provider: MemoryProvider, options: ReasoningT
     return client;
   };
 
-  /** The NAMS conversation for this eve session. */
   async function sessionConversation(nams: MemoryClient, ctx: MemoryTurnCompletedContext): Promise<string | undefined> {
     const userId = ctx.memory.scope.key;
     const key = JSON.stringify([userId, ctx.memory.slot, ctx.session.id]);
@@ -76,7 +74,6 @@ export function withReasoningTrace(provider: MemoryProvider, options: ReasoningT
       return;
     }
 
-    // One trace per turn (shows in the dashboard Reasoning panel).
     const trace = await rest<{ id: string }>("/reasoning/traces", {
       conversationId,
       task: cap(userText(ctx.turn.input) || "eve turn", LIMITS.task),
@@ -91,7 +88,6 @@ export function withReasoningTrace(provider: MemoryProvider, options: ReasoningT
         result: step.result,
       });
       for (const call of step.toolCalls) {
-        // NAMS drops non-string results.
         await nams.reasoning.recordToolCall(saved.id, call.toolName, call.args, {
           result: call.result,
           status: call.failed ? "failure" : "success",
@@ -107,7 +103,6 @@ export function withReasoningTrace(provider: MemoryProvider, options: ReasoningT
     remember(recorded, ctx.operationId);
   }
 
-  // SDK 0.6.0 cannot create traces on hosted NAMS, so call REST directly.
   async function rest<T = unknown>(path: string, body: unknown): Promise<T> {
     const apiKey = options.apiKey ?? process.env.NAMS_API_KEY;
     const res = await fetch(`${options.endpoint ?? DEFAULT_ENDPOINT}${path}`, {
@@ -132,7 +127,6 @@ export function withReasoningTrace(provider: MemoryProvider, options: ReasoningT
         ? { "compaction.requested": provider.capture["compaction.requested"] }
         : {}),
       async "turn.completed"(ctx) {
-        // Provider capture first: it creates the conversation.
         await capture?.(ctx);
         try {
           await record(ctx);
@@ -191,7 +185,6 @@ export function turnSteps(messages: readonly ModelMessage[]): StepRecord[] {
         reasoning || text || `Step ${steps.length + 1}${toolNames ? ` — ${toolNames}` : ""}`,
         LIMITS.reasoning,
       ),
-      // nams-ai-provider recalls "direct response" steps.
       actionTaken: toolNames || "direct response",
       result: toolCalls.length > 0
         ? cap(toolCalls.map((c) => `${c.toolName}: ${c.failed ? "failed" : c.result ?? "(no output)"}`).join("; "), LIMITS.result)
@@ -202,7 +195,6 @@ export function turnSteps(messages: readonly ModelMessage[]): StepRecord[] {
   return steps;
 }
 
-/** User text this turn, minus eve framework messages. */
 function userText(input: readonly unknown[]): string {
   return input.flatMap((m) => {
     const { role, kind, content } = m as { role?: string; kind?: unknown; content?: unknown };
@@ -235,7 +227,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Bounded memo: drops the oldest entry. */
 function remember<K>(memo: Map<K, string> | Set<K>, key: K, value?: string): void {
   if (memo instanceof Map) memo.set(key, value as string);
   else memo.add(key);

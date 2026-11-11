@@ -6,6 +6,5 @@ node_modules
 .nitro
 dist
 
-# Local-only
 mcp-server
 scripts

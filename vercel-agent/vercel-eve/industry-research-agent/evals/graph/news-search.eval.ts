@@ -1,6 +1,5 @@
 import { defineEval } from "eve/evals";
 
-// Only checks the tool was called; news coverage varies by company.
 export default defineEval({
   description: "A company question is answered from the news graph, not from model recall.",
   tags: ["graph"],

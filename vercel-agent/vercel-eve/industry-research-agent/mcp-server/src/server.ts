@@ -1,6 +1,3 @@
-// Local MCP server with one tool: get_investments.
-// `npm run mcp` serves it at localhost:8100/mcp. Set MCP_TRANSPORT=stdio for desktop apps.
-// Logs go to stderr, because stdio mode uses stdout for messages.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -8,7 +5,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { closeDriver, describeTarget, getInvestments } from "./neo4j.js";
 
-// eve doesn't start this, so load .env ourselves.
 try {
   process.loadEnvFile?.();
 } catch (err) {
@@ -70,11 +66,9 @@ async function main() {
   }
 }
 
-// No sessions: each request gets a fresh MCP server.
 async function handleHttp(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-  // scripts/chat.mjs sends HEAD to check the server is up.
   if (req.method === "HEAD") {
     res.writeHead(url.pathname === PATH ? 200 : 404).end();
     return;

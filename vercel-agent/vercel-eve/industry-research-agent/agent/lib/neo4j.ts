@@ -1,7 +1,5 @@
 import neo4j, { type Driver } from "neo4j-driver";
 
-// Hosted Neo4j MCP server, used by connections/neo4j-graph.ts
-
 const DEFAULT_URL = "https://neo4j-mcp-official-1008050579172.us-central1.run.app/mcp";
 
 export const MCP_URL = process.env.MCP_URL ?? DEFAULT_URL;
@@ -19,7 +17,6 @@ export function neo4jMcpHeaders(): Record<string, string> {
 export const INVESTMENTS_MCP_URL =
   process.env.INVESTMENTS_MCP_URL?.trim() || "http://localhost:8100/mcp";
 
-
 const BOLT_URI = process.env.NEO4J_URI ?? "neo4j+s://demo.neo4jlabs.com:7687";
 const BOLT_USERNAME = process.env.NEO4J_USERNAME ?? "companies";
 const BOLT_PASSWORD = process.env.NEO4J_PASSWORD ?? "companies";
@@ -35,7 +32,6 @@ function getDriver(): Driver {
   return driver;
 }
 
-/** Run a read-only Cypher query and return plain JSON rows. */
 export async function readQuery<T = Record<string, unknown>>(
   cypher: string,
   params: Record<string, unknown> = {},
@@ -47,7 +43,6 @@ export async function readQuery<T = Record<string, unknown>>(
   return records.map((record) => toPlain(record.toObject()) as T);
 }
 
-/** Turn Neo4j values (big ints, dates) into plain JSON. */
 function toPlain(value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (neo4j.isInt(value)) {
@@ -56,7 +51,6 @@ function toPlain(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toPlain);
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "object") {
-    // Neo4j dates and times: use their string form.
     if ("toString" in value && value.constructor?.name?.startsWith("Date")) {
       return String(value);
     }

@@ -1,5 +1,3 @@
-// `npm run traceback-check`: tests trace-back recall against live NAMS, no model.
-// Exit 0 = pass, 1 = a check failed, 2 = NAMS extraction stalled.
 import { makeClient } from "@neo4j-labs/nams-ai-provider";
 import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
 import type { MemoryProvider, MemoryRecallResult } from "eve/memory";
@@ -9,10 +7,8 @@ import { join } from "node:path";
 try {
   process.loadEnvFile(join(import.meta.dirname, "..", ".env"));
 } catch (err) {
-  // No .env is fine: use the shell environment.
   if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
-// Only trace-back is tested here.
 process.env.NAMS_REASONING = "off";
 process.env.NAMS_TRACEBACK = "on";
 
@@ -32,7 +28,6 @@ const headers: Record<string, string> = {
   ...(connection.workspaceId ? { "X-Workspace-Id": connection.workspaceId } : {}),
 };
 
-// Import after env is set: the agent's memory, plus the provider without trace-back.
 const { default: memory } = await import("../agent/memory/nams");
 const agent: MemoryProvider = memory.provider;
 const bare: MemoryProvider = namsMemory({ ...connection, maxMemories: 8 });

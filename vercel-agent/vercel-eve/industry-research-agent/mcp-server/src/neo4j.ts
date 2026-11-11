@@ -1,4 +1,3 @@
-// Has its own driver so mcp-server/ works standalone. Uses the public demo graph by default.
 import neo4j, { type Driver } from "neo4j-driver";
 
 const URI = process.env.NEO4J_URI?.trim() || "neo4j+s://demo.neo4jlabs.com:7687";
@@ -31,7 +30,6 @@ WHERE o.name = $company
 RETURN i.id AS id, i.name AS name, head(labels(i)) AS type
 `;
 
-/** Returns errors as text, so the model can try another name. */
 export async function getInvestments(company: string): Promise<string> {
   try {
     const { records } = await getDriver().executeQuery(
@@ -52,7 +50,6 @@ export async function getInvestments(company: string): Promise<string> {
   }
 }
 
-/** Turn Neo4j values (big ints, dates) into plain JSON. */
 function toPlain(value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (neo4j.isInt(value)) {
