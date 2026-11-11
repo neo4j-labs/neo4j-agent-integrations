@@ -163,6 +163,6 @@ try {
   await ask("I am conducting a competitive analysis of 'Google'. Tell me about their presence in the knowledge graph.");
   await ask('Based on our earlier conversation, which company was I researching, and what did you find?');
 } finally {
-  if (namsResult) await namsResult.close().catch(() => {});
-  if (mcpResult)  await mcpResult.close().catch(() => {});
+  if (namsResult) await namsResult.close().catch((err) => console.warn('Failed to close NAMS MCP:', err));
+  if (mcpResult)  await mcpResult.close().catch((err) => console.warn('Failed to close Neo4j MCP:', err));
 }

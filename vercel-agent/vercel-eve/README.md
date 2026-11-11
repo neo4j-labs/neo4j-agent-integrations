@@ -88,13 +88,15 @@ Read it top to bottom as one turn:
 1. The message arrives through `channels/eve.ts`, which decides who the caller
    is. eve turns that caller into the memory slot's scope.
 2. Before the model runs, the slot recalls this user's notes, summaries of their
-   earlier sessions, matching earlier messages, and matching entities from their
-   knowledge graph, and adds them as one memory message.
+   most recent sessions, matching earlier messages, and matching entities from
+   their knowledge graph, and adds them as one memory message. If the user names
+   a company or person an older session talked about, that session comes back
+   too, however old it is ([trace-back](#older-sessions-trace-back)).
 3. The model answers, calling research tools as it chooses — all read-only — and
    the slot's `nams__search` / `nams__remember` if it needs them.
 4. When the turn ends, the slot saves the exchange to NAMS.
 
-`agent/memory/nams.ts` is the **only** memory code in the project. eve runs
+`agent/memory/nams.ts` is the **only** memory slot in the project. eve runs
 recall and capture on every turn, whatever the model decides.
 [How memory works](#how-memory-works) has the details.
 
@@ -267,6 +269,8 @@ industry-research-agent/
 │   │   └── research_rules.md       query rules, loaded only when needed
 │   └── lib/                        plain modules — eve does not scan this
 │       ├── model.ts                AI Gateway or direct OpenAI
+│       ├── nams-reasoning.ts       saves each turn's reasoning steps to NAMS
+│       ├── nams-traceback.ts       brings back older sessions by entity
 │       └── neo4j.ts                MCP endpoints + the Bolt driver
 ├── mcp-server/                     a local MCP server you can edit
 │   └── src/
@@ -274,7 +278,8 @@ industry-research-agent/
 │       └── neo4j.ts                the Cypher behind it
 ├── scripts/
 │   ├── chat.mjs                    npm run chat
-│   └── ontology.ts                 npm run ontology: typed entities for the workspace
+│   ├── ontology.ts                 npm run ontology: typed entities for the workspace
+│   └── traceback-check.ts          npm run traceback-check: old-session recall, live
 └── evals/                          tests you run with npx eve eval
 ```
 
@@ -298,6 +303,7 @@ import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
 import { defineMemory } from "eve/memory";
 import { byPrincipal } from "eve/memory/scope";
 import { withReasoningTrace } from "../lib/nams-reasoning";
+import { withTraceBack } from "../lib/nams-traceback";
 
 const connection = {
   apiKey: process.env.NAMS_API_KEY || undefined,
@@ -308,7 +314,10 @@ const connection = {
 export default defineMemory({
   description: "What this user told you in earlier sessions…",
   provider: withReasoningTrace(
-    namsMemory({ ...connection, maxMemories: Number(process.env.NAMS_MAX_MEMORIES ?? 8) }),
+    withTraceBack(
+      namsMemory({ ...connection, maxMemories: Number(process.env.NAMS_MAX_MEMORIES ?? 8) }),
+      { ...connection, enabled: process.env.NAMS_TRACEBACK?.trim().toLowerCase() !== "off" },
+    ),
     { ...connection, enabled: process.env.NAMS_REASONING?.trim().toLowerCase() !== "off" },
   ),
   scope: byPrincipal,
@@ -331,7 +340,7 @@ flowchart TB
         recall["1 · recall<br/>turn.started, and after compaction"]
         model["2 · model loop<br/>may call nams__search, nams__remember"]
         capture["3 · capture<br/>turn.completed"]
-        recall -- "one memory message,<br/>user role" --> model
+        recall -- "memory message + trace-back,<br/>user role" --> model
         model -- "user message, final answer,<br/>reasoning steps + tool calls" --> capture
     end
 
@@ -345,6 +354,7 @@ flowchart TB
     end
 
     recall -- "reads notes, matching earlier messages,<br/>summaries and entities" --> nams
+    recall -- "withTraceBack: named entities →<br/>older sessions that mention them" --> entities
     model -- "nams__search reads,<br/>nams__remember adds a note" --> nams
     capture -- "adds the turn to this<br/>session's conversation" --> convs
     capture -- "withReasoningTrace" --> steps
@@ -352,14 +362,17 @@ flowchart TB
 
 | Phase | When | What the provider does |
 |---|---|---|
-| Recall | before every turn, and after compaction | one memory message: notes, summaries of earlier sessions, earlier messages matching the user's words, and matching entities from the user's knowledge graph |
+| Recall | before every turn, and after compaction | one memory message: notes, summaries of the 3 most recent earlier sessions, earlier messages from those sessions matching the user's words, and matching entities from the user's knowledge graph |
+| Trace-back | with recall | `withTraceBack` (`agent/lib/nams-traceback.ts`) finds the entities the user's words name and brings back this user's older sessions that mention them, as a second message, `<nams_traceback>` |
 | Capture | after every turn | writes the user's message and the final answer to this session's NAMS conversation |
-| Reasoning trace | after capture | `withReasoningTrace` (`agent/lib/nams-reasoning.ts`) records one reasoning step per model call on that conversation, with the tools it called and their results; the final answer is a `direct response` step |
-| Tools | during the turn | `nams__search` (earlier sessions, notes and the user's entities) and `nams__remember` (save a note) |
+| Reasoning trace | after capture | `withReasoningTrace` (`agent/lib/nams-reasoning.ts`) records the turn as one trace on that conversation, one step per model call, with the tools it called and their results; the final answer is a `direct response` step |
+| Tools | during the turn | `nams__search` (the 10 most recent earlier sessions, notes and the user's entities, plus `olderSessions` by entity from trace-back) and `nams__remember` (save a note) |
 
 There are no memory hooks and no dynamic instructions. Besides the package, the
-only NAMS calls are in `agent/lib/nams-reasoning.ts`, which the slot wraps
-around the provider because `namsMemory()` saves messages but not reasoning.
+only NAMS calls are in the two wrappers the slot puts around the provider:
+`agent/lib/nams-traceback.ts`, because `namsMemory()` reads only recent
+sessions, and `agent/lib/nams-reasoning.ts`, because it saves messages but not
+reasoning.
 Observations and reflections are written by NAMS itself from the saved
 messages, server-side and not immediately, so nothing in the agent writes them.
 
@@ -378,6 +391,40 @@ Things to know if you copy this:
   or rejected API key fails the turn.
 - **Replays are safe.** A replayed recall returns the same record; a replayed
   capture writes nothing twice.
+
+### Older sessions (trace-back)
+
+After 100 sessions, the user starts session 101 and asks about a company they
+discussed in session 65. `namsMemory()` on its own won't find it: recall reads
+only the 3 most recent sessions, and `nams__search` the 10 most recent. Its
+"this user's knowledge graph" section can't help either, because on hosted NAMS
+the entities extracted from conversations carry no user id.
+
+`withTraceBack` goes through the entities instead, before every turn:
+
+1. **Search entities with the user's words**, across the workspace.
+2. **Keep only the entities the words actually name.** Entity search returns
+   loose matches with no score (a question about one company can return
+   "travelers" and "cocoa beans"), so an entity counts only if its whole name
+   appears in what the user wrote.
+3. **Read every message that mentions them** (`getEntityHistory`).
+4. **Keep mentions in this user's own sessions**: a conversation whose `userId`
+   is the caller and that this slot wrote as an eve session, and not one of the
+   3 that recall already read. Another user's sessions never come back.
+5. **Quote them back** as a second recall message, `<nams_traceback>`: up to 3
+   sessions, the ones naming the most of the user's entities first, each
+   mention with the reply that followed it and the session's date.
+
+So in session 101, "What did we find about Halvorsen Maritime's investors?"
+brings back session 65's question and answer, however many sessions came in
+between. A question that names nothing extracted, such as "what did we talk
+about last spring?", adds nothing. `nams__search` gets the same lookup and
+returns matches under `olderSessions`. `NAMS_TRACEBACK=off` turns it off.
+
+The wrapper also removes eve's own user-role messages (the connection catalog,
+context state; eve marks them with a `kind` other than `user`) from the turn
+before the provider sees it. Without that, the catalog text was saved as the
+user's message every turn and became entities of its own.
 
 ---
 
@@ -623,12 +670,23 @@ callers get no memory at all.
 npx eve eval             # all of them
 npx eve eval memory      # just evals/memory/
 npm run typecheck
+npm run traceback-check  # older-session recall against live NAMS, no model
 ```
 
 The one that matters is `memory/cross-session-recall`. It states a fact in one
 session, asks about it in a second, separate session (each `t.send()` starts a
 new one), and checks the agent still knows. If that passes, the memory is real
 and not just a long context window.
+
+`npm run traceback-check` covers the old-session case without a model: one
+session names a company and its investors, 11 newer sessions talk about other
+things, and a new session asks about the company. It passes when the
+provider's recall alone misses the first session, trace-back brings it back,
+another user asking the same question gets nothing, and eve's connection
+catalog was not saved as a user message. It deletes everything it wrote.
+`memory/older-session-traceback` is the same story through the model, but only
+a smoke test: with 4 sessions in between, `nams__search` can still reach the
+first one on its own.
 
 `evals/graph/investments.eval.ts` needs the local MCP server running
 (`npm run mcp` in another terminal), or it fails — correctly, because the tool
@@ -757,10 +815,20 @@ Things to plan around, found while building this:
 - **Entity search can be text-only.** Message search is semantic (vector, with
   a text fallback). Entity search uses vectors only when the workspace has
   entity embeddings; otherwise it matches names and descriptions as text.
-- **Recall reads at most the caller's newest 200 conversations.** The provider
+- **Recall reads only the 3 most recent sessions; `nams__search` the 10 most
+  recent.** Older sessions come back only through trace-back, which needs the
+  user to name something NAMS extracted as an entity from that session (a
+  company, a person, a place). "What did we talk about last spring?" names
+  nothing, so it finds nothing old. Trace-back also matches names as written:
+  "Neo4j Inc." doesn't find a session that said "Neo4j".
+- **The provider lists at most the caller's newest 200 conversations.** It
   also checks the user id on every conversation and entity NAMS returns.
-- **Shared entities carry no user id.** The slot recalls only the caller's own
-  entities and leaves `workspaceGraph` off. One API key can read the whole
+  Trace-back looks up sessions older than that one at a time, up to 20 per turn.
+- **Shared entities carry no user id**, and on hosted NAMS neither do the
+  entities extracted from a user's conversations, so the provider's "this
+  user's knowledge graph" section is empty. Trace-back searches entities across
+  the workspace and keeps only mentions in the caller's own sessions. The slot
+  leaves `workspaceGraph` off. One API key can read the whole
   workspace, so hard isolation means one workspace per tenant.
 - **Provider 0.5.0 needs eve 0.84.0 or later.** eve 0.84 removed APIs that
   provider 0.4.0 used, and the package's own eve tests run on 0.84. This agent

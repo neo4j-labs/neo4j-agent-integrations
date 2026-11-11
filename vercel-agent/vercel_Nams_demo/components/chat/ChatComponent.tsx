@@ -65,7 +65,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
           prevStepCountRef.current = steps.length;
           if (newSteps.length > 0) setMsgReasoningSteps(prev => ({ ...prev, [msgId]: newSteps }));
         })
-        .catch(() => {});
+        .catch((err) => console.warn('[reasoning] failed to load steps:', err));
     },
   });
 
@@ -75,7 +75,7 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
       .then((data: { steps?: ReasoningStep[] } | null) => {
         prevStepCountRef.current = data?.steps?.length ?? 0;
       })
-      .catch(() => {});
+      .catch((err) => console.warn('[reasoning] failed to load baseline:', err));
   }, []);
 
   useEffect(() => {

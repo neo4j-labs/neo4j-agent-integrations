@@ -25,15 +25,17 @@ This file walks the folders. Start here if you're about to change something.
 |---|---|
 | `agent.ts` | Model id + reasoning effort; `defaultTools: false`. Memory is deliberately not here. |
 | `instructions.md` | Identity, the research tools, memory, how to research, how to report. |
-| `memory/nams.ts` | **All of the agent's memory.** The NAMS slot from `@neo4j-labs/nams-ai-provider/eve`, wrapped so it also saves reasoning steps. |
+| `memory/nams.ts` | **All of the agent's memory.** The NAMS slot from `@neo4j-labs/nams-ai-provider/eve`, wrapped so it also recalls older sessions by entity and saves reasoning steps. Pins the local namespace so memory survives `eve dev` restarts. |
 | `tools/search_news.ts` | Full-text search over article text, over Bolt. |
 | `connections/neo4j-graph.ts` | Neo4j's hosted MCP server, 3 read tools. |
 | `connections/neo4j-investments.ts` | The local MCP server in `../mcp-server/`, 1 tool. |
 | `skills/research_rules.md` | Query and citation rules, loaded when needed. |
 | `channels/eve.ts` | The HTTP surface, and the auth walk that yields identity. |
+| `extensions/self-modification/extension.ts` | Turns off eve dev's self-modification, which otherwise treats "always answer like X" as a request to edit `agent/`. |
 | `lib/model.ts` | AI Gateway or direct OpenAI. |
 | `lib/neo4j.ts` | Both routes to the graph: MCP endpoints, and the Bolt driver. |
 | `lib/nams-reasoning.ts` | Wraps the memory provider so each turn's reasoning steps and tool calls are saved to NAMS. |
+| `lib/nams-traceback.ts` | Wraps the memory provider so a company or person the user names brings back the older sessions that mention it, however old. |
 
 ---
 
@@ -64,19 +66,21 @@ the user* and never an instruction.
 
 `memory/nams.ts` is one eve memory slot, named `nams` after its file. It is the
 **only** place the agent reads or writes memory: no hooks, no dynamic
-instructions, and no memory MCP server. The one NAMS call outside the package is
-`lib/nams-reasoning.ts`, which the slot wraps around the provider.
+instructions, and no memory MCP server. The only NAMS calls outside the package
+are in `lib/nams-traceback.ts` and `lib/nams-reasoning.ts`, which the slot wraps
+around the provider.
 
 ```ts
 import { namsMemory } from "@neo4j-labs/nams-ai-provider/eve";
 import { defineMemory } from "eve/memory";
 import { byPrincipal } from "eve/memory/scope";
 import { withReasoningTrace } from "../lib/nams-reasoning";
+import { withTraceBack } from "../lib/nams-traceback";
 
 export default defineMemory({
   description: "What this user told you in earlier sessions…",
   provider: withReasoningTrace(
-    namsMemory({ apiKey: process.env.NAMS_API_KEY, /* … */ }),
+    withTraceBack(namsMemory({ apiKey: process.env.NAMS_API_KEY, /* … */ }), { /* … */ }),
     { apiKey: process.env.NAMS_API_KEY, /* … */ },
   ),
   scope: byPrincipal,
@@ -88,10 +92,11 @@ work:
 
 | When | What happens |
 |---|---|
-| Before each turn (and after compaction) | **Recall.** One memory message: notes saved with `remember`, the summaries NAMS wrote about this user's earlier sessions, earlier messages that match what the user just said, and matching entities from this user's knowledge graph. It enters the prompt as a user-role message attributed to the slot, never as system instructions. |
+| Before each turn (and after compaction) | **Recall.** One memory message: notes saved with `remember`, the summaries NAMS wrote about this user's earlier sessions, earlier messages that match what the user just said, and matching entities from this user's knowledge graph. The summaries and message matches come from the **3 most recent** other sessions only. It enters the prompt as a user-role message attributed to the slot, never as system instructions. |
+| Before each turn, with recall | **Trace-back.** `withTraceBack` reaches the sessions recall doesn't. It searches entities with the user's words, keeps the ones the words actually name, reads every message that mentions them (`getEntityHistory`), and keeps mentions in this user's own sessions beyond the 3 recall reads. Those messages, each with the reply that followed, become a second recall message, `<nams_traceback>`. Session 65 comes back in session 101 if the question names something session 65 talked about. Nothing is added when no older session matches. |
 | After each turn | **Capture.** The user's message and the final answer go to one NAMS conversation per eve session. NAMS extracts entities and writes summaries (observations, reflections) from it server-side, on its own schedule. |
-| After each turn, after capture | **Reasoning trace.** `withReasoningTrace` saves one reasoning step per model call to the same conversation: the model's reasoning summary (or its narration), the tools it called, and what they returned, with each tool call attached to its step. The final answer is a `direct response` step. This is what the NAMS dashboard's reasoning view shows. |
-| During the turn | **Tools.** `nams__search` searches earlier sessions, notes and this user's entities; `nams__remember` saves a note. Both are bound to the current user. |
+| After each turn, after capture | **Reasoning trace.** `withReasoningTrace` saves each turn as one trace (task = the user's message, outcome = the final answer) with one step per model call: the model's reasoning summary (or its narration), the tools it called, and what they returned, with each tool call attached to its step. The final answer is a `direct response` step. The dashboard's Reasoning panel lists these traces. |
+| During the turn | **Tools.** `nams__search` searches the 10 most recent earlier sessions, notes and this user's entities, plus older sessions by entity (`olderSessions`, from `withTraceBack`); `nams__remember` saves a note. Both are bound to the current user. |
 
 **Who the memory belongs to.** `scope: byPrincipal` keys memory to the
 authenticated caller from `ctx.session.auth.current`. eve turns that into an
@@ -105,14 +110,35 @@ conversations and entities only, and also checks the `userId` on each one that
 comes back. Entities that belong to no user (shared across the workspace) are
 left out of recall by the provider's `workspaceGraph: false` default.
 
+On hosted NAMS the entities extracted from conversations carry no `userId`, so
+the provider's "this user's knowledge graph" section stays empty. Trace-back
+searches entities across the workspace for that reason, and isolates by
+conversation instead: a mention counts only if its conversation's `userId` is
+this user and it is one of this slot's eve sessions. Another user's sessions
+never come back, even when both talked about the same company.
+
+**eve's own messages are not memory.** eve adds user-role messages of its own
+to a turn (the connection catalog, context state), marked with a `kind` other
+than `user`. `withTraceBack` removes them from the turn before the provider
+recalls or captures, so they are neither the search query nor saved as
+something the user said.
+
 **Replays and failures.** A replayed recall returns the same record and a
 replayed capture writes nothing twice. A missing or rejected API key fails the
 turn; any other NAMS error during recall is logged and the turn continues with
 a record that says memory is unavailable.
 
 Settings come from `.env`: `NAMS_API_KEY` (required), `WORKSPACE_ID`,
-`NAMS_ENDPOINT`, `NAMS_MAX_MEMORIES` (default 8), and `NAMS_REASONING`
-(`off` stops saving reasoning steps).
+`NAMS_ENDPOINT`, `NAMS_MAX_MEMORIES` (default 8), `NAMS_TRACEBACK` (`off`
+limits recall to the 3 most recent sessions), and `NAMS_REASONING` (`off`
+stops saving reasoning steps).
+
+`npm run traceback-check` proves trace-back against live NAMS without a model:
+one session names a company and its investors, 11 newer sessions talk about
+other things, then a new session asks about the company. It checks that the
+provider's recall alone misses session 1, trace-back brings it back, another
+user gets nothing, and eve's catalog message was not saved. It deletes what it
+wrote.
 
 ## `tools/` — typed tools
 
@@ -195,9 +221,10 @@ integrations actually live.
 |---|---|
 | `neo4j.ts` | both routes to the graph, plus the local MCP url. No write path on any |
 | `model.ts` | AI Gateway or a direct provider |
-| `nams-reasoning.ts` | `withReasoningTrace()`: after the provider captures a turn, finds that session's NAMS conversation and records the turn's reasoning steps and tool calls on it |
+| `nams-reasoning.ts` | `withReasoningTrace()`: after the provider captures a turn, finds that session's NAMS conversation and records the turn as a trace with its steps and tool calls |
+| `nams-traceback.ts` | `withTraceBack()`: entity-driven recall of this user's older sessions, plus `olderSessions` on `nams__search`; strips eve's framework messages from the turn |
 
-`nams-reasoning.ts` is the only file in `lib/` that touches memory.
+`nams-reasoning.ts` and `nams-traceback.ts` are the only files in `lib/` that touch memory.
 
 ---
 

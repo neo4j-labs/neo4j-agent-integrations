@@ -1,5 +1,3 @@
-// Connection settings for the Company News graph.
-// MCP runs Cypher; Bolt runs full-text search, which MCP can't.
 import neo4j, { type Driver } from "neo4j-driver";
 
 // Hosted Neo4j MCP server, used by connections/neo4j-graph.ts
@@ -18,13 +16,9 @@ export function neo4jMcpHeaders(): Record<string, string> {
   return { Authorization: `Basic ${encoded}` };
 }
 
-// Local MCP server, used by connections/neo4j-investments.ts.
-// Keep this default in sync with scripts/chat.mjs.
-
 export const INVESTMENTS_MCP_URL =
   process.env.INVESTMENTS_MCP_URL?.trim() || "http://localhost:8100/mcp";
 
-// Direct database connection (Bolt), used by tools/search_news.ts
 
 const BOLT_URI = process.env.NEO4J_URI ?? "neo4j+s://demo.neo4jlabs.com:7687";
 const BOLT_USERNAME = process.env.NEO4J_USERNAME ?? "companies";

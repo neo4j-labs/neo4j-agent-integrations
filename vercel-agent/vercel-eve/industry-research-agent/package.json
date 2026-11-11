@@ -12,6 +12,7 @@
     "chat": "node scripts/chat.mjs",
     "mcp": "tsx mcp-server/src/server.ts",
     "ontology": "tsx scripts/ontology.ts",
+    "traceback-check": "tsx scripts/traceback-check.ts",
     "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",

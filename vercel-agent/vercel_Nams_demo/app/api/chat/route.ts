@@ -132,8 +132,8 @@ export async function POST(req: Request) {
   const closeConnections = async () => {
     if (closed) return;
     closed = true;
-    if (namsResult) await namsResult.close().catch(() => { });
-    if (mcpResult) await mcpResult.close().catch(() => { });
+    if (namsResult) await namsResult.close().catch((err) => console.warn('[chat] failed to close NAMS MCP:', err));
+    if (mcpResult) await mcpResult.close().catch((err) => console.warn('[chat] failed to close Neo4j MCP:', err));
   };
 
   const rawTools = (namsResult?.tools ?? mcpResult?.tools) as ToolSet | undefined;

@@ -9,8 +9,9 @@ import { join } from "node:path";
 
 try {
   process.loadEnvFile(join(import.meta.dirname, "..", ".env"));
-} catch {
-  // No .env: use the ambient environment, as npm run chat does.
+} catch (err) {
+  // No .env is fine: use the shell environment.
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
 
 const args = new Set(process.argv.slice(2));

@@ -11,8 +11,8 @@ import { closeDriver, describeTarget, getInvestments } from "./neo4j.js";
 // eve doesn't start this, so load .env ourselves.
 try {
   process.loadEnvFile?.();
-} catch {
-  // No .env — use the defaults in ./neo4j.ts.
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
 
 const NAME = "neo4j-investments-mcp";
