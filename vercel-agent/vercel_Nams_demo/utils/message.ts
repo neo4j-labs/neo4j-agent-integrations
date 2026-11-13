@@ -1,5 +1,8 @@
-import type { UIMessage, DynamicToolUIPart } from 'ai';
-import type { MemoryHit, QueryOutput, ParsedMemory } from '@/types';
+import { getToolName, isToolUIPart } from 'ai';
+import type { DynamicToolUIPart, ToolUIPart, UIMessage } from 'ai';
+import type { MemorySnapshot } from '@/types';
+
+export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
 export function getMsgText(msg: UIMessage): string {
   return msg.parts
@@ -8,43 +11,63 @@ export function getMsgText(msg: UIMessage): string {
     .join('\n\n');
 }
 
-export function parseMemory(parts: UIMessage['parts']): ParsedMemory {
-  const queryPart = parts.find(
-    (p): p is DynamicToolUIPart =>
-      p.type === 'dynamic-tool' && (p as DynamicToolUIPart).toolName === 'query_memory',
-  ) as DynamicToolUIPart | undefined;
-
-  const storeParts = parts.filter(
-    (p): p is DynamicToolUIPart =>
-      p.type === 'dynamic-tool' &&
-      (p as DynamicToolUIPart).toolName === 'store_memory' &&
-      (p as DynamicToolUIPart).state === 'output-available',
-  ) as DynamicToolUIPart[];
-
-  if (!queryPart) {
-    const stored: MemoryHit[] = storeParts.map(sp => ({
-      content: String((sp.input as Record<string, unknown>)?.content ?? ''),
-      source: (sp.input as Record<string, unknown>)?.type === 'interaction'
-        ? ('conversation' as const)
-        : ('long-term' as const),
-      type: String((sp.input as Record<string, unknown>)?.type ?? 'fact'),
-    }));
-    const recent = stored.filter(m => m.source === 'conversation');
-    const obs    = stored.filter(m => m.source === 'long-term');
-    return {
-      counts: { recent: recent.length, observations: obs.length, reasoning: 0 },
-      items:  { recent, observations: obs, reasoning: [] },
-    };
+export function lastUserText(messages: readonly UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user') {
+      const text = getMsgText(messages[i]);
+      if (text) return text;
+    }
   }
+  return '';
+}
 
-  const out  = queryPart.state === 'output-available' ? (queryPart.output as QueryOutput) : undefined;
-  const mems = out?.memories ?? [];
-  const recent       = mems.filter(m => m.source === 'conversation');
-  const observations = mems.filter(m => m.source === 'long-term');
-  const reasoning    = mems.filter(m => m.source === 'reasoning');
+// Static (memory) and dynamic (MCP) tool calls alike.
+export function toolParts(parts: UIMessage['parts']): ToolPart[] {
+  return parts.filter((p): p is ToolPart => isToolUIPart(p));
+}
+
+export function isMemoryTool(name: string): boolean {
+  return name === 'query_memory' || name === 'store_memory';
+}
+
+export function stepCount(parts: UIMessage['parts']): number {
+  return parts.filter(p => p.type === 'step-start').length;
+}
+
+export { getToolName };
+
+export function toolStateLabel(part: ToolPart): string {
+  switch (part.state) {
+    case 'input-streaming':
+    case 'input-available':
+      return 'running…';
+    case 'approval-requested':
+      return 'waiting for approval';
+    case 'approval-responded':
+      return part.approval.approved ? 'approved' : 'denied';
+    case 'output-available':
+      return part.preliminary ? 'streaming…' : 'done';
+    case 'output-error':
+      return 'failed';
+    case 'output-denied':
+      return 'denied';
+    default:
+      return '';
+  }
+}
+
+export function toolOutputText(part: ToolPart): string | null {
+  if (part.state === 'output-error') return part.errorText;
+  if (part.state !== 'output-available') return null;
+  const out = part.output;
+  if (out == null) return null;
+  return typeof out === 'string' ? out : (JSON.stringify(out, null, 2) ?? String(out));
+}
+
+export function emptySnapshot(): MemorySnapshot {
   return {
-    counts: { recent: recent.length, observations: observations.length, reasoning: reasoning.length },
-    items:  { recent, observations, reasoning },
+    counts: { recent: 0, observations: 0, insights: 0, entities: 0, reasoning: 0 },
+    items: { recent: [], observations: [], insights: [], entities: [], reasoning: [] },
   };
 }
 

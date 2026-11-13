@@ -1,30 +1,17 @@
-'use client';
+import ChatShell from '@/components/chat/ChatShell';
+import { CHAT_MODES, memoryMode, rawMode } from '@/lib/mode';
 
-import { useEffect, useState } from 'react';
-import AppHeader from '@/components/AppHeader';
-import ChatComponent from '@/components/chat/ChatComponent';
+// Read NAMS_MODE on every request, never at build time.
+export const dynamic = 'force-dynamic';
 
 export default function HomePage() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 640px)');
-    setIsMobile(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  return (
-    <div
-      className={`n-bg-neutral-bg-default ${isDarkMode ? 'ndl-theme-dark' : 'ndl-theme-light'}`}
-      style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-    >
-      <AppHeader isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(v => !v)} isMobile={isMobile} />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        <ChatComponent fluid />
-      </div>
-    </div>
-  );
+  const mode = memoryMode();
+  if (!mode) {
+    return (
+      <p style={{ padding: 24 }}>
+        Unknown NAMS_MODE &quot;{rawMode()}&quot;. Use {CHAT_MODES.join(', ')}, or start the app with npm run dev.
+      </p>
+    );
+  }
+  return <ChatShell mode={mode} />;
 }

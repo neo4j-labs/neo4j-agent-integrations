@@ -1,29 +1,15 @@
+export type { ChatMode } from '@/lib/mode';
+
+export type MemoryTab = 'recent' | 'observations' | 'insights' | 'entities' | 'reasoning';
+
 export interface MemoryHit {
   content: string;
-  source: 'conversation' | 'long-term' | 'reasoning';
-  type: string;
-  score?: number;
+  label: string;
 }
 
-export interface QueryOutput {
-  found: boolean;
-  count?: number;
-  memories: MemoryHit[];
-}
-
-export interface ReasoningStep {
-  id: string;
-  reasoning: string;
-  actionTaken: string;
-  result?: string;
-}
-
-export interface ParsedMemory {
-  counts: { recent: number; observations: number; reasoning: number };
-  items: { recent: MemoryHit[]; observations: MemoryHit[]; reasoning: MemoryHit[] };
-}
-
-export interface ChatComponentProps {
-  suggestions?: string[];
-  fluid?: boolean;
+export interface MemorySnapshot {
+  counts: Record<MemoryTab, number>;
+  items: Record<MemoryTab, MemoryHit[]>;
+  loading?: boolean;
+  error?: string;
 }

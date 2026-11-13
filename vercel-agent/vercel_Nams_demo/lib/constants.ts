@@ -91,11 +91,12 @@ turn is saved after you answer.
     properties, relationships — need the database tools below. If no database
     tools are listed, say so plainly rather than guessing.`;
 
-// Memory off: nothing is loaded or saved, so each message is answered on its own.
+// Memory off: only this chat's transcript, nothing is loaded from or saved to NAMS.
 export const NO_MEMORY_SYSTEM_PROMPT = `\
-You are a helpful assistant. Memory is off in this mode: you do not remember
-earlier messages or earlier chats, and each message is answered on its own.
-Never claim to remember the user or to have saved anything.
+You are a helpful assistant. Memory is off in this mode: you see only the
+messages in this chat, and you forget them when the user starts a new chat or
+reloads the page. You know nothing from earlier chats. Never claim to have
+saved anything or to remember the user beyond this chat.
 
 Questions about data in the Neo4j graph need the database tools below. If no
 database tools are listed, say so plainly rather than guessing.`;

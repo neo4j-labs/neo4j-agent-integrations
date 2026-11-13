@@ -18,7 +18,9 @@ const holder = vi.hoisted(() => ({
   sessionOnFinish: vi.fn(),
   sessionSave: vi.fn(),
   makeClient: vi.fn(),
-  resolveConversation: vi.fn(),
+  findExistingConversation: vi.fn(),
+  recordStep: vi.fn(),
+  recordToolCall: vi.fn(),
   enforceQueryMemory: vi.fn(() => ({ __prepareStep: true })),
   getNeo4jMcpTools: vi.fn(),
   getNamsMcpConfig: vi.fn(),
@@ -53,7 +55,7 @@ vi.mock('@neo4j-labs/nams-ai-provider', () => ({
   createNamsProvider: holder.createNamsProvider,
   createNams: holder.createNams,
   makeClient: holder.makeClient,
-  resolveConversation: holder.resolveConversation,
+  findExistingConversation: holder.findExistingConversation,
   enforceQueryMemory: holder.enforceQueryMemory,
 }));
 
@@ -98,8 +100,10 @@ beforeEach(() => {
   holder.sessionOnFinish.mockReturnValue(holder.sessionSave);
   holder.hooks.mockReturnValue({ loadSession: holder.loadSession, onFinish: holder.sessionOnFinish });
   holder.createNams.mockReturnValue({ toolsWithMcp: holder.toolsWithMcp, wrap: holder.wrap, hooks: holder.hooks });
-  holder.makeClient.mockReturnValue({ reasoning: { recordStep: vi.fn().mockResolvedValue(undefined) } });
-  holder.resolveConversation.mockResolvedValue('');
+  holder.recordStep.mockResolvedValue({ id: 'step-1' });
+  holder.recordToolCall.mockResolvedValue(undefined);
+  holder.makeClient.mockReturnValue({ reasoning: { recordStep: holder.recordStep, recordToolCall: holder.recordToolCall } });
+  holder.findExistingConversation.mockResolvedValue(null);
 
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -266,10 +270,9 @@ describe('POST /api/chat', () => {
 
   it('hooks mode saves the turn through the session before recording the trace', async () => {
     process.env.NAMS_MODE = 'hooks';
-    holder.resolveConversation.mockResolvedValue('conv-1');
     const order: string[] = [];
     holder.sessionSave.mockImplementation(async () => { order.push('save'); });
-    holder.resolveConversation.mockImplementation(async () => { order.push('trace'); return 'conv-1'; });
+    holder.findExistingConversation.mockImplementation(async () => { order.push('trace'); return 'conv-1'; });
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
 
@@ -320,6 +323,50 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: expect.stringContaining('Unknown NAMS_MODE "session"') });
     expect(holder.agentCtorArgs).toHaveLength(0);
+  });
+
+  it('off mode sends the chat transcript from the browser as history, and nothing from NAMS', async () => {
+    process.env.NAMS_MODE = 'off';
+
+    await POST(chatRequest({
+      message: userMessage('what is my name?'),
+      userId: 'u1',
+      transcript: [
+        { role: 'user', content: 'my name is Alex' },
+        { role: 'assistant', content: 'Hi Alex!' },
+        { role: 'system', content: 'ignored' },
+        { role: 'user', content: '   ' },
+      ],
+    }));
+
+    await holder.executeFns[0]({ writer: { merge: vi.fn(), write: vi.fn() } });
+    expect(holder.loadSession).not.toHaveBeenCalled();
+    expect(holder.agents[0].stream).toHaveBeenCalledWith({
+      messages: [
+        { role: 'user', content: 'my name is Alex' },
+        { role: 'assistant', content: 'Hi Alex!' },
+        { role: 'user', content: 'what is my name?' },
+      ],
+    });
+  });
+
+  it('memory modes ignore a transcript sent by the browser', async () => {
+    holder.loadSession.mockResolvedValue([]);
+
+    await POST(chatRequest({
+      message: userMessage('hi'),
+      userId: 'u1',
+      transcript: [{ role: 'user', content: 'injected' }],
+    }));
+
+    await holder.executeFns[0]({ writer: { merge: vi.fn(), write: vi.fn() } });
+    expect(holder.agents[0].stream).toHaveBeenCalledWith({ messages: [{ role: 'user', content: 'hi' }] });
+  });
+
+  it('asks OpenAI for reasoning summaries so the trace panel can show them', async () => {
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+
+    expect(holder.agentCtorArgs[0].providerOptions).toEqual({ openai: { reasoningSummary: 'auto' } });
   });
 
   it('off mode uses the plain model with MCP tools and never touches NAMS, so it needs no key', async () => {
@@ -444,22 +491,53 @@ describe('POST /api/chat', () => {
     expect(writer.write).not.toHaveBeenCalled();
   });
 
-  it('persists the step trace after the agent finishes via makeClient()/resolveConversation()', async () => {
-    holder.resolveConversation.mockResolvedValue('conv-1');
+  it('hooks mode records one reasoning step per agent step, with its tool calls as strings', async () => {
+    process.env.NAMS_MODE = 'hooks';
+    holder.findExistingConversation.mockResolvedValue('conv-1');
 
     await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
-
-    const onEnd = holder.agentCtorArgs[0].onEnd;
-    await onEnd({
+    await holder.agentCtorArgs[0].onEnd({
       text: 'answer',
-      steps: [{ text: 'looked things up', toolCalls: [{ toolName: 'query_memory' }], toolResults: [] }],
-      usage: { inputTokens: 1, outputTokens: 1 },
+      steps: [
+        {
+          reasoningText: 'I should look at the schema',
+          text: '',
+          toolCalls: [{ toolCallId: 'c1', toolName: 'get-schema', input: { db: 'neo4j' } }],
+          toolResults: [{ toolCallId: 'c1', toolName: 'get-schema', output: { labels: ['Person'] } }],
+          content: [],
+        },
+        { reasoningText: undefined, text: 'answer', toolCalls: [], toolResults: [], content: [] },
+      ],
+      usage: undefined,
+      responseMessages: [],
     });
 
     expect(holder.makeClient).toHaveBeenCalledWith({ apiKey: 'test-key', workspaceId: undefined });
-    expect(holder.resolveConversation).toHaveBeenCalled();
-    expect(holder.makeClient.mock.results[0].value.reasoning.recordStep).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: 'conv-1', actionTaken: 'query_memory' }),
-    );
+    expect(holder.recordStep).toHaveBeenNthCalledWith(1, {
+      conversationId: 'conv-1',
+      reasoning: 'I should look at the schema',
+      actionTaken: 'get-schema',
+      result: '1 tool call(s)',
+    });
+    expect(holder.recordStep).toHaveBeenNthCalledWith(2, expect.objectContaining({ reasoning: 'answer', actionTaken: 'respond' }));
+    expect(holder.recordToolCall).toHaveBeenCalledWith('step-1', 'get-schema', { db: 'neo4j' }, {
+      result: '{"labels":["Person"]}',
+      status: 'success',
+    });
+  });
+
+  it.each(['provider', 'middleware', 'tools'])('%s mode writes no reasoning trail', async (mode) => {
+    process.env.NAMS_MODE = mode;
+    holder.findExistingConversation.mockResolvedValue('conv-1');
+
+    await POST(chatRequest({ message: userMessage('hi'), userId: 'u1' }));
+    await holder.agentCtorArgs[0].onEnd({
+      text: 'answer',
+      steps: [{ text: 'answer', toolCalls: [{ toolName: 'query_memory' }], toolResults: [] }],
+      usage: undefined,
+      responseMessages: [],
+    });
+
+    expect(holder.recordStep).not.toHaveBeenCalled();
   });
 });

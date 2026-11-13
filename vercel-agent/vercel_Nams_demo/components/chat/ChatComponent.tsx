@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import type { DynamicToolUIPart } from 'ai';
+import { DefaultChatTransport, isToolUIPart } from 'ai';
 
 import { CleanIconButton, Typography } from '@neo4j-ndl/react';
 import { Prompt, Response, Suggestion, Thinking, UserBubble } from '@neo4j-ndl/react/ai';
@@ -11,86 +10,128 @@ import { ArrowPathIconOutline, Square2StackIconOutline } from '@neo4j-ndl/react/
 
 import MemoryPanel from './MemoryPanel';
 import ReasoningPanel from './ReasoningPanel';
-import { getMsgText, parseMemory, formatErrorMessage } from '@/utils/message';
-import { DEFAULT_SUGGESTIONS, SESSION_STORAGE_KEY } from '@/constants';
-import type { ReasoningStep, ChatComponentProps } from '@/types';
+import { AGENT_NAME, DEFAULT_SUGGESTIONS, MEMORY_MODES, SESSION_STORAGE_KEY } from '@/constants';
+import type { ChatMode, MemorySnapshot, MemoryTab } from '@/types';
+import {
+  emptySnapshot,
+  formatErrorMessage,
+  getMsgText,
+  getToolName,
+  isMemoryTool,
+  lastUserText,
+  stepCount,
+  toolParts,
+} from '@/utils/message';
 
-export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid = false }: ChatComponentProps) {
-  const messagesEndRef    = useRef<HTMLDivElement>(null);
-  const submittedAtRef    = useRef<number | null>(null);
-  const prevStepCountRef  = useRef<number>(0);
-  const baselineRef       = useRef<Promise<void> | null>(null);
+// Snapshot key for what NAMS already held before the first message.
+const OPENING = '@opening';
 
-  const sessionId = useRef('');
-  if (!sessionId.current) {
-    const stored = typeof window !== 'undefined' ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
-    sessionId.current = stored ?? crypto.randomUUID();
-    if (!stored && typeof window !== 'undefined') localStorage.setItem(SESSION_STORAGE_KEY, sessionId.current);
+// One id per browser, kept across reloads and new chats, so memory follows the user.
+function browserUserId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (stored) return stored;
+    const id = crypto.randomUUID();
+    localStorage.setItem(SESSION_STORAGE_KEY, id);
+    return id;
+  } catch {
+    return crypto.randomUUID();
   }
+}
 
-  const [input, setInput]                         = useState('');
-  const [copyError, setCopyError]                 = useState<string | null>(null);
-  const [thinkingTimes, setThinkingTimes]         = useState<Record<string, number>>({});
+interface ChatComponentProps {
+  mode: ChatMode;
+  suggestions?: readonly string[];
+}
+
+export default function ChatComponent({ mode, suggestions = DEFAULT_SUGGESTIONS }: ChatComponentProps) {
+  const endRef = useRef<HTMLDivElement>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const wasBusyRef = useRef(false);
+  const userId = useRef('');
+  if (!userId.current) userId.current = browserUserId();
+
+  const [input, setInput] = useState('');
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [thinkingTimes, setThinkingTimes] = useState<Record<string, number>>({});
+  const [memory, setMemory] = useState<Record<string, MemorySnapshot>>({});
+  const [expandedMemory, setExpandedMemory] = useState<Record<string, boolean>>({});
   const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
-  const [expandedMemory, setExpandedMemory]       = useState<Record<string, boolean>>({});
-  const [activeMemTab, setActiveMemTab]           = useState<Record<string, 'recent' | 'observations' | 'reasoning'>>({});
-  const [msgReasoningSteps, setMsgReasoningSteps] = useState<Record<string, ReasoningStep[]>>({});
+  const [activeTab, setActiveTab] = useState<Record<string, MemoryTab>>({});
 
   const { messages, sendMessage, regenerate, stop, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
+      // Only the newest message goes up; memory modes load earlier turns from NAMS.
+      // Memory off has no NAMS, so it gets this chat's transcript instead.
       prepareSendMessagesRequest: ({ messages, trigger }) => ({
         body: {
           message: messages[messages.length - 1],
           trigger,
-          sessionId: sessionId.current,
+          sessionId: userId.current,
+          ...(mode === 'off'
+            ? { transcript: messages.slice(0, -1).map(m => ({ role: m.role, content: getMsgText(m) })) }
+            : {}),
         },
       }),
     }),
-    onFinish: ({ message }) => {
-      if (message.role !== 'assistant') return;
-      if (submittedAtRef.current !== null) {
-        const ms = Date.now() - submittedAtRef.current;
-        submittedAtRef.current = null;
-        setThinkingTimes(prev => ({ ...prev, [message.id]: ms }));
-      }
-      const msgId  = message.id;
-      const params = new URLSearchParams({ userId: sessionId.current });
-      Promise.resolve(baselineRef.current)
-        .then(() => fetch(`/api/reasoning?${params}`))
-        .then(r => r.ok ? r.json() : null)
-        .then((data: { steps?: ReasoningStep[] } | null) => {
-          const steps    = data?.steps ?? [];
-          const newSteps = steps.slice(prevStepCountRef.current);
-          prevStepCountRef.current = steps.length;
-          if (newSteps.length > 0) setMsgReasoningSteps(prev => ({ ...prev, [msgId]: newSteps }));
-        })
-        .catch((err) => console.warn('[reasoning] failed to load steps:', err));
-    },
   });
 
-  useEffect(() => {
-    baselineRef.current = fetch(`/api/reasoning?${new URLSearchParams({ userId: sessionId.current })}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { steps?: ReasoningStep[] } | null) => {
-        prevStepCountRef.current = data?.steps?.length ?? 0;
-      })
-      .catch((err) => console.warn('[reasoning] failed to load baseline:', err));
+  const isBusy = status === 'submitted' || status === 'streaming';
+
+  const loadMemory = useCallback(async (key: string, query: string) => {
+    setMemory(prev => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? emptySnapshot()), loading: true, error: undefined },
+    }));
+    try {
+      const params = new URLSearchParams({ userId: userId.current, q: query });
+      const response = await fetch(`/api/memory?${params}`);
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const detail = (payload as { error?: string } | null)?.error;
+        throw new Error(detail ?? `Memory service returned ${response.status}.`);
+      }
+      setMemory(prev => ({ ...prev, [key]: payload as MemorySnapshot }));
+    } catch (err) {
+      setMemory(prev => ({
+        ...prev,
+        [key]: { ...emptySnapshot(), error: formatErrorMessage(err) ?? 'Could not reach the memory service.' },
+      }));
+    }
   }, []);
 
   useEffect(() => {
-    if (status === 'submitted') submittedAtRef.current = Date.now();
-  }, [status]);
+    if (mode !== 'off') void loadMemory(OPENING, '');
+  }, [loadMemory, mode]);
+
+  // Time each answer, then read what NAMS holds once it is done.
+  useEffect(() => {
+    if (isBusy && !wasBusyRef.current) {
+      wasBusyRef.current = true;
+      startedAtRef.current = Date.now();
+      return;
+    }
+    if (!isBusy && wasBusyRef.current) {
+      wasBusyRef.current = false;
+      const last = messages.at(-1);
+      const startedAt = startedAtRef.current;
+      startedAtRef.current = null;
+      if (last?.role === 'assistant') {
+        if (startedAt !== null) setThinkingTimes(prev => ({ ...prev, [last.id]: Date.now() - startedAt }));
+        if (mode !== 'off') void loadMemory(last.id, lastUserText(messages));
+      }
+    }
+  }, [isBusy, messages, loadMemory, mode]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, status]);
-
-  const isStreaming = status === 'submitted' || status === 'streaming';
 
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
-    if (!text) return;
+    if (!text || isBusy) return;
     setInput('');
     sendMessage({ text });
   };
@@ -105,34 +146,35 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
   };
 
   const errorMessage = formatErrorMessage(error);
+  const opening = memory[OPENING];
+  const knownAlready = opening ? Object.values(opening.counts).reduce((sum, n) => sum + n, 0) : 0;
+  const showConversation = messages.length > 0 || errorMessage !== null;
 
   return (
-    <section style={fluid ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, width: '100%' } : undefined}>
+    <section style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, width: '100%' }}>
       <div
         className="n-bg-neutral-bg-weak"
-        style={fluid
-          ? { display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0, width: '100%' }
-          : { width: '480px', height: '100%', display: 'flex', flexDirection: 'column' }}
+        style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0, width: '100%' }}
       >
-        <div
-          className="n-flex n-flex-col"
-          style={fluid ? { flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' } : undefined}
-        >
-          {copyError && (
-            <div className="n-bg-warning-bg-weak n-border-warning-border-weak n-mb-2">
-              <Typography variant="body-small">{copyError}</Typography>
-            </div>
-          )}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+          <div style={{ margin: '0 auto', width: '100%', maxWidth: 860 }}>
+            {copyError && (
+              <div className="n-bg-warning-bg-weak n-border n-border-warning-border-weak n-rounded-lg n-p-2 n-mb-2">
+                <Typography variant="body-small">{copyError}</Typography>
+              </div>
+            )}
 
-          {messages.length === 0 ? (
-            <div className="n-flex n-flex-col n-gap-4">
-              {errorMessage && (
-                <div className="n-bg-danger-bg-weak n-border-danger-border-weak">
-                  <Typography variant="body-small">⚠ {errorMessage}</Typography>
+            {!showConversation ? (
+              <div className="n-flex n-flex-col n-gap-12" style={{ paddingTop: '8vh' }}>
+                <div className="n-flex n-flex-col n-gap-2">
+                  <Typography variant="display">Hi, how can I help you today?</Typography>
+                  {knownAlready > 0 && (
+                    <Typography variant="body-medium" style={{ color: 'var(--theme-color-neutral-text-weaker)' }}>
+                      {AGENT_NAME}: NAMS is already holding {knownAlready}{' '}
+                      {knownAlready === 1 ? 'memory' : 'memories'} from your earlier chats.
+                    </Typography>
+                  )}
                 </div>
-              )}
-              <div className="n-flex n-flex-col">
-                <Typography variant="display">Hi, how can I help you today?</Typography>
                 <div className="n-flex n-flex-col n-gap-4">
                   <Typography variant="body-medium">Suggestions</Typography>
                   {suggestions.map((s, i) => (
@@ -140,115 +182,129 @@ export default function ChatComponent({ suggestions = DEFAULT_SUGGESTIONS, fluid
                   ))}
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="n-flex n-flex-col n-gap-4">
-              {messages.map((msg, idx) => {
-                const isLast         = idx === messages.length - 1;
-                const isLive         = isStreaming && isLast;
-                const secs           = thinkingTimes[msg.id] ? Math.round(thinkingTimes[msg.id] / 1000) : null;
-                const { counts, items } = parseMemory(msg.parts);
-                const completedSteps = msgReasoningSteps[msg.id] ?? [];
-                const toolParts      = msg.parts.filter(
-                  (p): p is DynamicToolUIPart =>
-                    p.type === 'dynamic-tool' &&
-                    p.toolName !== 'query_memory' &&
-                    p.toolName !== 'store_memory',
-                );
-                const hasOverlay = toolParts.length > 0 || isLive || completedSteps.length > 0;
+            ) : (
+              <div className="n-flex n-flex-col n-gap-4 n-pb-4">
+                {messages.map((msg, idx) => {
+                  const isLast = idx === messages.length - 1;
+                  const isLive = isBusy && isLast;
 
-                return (
-                  <div key={msg.id} className="n-w-full"
-                    style={msg.role === 'user' ? { display: 'flex', justifyContent: 'flex-end' } : undefined}>
-                    {msg.role === 'user' ? (
-                      <UserBubble avatarProps={{ name: 'U', type: 'letters' }}>{getMsgText(msg)}</UserBubble>
-                    ) : (
-                      <div className="n-w-full n-flex n-flex-col">
-                        {hasOverlay && (
-                          <div style={{ marginBottom: 4 }}>
-                            {/* Thinking indicator */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              <span style={{
-                                width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
-                                background: isLive
-                                  ? 'var(--theme-color-warning-text)'
-                                  : 'var(--theme-color-success-text)',
-                              }} />
-                              <span style={{ fontSize: 12, color: 'var(--palette-neutral-text-weakest)', fontStyle: 'italic' }}>
-                                {isLive && !secs ? 'Thinking…' : `Thought for ${secs ?? '?'}s`}
-                              </span>
-                            </div>
+                  if (msg.role === 'user') {
+                    return (
+                      <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <UserBubble avatarProps={{ name: 'U', type: 'letters' }}>{getMsgText(msg)}</UserBubble>
+                      </div>
+                    );
+                  }
 
-                            {/* Memory + Reasoning panels */}
-                            <div style={{ border: '1px solid var(--theme-color-primary-border-weak)', borderRadius: 10, overflow: 'hidden' }}>
-                              <MemoryPanel
-                                isLive={isLive}
-                                counts={counts}
-                                items={items}
-                                isExpanded={expandedMemory[msg.id] ?? false}
-                                onToggleExpand={() => setExpandedMemory(p => ({ ...p, [msg.id]: !(p[msg.id] ?? false) }))}
-                                activeTab={activeMemTab[msg.id] ?? 'recent'}
-                                onSetTab={tab => setActiveMemTab(p => ({ ...p, [msg.id]: tab }))}
-                              />
-                              <ReasoningPanel
-                                isLive={isLive}
-                                completedSteps={completedSteps}
-                                toolParts={toolParts}
-                                isExpanded={expandedReasoning[msg.id] ?? false}
-                                onToggleExpand={() => setExpandedReasoning(p => ({ ...p, [msg.id]: !(p[msg.id] ?? false) }))}
-                              />
-                            </div>
-                          </div>
-                        )}
+                  const ms = thinkingTimes[msg.id];
+                  const snapshot = memory[msg.id];
+                  const memoryCalls = toolParts(msg.parts).filter(p => isMemoryTool(getToolName(p)));
+                  const text = getMsgText(msg);
+                  const hasTrace = msg.parts.some(p => p.type === 'reasoning' || isToolUIPart(p));
+                  const hasPanels = isLive || hasTrace || snapshot !== undefined || mode !== 'off';
 
-                        <Response isAnimating={isLive}>{getMsgText(msg)}</Response>
+                  return (
+                    <div key={msg.id} className="n-w-full n-flex n-flex-col n-gap-2">
+                      {(isLive || ms !== undefined) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <span
+                            style={{
+                              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                              background: isLive ? 'var(--theme-color-warning-text)' : 'var(--theme-color-success-text)',
+                            }}
+                          />
+                          <span style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--palette-neutral-text-weakest)' }}>
+                            {ms === undefined ? 'Thinking…' : `Thought for ${Math.max(1, Math.round(ms / 1000))}s`}
+                          </span>
+                        </div>
+                      )}
 
-                        {(!isStreaming || !isLast) && (
-                          <div className="n-flex n-flex-row">
+                      {hasPanels && (
+                        <div style={{ border: '1px solid var(--theme-color-primary-border-weak)', borderRadius: 10, overflow: 'hidden' }}>
+                          <MemoryPanel
+                            mode={mode}
+                            snapshot={snapshot}
+                            memoryCalls={memoryCalls}
+                            steps={stepCount(msg.parts)}
+                            isLive={isLive}
+                            isExpanded={expandedMemory[msg.id] ?? false}
+                            onToggleExpand={() => setExpandedMemory(p => ({ ...p, [msg.id]: !(p[msg.id] ?? false) }))}
+                            activeTab={activeTab[msg.id] ?? 'recent'}
+                            onSetTab={tab => setActiveTab(p => ({ ...p, [msg.id]: tab }))}
+                          />
+                          <ReasoningPanel
+                            parts={msg.parts}
+                            isLive={isLive}
+                            isExpanded={expandedReasoning[msg.id] ?? false}
+                            onToggleExpand={() => setExpandedReasoning(p => ({ ...p, [msg.id]: !(p[msg.id] ?? false) }))}
+                          />
+                        </div>
+                      )}
+
+                      {text && (
+                        <div
+                          style={{
+                            width: '100%', marginTop: 3, padding: '12px 16px', borderRadius: 10,
+                            background: 'var(--theme-color-neutral-bg-strong)',
+                            color: 'var(--theme-color-neutral-text-default)',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          <Response isAnimating={isLive}>{text}</Response>
+                        </div>
+                      )}
+
+                      {!isLive && (
+                        <div className="n-flex n-flex-row n-gap-1.5">
+                          {isLast && (
                             <CleanIconButton size="small" description="Re-run" onClick={() => regenerate()}>
                               <ArrowPathIconOutline />
                             </CleanIconButton>
-                            <CleanIconButton size="small" description="Copy" onClick={() => handleCopy(getMsgText(msg))}>
-                              <Square2StackIconOutline />
-                            </CleanIconButton>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          )}
+                          <CleanIconButton size="small" description="Copy" onClick={() => void handleCopy(text)}>
+                            <Square2StackIconOutline />
+                          </CleanIconButton>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {status === 'submitted' && messages.at(-1)?.role !== 'assistant' && <Thinking isThinking />}
+
+                {status === 'error' && (
+                  <div className="n-bg-danger-bg-weak n-border n-border-danger-border-weak n-rounded-lg n-p-3 n-flex n-items-start">
+                    <Typography variant="body-small">⚠ {errorMessage ?? 'Something went wrong.'}</Typography>
+                    <CleanIconButton size="small" description="Retry" onClick={() => regenerate()}>
+                      <ArrowPathIconOutline />
+                    </CleanIconButton>
                   </div>
-                );
-              })}
+                )}
 
-              {status === 'submitted' && <Thinking isThinking />}
-
-              {status === 'error' && (
-                <div className="n-bg-danger-bg-weak n-border-danger-border-weak n-flex n-items-start">
-                  <Typography variant="body-small">⚠ {errorMessage ?? 'Something went wrong.'}</Typography>
-                  <CleanIconButton size="small" description="Retry" onClick={() => regenerate()}>
-                    <ArrowPathIconOutline />
-                  </CleanIconButton>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          )}
+                <div ref={endRef} />
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="full-width-content">
-          <Prompt
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onSubmitPrompt={() => handleSend()}
-            onCancelPrompt={stop}
-            isRunningPrompt={isStreaming}
-            isSubmitDisabled={input.trim().length === 0 && !isStreaming}
-            disclaimer={
-              <Typography variant="body-small" style={{ color: 'var(--palette-neutral-text-weakest)' }}>
-                Memories are stored in Neo4j via NAMS and persist across sessions.
-              </Typography>
-            }
-          />
+        <div className="n-px-4 n-pt-4 n-pb-1 n-mt-auto full-width-content">
+          <div style={{ margin: '0 auto', width: '100%', maxWidth: 860 }}>
+            <Prompt
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onSubmitPrompt={() => handleSend()}
+              onCancelPrompt={stop}
+              isRunningPrompt={isBusy}
+              isSubmitDisabled={input.trim().length === 0 && !isBusy}
+              disclaimer={
+                <Typography variant="body-small" style={{ color: 'var(--palette-neutral-text-weakest)' }}>
+                  {mode === 'off'
+                    ? 'Memory is off. This chat forgets you when you start a new chat or reload the page.'
+                    : `Memories are stored in Neo4j via NAMS (${mode} · ${MEMORY_MODES[mode].detail}) and persist across chats.`}
+                </Typography>
+              }
+            />
+          </div>
         </div>
       </div>
     </section>

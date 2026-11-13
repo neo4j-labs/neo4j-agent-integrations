@@ -3,8 +3,8 @@ import '@neo4j-ndl/base/lib/neo4j-ds-styles.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'NAMS Chat — Neo4j Memory Provider',
-  description: 'Vercel AI SDK + direct Neo4j memory (self-hosted NAMS)',
+  title: 'NAMS Chat',
+  description: 'A Vercel AI SDK chat that remembers you, backed by Neo4j Agent Memory (NAMS).',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -12,7 +12,7 @@ All the memory code comes from one npm package, [`@neo4j-labs/nams-ai-provider`]
 cd vercel-agent/vercel_Nams_demo
 npm install
 cp .env.local.example .env.local   # add NAMS_API_KEY and OPENAI_API_KEY
-npm run dev                        # pick a memory mode (or memory off), then open http://localhost:3000
+npm run dev                        # memory on? which mode? then open http://localhost:3000
 ```
 
 - Get a free `NAMS_API_KEY` at [memory.neo4jlabs.com](https://memory.neo4jlabs.com).
@@ -23,7 +23,11 @@ npm run dev                        # pick a memory mode (or memory off), then op
 
 ## The four memory modes, and memory off
 
-When you run `npm run dev`, the terminal first asks `Memory on? [Y/n]`. Enter or `y` keeps memory on and shows the mode menu. Press Enter there for `provider`, or type a number or name. Type `n` to turn memory off instead. That skips the menu: each message is answered on its own, nothing is loaded or saved, and earlier messages in the chat aren't sent. The choice applies to that run only and isn't saved to a file. `NAMS_MODE` is not read from `.env.local` or the shell. Non-interactive shells skip the prompts and use `provider`. All four memory modes save to the same place, so you can switch between them without losing anything. The header shows the active mode, such as `Memory: provider` or `Memory off`.
+When you run `npm run dev`, the terminal first asks `Memory on?`. Answer `n` to turn memory off. Otherwise it lists the four modes and marks the current one with `← current`. Type a number or a name, or press Enter to keep the current one.
+
+The current mode is `NAMS_MODE` from your shell, then `.env.local`, then `.env`, and `provider` if none sets it. So with `NAMS_MODE=tools` in `.env.local`, pressing Enter twice runs `tools`. Your pick applies to that run only; no file is changed. Shells without a terminal (CI, piped input) skip the questions and use the current mode as it is.
+
+All four memory modes save to the same place, so you can switch between them without losing anything. The header shows the active mode as a chip, such as `memory: provider` or `memory: off`. Hover it to see which API that mode uses.
 
 | Mode | Who takes care of memory | Memory calls shown in the chat? |
 |---|---|---|
@@ -31,7 +35,7 @@ When you run `npm run dev`, the terminal first asks `Memory on? [Y/n]`. Enter or
 | `middleware` | The same wrapper, placed on a model you already have. | No |
 | `tools` | The AI model itself, by calling two tools: `query_memory` and `store_memory`. | Yes |
 | `hooks` | This app's own code. It loads the saved chat before each answer and saves every turn after. | No |
-| `off` (answer `n` to `Memory on?`) | No memory. Each message is answered on its own, and nothing is loaded or saved. | No |
+| `off` (answer `n` to `Memory on?`) | No memory. The model sees only the messages in this chat, and nothing is loaded or saved. | No |
 
 **Which one should I pick?**
 
@@ -39,7 +43,7 @@ When you run `npm run dev`, the terminal first asks `Memory on? [Y/n]`. Enter or
 - Already have a model object? Use **middleware**.
 - Want to *see* the memory reads and writes? Use **tools**.
 - Want every turn saved, whatever the model decides? Use **hooks**.
-- Don't want memory at all? Answer `n` to `Memory on?`.
+- Want to see what it's like without memory? Answer `n` to `Memory on?`.
 
 Any other value makes the chat return an error, so a typo can't quietly turn memory off.
 
@@ -70,11 +74,36 @@ The real version is in [`app/api/chat/route.ts`](app/api/chat/route.ts).
 
 A few details:
 
-- **Every mode:** the browser sends only its newest message. The route loads the earlier turns from NAMS with `session.loadSession()`.
+- **Every memory mode:** the browser sends only its newest message. The route loads the earlier turns from NAMS with `session.loadSession()`.
+- **off:** there is no NAMS to load from, so the browser also sends this chat's transcript. Chat history is not memory: click **New chat** or reload and it's gone.
 - **tools mode:** small models sometimes skip memory. `enforceQueryMemory()` makes the model read memory first. The route saves each turn's text itself, so the chat doesn't depend on the model calling `store_memory`.
 - **hooks mode:** saves the conversation only, not separate long-term facts. It also saves each tool call and result as a `[tool-call] …` / `[tool-result] …` message tagged `namsKind`, and `loadSession()` leaves those out of the history it returns.
 - Each mode has its own system prompt in [`lib/constants.ts`](lib/constants.ts), so the model is never told about tools it doesn't have.
-- **Reasoning panel:** after each answer the route saves one reasoning step per agent step, in order, before the reply finishes. The panel reads them right after.
+- **hooks mode also writes the reasoning trail:** after each answer the route saves one NAMS reasoning step per agent step, with the model's reasoning, the tools it called and each call's result. No other mode writes one, so the `reasoning` tab in the memory panel fills only in hooks mode.
+- The route asks OpenAI for reasoning summaries (`reasoningSummary: 'auto'`), so the Reasoning Trace panel can show the model's thinking. The model decides when to reason; a short greeting often has none.
+
+---
+
+## The chat UI
+
+Two panels sit above every answer.
+
+**Agent Memory** shows what NAMS holds for you, in five tabs: `recent`, `observations`, `insights`, `entities` and `reasoning`. After each answer the app reads them through [`app/api/memory/route.ts`](app/api/memory/route.ts) instead of watching for tool calls, so the panel works in every mode. In `provider`, `middleware` and `hooks` the model never calls a memory tool, so there would otherwise be nothing to show. `entities` is searched with your question and shows only your own entities, the same ones `query_memory` can return. Other users in the workspace have their own.
+
+Its header also carries a badge naming what drove memory on this turn. That is how you tell the modes apart at a glance:
+
+| Mode | Badge |
+|---|---|
+| `provider` | `wrapped provider · never a tool call` |
+| `middleware` | `wrapped model · never a tool call` |
+| `tools` | `model called 2 memory tools`, or `model called no memory tool` on the turns it skips them |
+| `hooks` | `app hooks · 2 reasoning steps saved` |
+
+Expand the panel to see a sentence on how that mode worked, and in `tools` mode a chip for each memory call.
+
+**Reasoning Trace** shows the agent's own steps for this answer, live as they stream: its thinking, and every tool call with its input, status and result. In `tools` mode `query_memory` and `store_memory` show up here in full. In `provider`, `middleware` and `hooks` memory never appears here, because it happens around the model rather than as a tool. Only database tools do.
+
+On an empty chat, the greeting tells you how many memories NAMS already holds from earlier chats. The **+** button in the header starts a new chat for the same user.
 
 ---
 
@@ -101,6 +130,7 @@ Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-A
 |---|---|---|
 | `NAMS_API_KEY` | Yes | Your NAMS key. Without it, every chat request fails. |
 | `OPENAI_API_KEY` | Yes | Your OpenAI key. |
+| `NAMS_MODE` | No | The mode `npm run dev` offers first: `provider` (default), `middleware`, `tools`, `hooks` or `off`. |
 | `MEMORY_WORKSPACE_ID` | No | Use a specific NAMS workspace. |
 | `OPENAI_MODEL` | No | Model to use. Default `gpt-5.6-luna`. |
 | `NAMS_EXTRACTION_MODEL` | No | Tools mode only: also turns each saved fact into graph entities. Costs one extra model call. |
@@ -115,36 +145,41 @@ Not sure which login your server wants? Run `curl -i -X POST $MCP_URL`. A `WWW-A
 For each mode, run `npm run dev` and pick it from the menu, then:
 
 1. Send: *"My favourite colour is blue."*
-2. Reload the page (the chat window empties).
+2. Click **New chat** (or reload the page). The chat window empties.
 3. Send: *"What's my favourite colour?"* The answer should be **blue**.
 
 What you'll see in the terminal:
 
 | Mode | Log line to look for |
 |---|---|
-| any | `[chat]   restored N earlier turns from NAMS` |
+| any memory mode | `[chat]   restored N earlier turns from NAMS` |
+| `off` | `[chat]   N earlier turns from this chat (memory off)`, and the answer to step 3 is that it doesn't know |
 | `provider` / `middleware` | `[chat] Done \| steps=1 queries=0 stores=0` |
-| `tools` | `queries=1 stores=1`, and the steps show up in the Reasoning panel |
+| `tools` | `queries=1 stores=1`, and both calls show up in the Reasoning Trace |
 
-To see the saved reasoning steps: `curl "http://localhost:3000/api/reasoning?userId=<id>"`. The id is in your browser's `localStorage` under `nams-session-id`.
+To see what the memory panel reads: `curl "http://localhost:3000/api/memory?userId=<id>&q=colour"`. The id is in your browser's `localStorage` under `nams-session-id`.
 
 ### Automated tests
 
 ```bash
-npm test     # 33 tests, no real keys needed
+npm test     # 43 tests, no real keys needed
 ```
 
-They check each mode's wiring against a fake version of the package.
+They check each mode's wiring and the memory snapshot against a fake version of the package.
 
 ---
 
 ## Project layout
 
 ```
+app/page.tsx                 reads NAMS_MODE and renders the chat
 app/api/chat/route.ts        the chat endpoint: picks the mode and runs the agent
-app/api/reasoning/route.ts   returns saved reasoning steps for the side panel
-components/chat/             the chat UI, memory panel and reasoning panel
+app/api/memory/route.ts      what NAMS holds for a user, for the Agent Memory panel
+components/AppHeader.tsx     mode chip, New chat, dark mode
+components/chat/             the chat, the Agent Memory panel and the Reasoning Trace
+lib/mode.ts                  NAMS_MODE parsing and NAMS settings
 lib/constants.ts             system prompts, one per mode
+scripts/dev.mjs              the `npm run dev` mode picker
 lib/neo4j-mcp.ts             connects to the Neo4j MCP server
 test/                        route tests (vitest)
 ```

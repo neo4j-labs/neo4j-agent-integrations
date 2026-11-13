@@ -12,18 +12,16 @@ import {
   createNams,
   createNamsProvider,
   enforceQueryMemory,
+  findExistingConversation,
   makeClient,
-  resolveConversation,
-  type NamsMode,
 } from '@neo4j-labs/nams-ai-provider';
 import { HOOKS_SYSTEM_PROMPT, NO_MEMORY_SYSTEM_PROMPT, SYSTEM_PROMPT, TRANSPARENT_SYSTEM_PROMPT, buildDbToolsPrompt } from '@/lib/constants';
 import { getNeo4jMcpTools, getNamsMcpConfig, isMcpConfigured, explainMcpError, guardTools } from '@/lib/neo4j-mcp';
+import { CHAT_MODES, memoryMode, namsConfig, rawMode } from '@/lib/mode';
 
 const MAX_STEPS = 10;
 const MODEL_ID = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
-const NAMS_MODES: readonly NamsMode[] = ['provider', 'middleware', 'tools', 'hooks'];
-type ChatMode = NamsMode | 'off';
-const CHAT_MODES: readonly ChatMode[] = [...NAMS_MODES, 'off'];
+const TRANSCRIPT_LIMIT = 40;
 
 // Optional: turn each saved memory into graph entities (tools mode only, one extra model call).
 const EXTRACTION_MODEL_ID = process.env.NAMS_EXTRACTION_MODEL?.trim();
@@ -32,6 +30,23 @@ const extractionModel = EXTRACTION_MODEL_ID ? openai(EXTRACTION_MODEL_ID) : unde
 function trim(text: string, max = 80): string {
   const s = text.replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function serialize(value: unknown, max = 2000): string | undefined {
+  if (value === undefined) return undefined;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (text === undefined) return undefined;
+  return text.length <= max ? text : `${text.slice(0, max)}… (truncated)`;
+}
+
+// Off mode only: the earlier turns of this chat, as the browser holds them.
+function transcriptMessages(transcript: unknown): ModelMessage[] {
+  if (!Array.isArray(transcript)) return [];
+  return transcript
+    .filter((m): m is { role: 'user' | 'assistant'; content: string } =>
+      (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim() !== '')
+    .slice(-TRANSCRIPT_LIMIT)
+    .map(m => ({ role: m.role, content: m.content }));
 }
 
 // On a re-run NAMS already holds the question and the answer being replaced, so drop both.
@@ -57,6 +72,7 @@ export async function POST(req: Request) {
     sessionId?: string;
     userId?: string;
     conversationId?: string;
+    transcript?: unknown;
   };
   try {
     body = await req.json();
@@ -76,13 +92,13 @@ export async function POST(req: Request) {
     : '';
   if (!userText.trim()) return json({ error: 'The request has no user message.' }, 400);
 
-  const mode = ((process.env.NAMS_MODE ?? 'provider').trim()) as ChatMode;
-  if (!CHAT_MODES.includes(mode)) {
-    return json({ error: `Unknown NAMS_MODE "${mode}". Use ${CHAT_MODES.join(', ')}.` }, 503);
+  const mode = memoryMode();
+  if (!mode) {
+    return json({ error: `Unknown NAMS_MODE "${rawMode()}". Use ${CHAT_MODES.join(', ')}.` }, 503);
   }
   const memoryOn = mode !== 'off';
-  const apiKey = process.env.NAMS_API_KEY ?? '';
-  if (memoryOn && !apiKey) return json({ error: 'NAMS_API_KEY is not set. Check your .env.local file.' }, 503);
+  const nams = namsConfig();
+  if (memoryOn && !nams.apiKey) return json({ error: 'NAMS_API_KEY is not set. Check your .env.local file.' }, 503);
 
   const mcpEnabled = isMcpConfigured();
   const useExtraction = mode === 'tools' && Boolean(extractionModel);
@@ -95,7 +111,6 @@ export async function POST(req: Request) {
   console.log(`[chat]   userId=${userId}  conv=${conversationId ?? 'auto'}  query="${trim(userText)}"`);
 
   const scope = { userId, conversationId };
-  const nams = { apiKey, workspaceId: process.env.MEMORY_WORKSPACE_ID };
   // Only tools mode uses the extraction model. The other modes would log a warning.
   const memoryConfig = useExtraction ? { ...nams, extractionModel } : nams;
 
@@ -162,29 +177,40 @@ export async function POST(req: Request) {
     (hasDbTools ? `  db=[${dbToolNames.join(', ')}]` : ''),
   );
 
-  const history = await historyPromise;
-  if (memoryOn) console.log(`[chat]   restored ${history.length} earlier turns from NAMS`);
-  const earlierTurns = body.trigger === 'regenerate-message' ? withoutRerunTurn(history, userText) : history;
+  // Memory modes restore earlier turns from NAMS; off mode only has this chat's transcript.
+  const history = memoryOn ? await historyPromise : transcriptMessages(body.transcript);
+  console.log(memoryOn
+    ? `[chat]   restored ${history.length} earlier turns from NAMS`
+    : `[chat]   ${history.length} earlier turns from this chat (memory off)`);
+  const earlierTurns = memoryOn && body.trigger === 'regenerate-message' ? withoutRerunTurn(history, userText) : history;
   const messages: ModelMessage[] = [...earlierTurns, { role: 'user', content: userText }];
 
-  // Writes one reasoning step per agent step, in order, so the Reasoning panel can show them.
-  async function saveTrace(steps: any[]): Promise<void> {
+  // Hooks mode: the app writes the why-trail, one NAMS reasoning step per agent step with its tool calls.
+  async function saveReasoning(steps: any[]): Promise<void> {
     if (steps.length === 0) return;
     const client = makeClient(nams);
-    const convId = await resolveConversation(client, nams, scope).catch(() => '');
+    const convId = await findExistingConversation(client, nams, scope).catch(() => null);
     if (!convId) return;
 
-    for (const [i, step] of steps.entries()) {
-      const toolNames = (step.toolCalls ?? []).map((c: any) => c.toolName).join(', ');
-      await client.reasoning.recordStep({
+    for (const step of steps) {
+      const calls: any[] = step.toolCalls ?? [];
+      const results: any[] = step.toolResults ?? [];
+      const errors: any[] = (step.content ?? []).filter((p: any) => p?.type === 'tool-error');
+      const recorded = await client.reasoning.recordStep({
         conversationId: convId,
-        reasoning: (step.text || `Step ${i + 1}${toolNames ? ` — ${toolNames}` : ''}`).slice(0, 500),
-        actionTaken: toolNames || 'direct response',
-        result: (step.toolResults ?? [])
-          .map((r: any) => JSON.stringify(r?.output ?? r).slice(0, 150))
-          .join('; ')
-          .slice(0, 500),
-      }).catch((err: unknown) => console.warn('[chat] failed to save a reasoning step:', err));
+        reasoning: (step.reasoningText || step.text || '(the model emitted no reasoning for this step)').slice(0, 2000),
+        actionTaken: calls.length ? calls.map(c => c.toolName).join(', ') : 'respond',
+        result: calls.length ? `${calls.length} tool call(s)` : undefined,
+      });
+      for (const call of calls) {
+        const error = errors.find(e => e.toolCallId === call.toolCallId);
+        const output = results.find(r => r.toolCallId === call.toolCallId)?.output;
+        // Hosted NAMS stores a non-string result as "", so always send a string.
+        await client.reasoning.recordToolCall(recorded.id, call.toolName, call.input ?? {}, {
+          result: serialize(error ? error.error : output),
+          status: error ? 'failure' : 'success',
+        });
+      }
     }
   }
 
@@ -193,6 +219,8 @@ export async function POST(req: Request) {
       model: resolvedModel,
       instructions: systemPrompt,
       tools,
+      // Ask OpenAI for reasoning summaries so the Reasoning Trace panel can show them.
+      providerOptions: { openai: { reasoningSummary: 'auto' } },
       ...(namsResult ? { prepareStep: enforceQueryMemory({ graceSteps: 2 }) } : {}),
       stopWhen: (namsResult || mcpResult) ? isStepCount(MAX_STEPS) : isStepCount(1),
       onEnd: async ({ text, steps, usage, responseMessages }) => {
@@ -212,7 +240,9 @@ export async function POST(req: Request) {
           // Text only: tools-mode tool results are memory hits, and saving those again degrades recall.
           if (session && mode === 'tools') await session.onFinish({ prompt: userText })({ text });
 
-          if (memoryOn) await saveTrace(steps);
+          if (mode === 'hooks') {
+            await saveReasoning(steps).catch(err => console.warn('[chat] failed to save the reasoning trail:', err));
+          }
         } finally {
           await closeConnections();
         }

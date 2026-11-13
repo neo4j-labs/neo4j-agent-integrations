@@ -28,7 +28,19 @@
 .n-flex-col { flex-direction: column; }
 .n-flex-row { flex-direction: row; }
 .n-items-start { align-items: flex-start; }
+.n-gap-1\.5 { gap: 6px; }
+.n-gap-2 { gap: 8px; }
 .n-gap-4 { gap: 16px; }
+.n-gap-12 { gap: 48px; }
+.n-p-2 { padding: 8px; }
+.n-p-3 { padding: 12px; }
+.n-px-4 { padding-left: 16px; padding-right: 16px; }
+.n-pt-4 { padding-top: 16px; }
+.n-pb-1 { padding-bottom: 4px; }
+.n-pb-4 { padding-bottom: 16px; }
+.n-mt-auto { margin-top: auto; }
+.n-rounded-lg { border-radius: 8px; }
+.n-border { border-width: 1px; border-style: solid; }
 .n-w-full { width: 100%; }
 .n-mb-2 { margin-bottom: 8px; }
 .n-bg-neutral-bg-default { background-color: var(--theme-color-neutral-bg-default); }
