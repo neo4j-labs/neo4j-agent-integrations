@@ -4,6 +4,8 @@ Internal OAuth 2.0 Middleware for validating locally-issued AaaS tokens.
 import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 from app.core.context import current_order_id, current_user_email
 from app.services.token_manager import TokenManager
@@ -24,7 +26,6 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
             "/auth/authorize", 
             "/auth/google/callback",
             "/auth/token",
-            "/pubsub",  
             "/setup",
             "/setup/save",
             "/static",
@@ -41,6 +42,16 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "Unauthorized. Missing token."}, status_code=401)
 
         token = auth_header.split(" ")[1]
+
+        if request.url.path == "/pubsub":
+            try:
+                payload = id_token.verify_oauth2_token(token, google_requests.Request())
+                if payload.get("iss") not in ["https://accounts.google.com", "accounts.google.com"]:
+                    raise ValueError("Invalid issuer")
+                return await call_next(request)
+            except Exception as e:
+                logging.warning(f"[middleware] Pub/Sub auth failed: {e}")
+                return JSONResponse({"error": "Invalid Pub/Sub OIDC token"}, status_code=401)
 
         try:
             logging.info("[middleware] Verifying access token")

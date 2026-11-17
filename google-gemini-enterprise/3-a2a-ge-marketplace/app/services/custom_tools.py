@@ -1,5 +1,6 @@
 import json
 import logging
+import neo4j
 from neo4j import GraphDatabase
 from google.adk.tools.function_tool import FunctionTool
 
@@ -67,7 +68,11 @@ def create_cypher_tool(user: str, pwd: str, uri: str, db: str) -> FunctionTool:
         """
         try:
             with GraphDatabase.driver(uri, auth=(user, pwd)) as driver:
-                records, _, _ = driver.execute_query(cypher_query, database_=db)
+                records, _, _ = driver.execute_query(
+                                                    cypher_query, 
+                                                    database_=db,
+                                                    routing=neo4j.RoutingControl.READ
+                                                    )
                 if not records:
                     return "Query executed successfully, but returned no results."
 

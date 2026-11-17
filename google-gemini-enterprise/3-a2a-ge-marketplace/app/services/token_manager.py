@@ -258,11 +258,51 @@ class TokenManager:
 
             if account_id:
                 link_query = """
-                MATCH (a:ProcurementAccount {id: $account_id}), (o:Order {id: $entitlement_id})
+                MATCH (a:ProcurementAccount {id: $account_id})
+                MATCH (o:Order {id: $entitlement_id})
                 MERGE (a)-[:HAS_SUBSCRIPTION]->(o)
                 """
                 self.driver.execute_query(link_query, account_id=account_id, entitlement_id=entitlement_id)
-                
+
+            if event_type == "ENTITLEMENT_CANCELLED":
+                self._wipe_tenant_data(entitlement_id)
+
+    def _wipe_tenant_data(self, order_id: str) -> None:
+        """Wipes database credentials and revokes OAuth clients upon cancellation (Fix for Q10)."""
+        logging.info(f"[token_manager] Wiping tenant data for cancelled order {order_id}")
+
+        # 1. Fetch and delete the password secret from Google Secret Manager
+        query_get_secret = "MATCH (o:Order {id: $order_id}) RETURN o.target_password_secret AS secret_name"
+        try:
+            records, _, _ = self.driver.execute_query(query_get_secret, order_id=order_id)
+            if records and records[0]["secret_name"]:
+                secret_name = records[0]["secret_name"]
+                try:
+                    self.secret_client.delete_secret(request={"name": secret_name})
+                    logging.info(f"[token_manager] Deleted secret {secret_name} from Secret Manager.")
+                except Exception as e:
+                    logging.error(f"[token_manager] Failed to delete secret {secret_name}: {e}")
+        except Exception as e:
+            logging.error(f"[token_manager] Error retrieving secret name for deletion: {e}")
+
+        # 2. Wipe credentials and delete associated OAuth clients in Neo4j
+        query_wipe = """
+        MATCH (o:Order {id: $order_id})
+        OPTIONAL MATCH (o)-[:HAS_CLIENT]->(c:OAuthClient)
+        OPTIONAL MATCH (c)-[:HAS_REFRESH_TOKEN]->(r:RefreshToken)
+        DETACH DELETE c, r
+        WITH o
+        SET o.target_uri = null,
+            o.target_user = null,
+            o.target_password_secret = null,
+            o.target_database = null,
+            o.admin_email = null
+        """
+        try:
+            self.driver.execute_query(query_wipe, order_id=order_id)
+        except Exception as e:
+            logging.error(f"[token_manager] Failed to wipe tenant data in Neo4j for {order_id}: {e}")
+                  
     def activate_user_credentials(self, order_id: str, uri: str, user: str, password: str, database: str, email: str) -> None:
         """Saves DB credentials securely and activates their account."""
         secret_name = self._store_password_in_secret_manager(order_id, password)

@@ -22,7 +22,6 @@ async def dcr_handler(request: Request):
     logging.info("[auth] dcr_handler: Received DCR request")
     try:
         body = await request.json()
-        logging.info(f"[auth] dcr_handler payload keys: {list(body.keys())}")
 
         software_statement = body.get("software_statement")
 
@@ -176,7 +175,6 @@ async def token_handler(request: Request):
     refresh_token = form.get("refresh_token")
     grant_type = form.get("grant_type", "authorization_code")
     logging.info(f"[auth] token_handler invoked with grant_type: {grant_type}")
-    logging.info(f"[auth] token_handler form keys received: {list(form.keys())}")
 
     headers = {
         "Cache-Control": "no-store",

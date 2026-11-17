@@ -8,6 +8,7 @@
         h2 { color: #202124; margin-top: 0; }
         label { font-weight: 500; color: #5f6368; font-size: 14px; display: block; margin-bottom: 5px; }
         input { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
+        input[readonly] { background-color: #e9ecef; color: #495057; cursor: not-allowed; }
         .btn { background-color: #1a73e8; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
         .btn:hover { background-color: #1557b0; }
     </style>
@@ -17,8 +18,10 @@
         <h2>Welcome to Neo4j Agent!</h2>
         <p style="color: #5f6368; font-size: 14px; margin-bottom: 25px;">Please connect your organization's specific Graph Database.</p>
         <form action="/setup/save" method="POST">
+            <input type="hidden" name="state_token" value="{{ state_token }}">
+
             <label>Marketplace Order ID</label>
-            <input type="text" name="order_id" value="{{ order_id }}" required>
+            <input type="text" name="order_id" value="{{ order_id }}" readonly required>
 
             <label>Admin Email</label>
             <input type="email" name="admin_email" placeholder="admin@yourcompany.com" required>
