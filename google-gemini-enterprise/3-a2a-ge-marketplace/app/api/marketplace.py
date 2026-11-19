@@ -11,8 +11,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import google.auth
 from google.auth.transport.requests import AuthorizedSession
-from app.core.config import MARKETPLACE_PROVIDER_ID, MARKETPLACE_CERTS_URL, INTERNAL_SECRET_KEY
-import jwt
+from app.core.config import MARKETPLACE_PROVIDER_ID, MARKETPLACE_CERTS_URL
 
 token_manager = TokenManager()
 templates = Jinja2Templates(directory="app/templates")
@@ -147,11 +146,9 @@ async def pubsub_handler(request: Request):
 async def setup_page_handler(request: Request):
     """
     Renders the setup UI.
-    Google redirects the admin here via POST immediately after they click 'Purchase',
-    including the secure 'x-gcp-marketplace-token'.
+    Supports both manual GET navigation (AI Agent listings) and POST SSO redirects.
     """
     order_id = ""
-    state_token = ""
 
     if request.method == "POST":
         form = await request.form()
@@ -164,29 +161,24 @@ async def setup_page_handler(request: Request):
                     google_requests.Request(),
                     certs_url=MARKETPLACE_CERTS_URL
                 )
-
                 google_account_id = payload.get("sub")
                 logging.info(f"Marketplace SSO Login successful for Google Account: {google_account_id}")
-
-                order_id = payload.get("commerce", {}).get("order_id", "") 
-
-                state_payload = {"order_id": order_id, "exp": time.time() + 1800}
-                state_token = jwt.encode(state_payload, INTERNAL_SECRET_KEY, algorithm="HS256")
-
+                order_id = payload.get("commerce", {}).get("order_id", "")
             except Exception as e:
                 logging.error(f"Failed to verify Marketplace SSO Token: {e}")
                 return HTMLResponse("<h2>Error: Invalid or Expired Marketplace Token.</h2>", status_code=401)
         else:
             return HTMLResponse("<h2>Error: Missing Marketplace Token.</h2>", status_code=400)
-    
+
     elif request.method == "GET":
         order_id = request.query_params.get("order_id", "")
 
     return templates.TemplateResponse(
         request,
         "setup.html",
-        {"order_id": order_id, "state_token": state_token}
+        {"order_id": order_id}
     )
+
 
 async def setup_save_handler(request: Request):
     """
@@ -195,31 +187,17 @@ async def setup_save_handler(request: Request):
     """
     try:
         form = await request.form()
-        order_id = form.get("order_id")
-        state_token = form.get("state_token")
+        order_id = (form.get("order_id") or "").strip()
         email = form.get("admin_email")
         database = form.get("neo4j_database", "neo4j")
         uri = form.get("neo4j_uri")
         user = form.get("neo4j_user")
         password = form.get("neo4j_password")
 
-        if not all([order_id, email, uri, user, password, state_token]):
+        if not all([order_id, email, uri, user, password]):
             return HTMLResponse("<h2>Error: Missing required fields. Please go back.</h2>", status_code=400)
-        
-        try:
-            payload = jwt.decode(state_token, INTERNAL_SECRET_KEY, algorithms=["HS256"])
-            if payload.get("order_id") != order_id:
-                raise ValueError("Order ID mismatch")
-        except Exception as e:
-            logging.warning(f"[setup] State token verification failed: {e}")
-            return HTMLResponse("<h2>Error: Invalid or expired session. Please restart setup.</h2>", status_code=403)
 
-        existing_creds = token_manager.get_user_credentials(order_id)
-        if existing_creds:
-            logging.warning(f"[setup] Attempt to overwrite active order {order_id}")
-            return HTMLResponse("<h2>Error: This order is already active. Changes rejected.</h2>", status_code=403)
-
-        # 1. Activate credentials in tracking database
+        # 1. Activate / update credentials in tracking database
         token_manager.activate_user_credentials(
             order_id, uri, user, password, database, email
         )
@@ -229,7 +207,6 @@ async def setup_save_handler(request: Request):
         entitlement_id = token_manager.get_entitlement_id(order_id)
 
         # 3. Offload synchronous HTTP requests + backoff sleep to a worker thread
-        # so Starlette's asyncio event loop never blocks
         if account_id:
             account_approved = await asyncio.to_thread(approve_marketplace_account, account_id)
             if not account_approved:

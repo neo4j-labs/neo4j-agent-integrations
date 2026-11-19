@@ -48,6 +48,11 @@ class OAuthValidationMiddleware(BaseHTTPMiddleware):
                 payload = id_token.verify_oauth2_token(token, google_requests.Request())
                 if payload.get("iss") not in ["https://accounts.google.com", "accounts.google.com"]:
                     raise ValueError("Invalid issuer")
+                if (
+                    payload.get("email") != "gemini-enterprise-agent@neo4j-mp-public.iam.gserviceaccount.com"
+                    or not payload.get("email_verified")
+                ):
+                    raise ValueError("Unauthorized service account")
                 return await call_next(request)
             except Exception as e:
                 logging.warning(f"[middleware] Pub/Sub auth failed: {e}")
